@@ -15,7 +15,7 @@
 
 # Quartus Prime: Generate Tcl File for Project
 # File: Timur_RV32IMC.tcl
-# Generated on: Tue Apr 21 14:55:04 2026
+# Generated on: Wed Apr 22 00:06:16 2026
 
 # Load Quartus Prime Tcl Project package
 package require ::quartus::project
@@ -77,6 +77,15 @@ if {$make_assignments} {
 	set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME d_ff_tb -section_id d_ff_tb
 	set_global_assignment -name EDA_TEST_BENCH_FILE tb/d_ff_tb.v -section_id d_ff_tb
 	set_global_assignment -name EDA_TEST_BENCH_FILE rtl/primitives/d_ff.v -section_id d_ff_tb
+	set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
+	set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
+	set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+	set_global_assignment -name VERILOG_FILE tb/rom_ahb_tb.v
+	set_global_assignment -name VERILOG_FILE tb/registers_tb.v
+	set_global_assignment -name VERILOG_FILE tb/pc_tb.v
+	set_global_assignment -name VERILOG_FILE rtl/memory/rom_ahb.v
+	set_global_assignment -name VERILOG_FILE rtl/memory/registers.v
+	set_global_assignment -name VERILOG_FILE rtl/memory/pc.v
 	set_global_assignment -name VERILOG_FILE rtl/execution/multiplier.v
 	set_global_assignment -name VERILOG_FILE rtl/execution/divider.v
 	set_global_assignment -name VERILOG_FILE rtl/execution/branch_condition_evaluator.v
@@ -97,9 +106,6 @@ if {$make_assignments} {
 	set_global_assignment -name VERILOG_FILE rtl/primitives/mux4.v
 	set_global_assignment -name VERILOG_FILE tb/mux4_tb.v
 	set_global_assignment -name QIP_FILE rtl/primitives/cpu_pll.qip
-	set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
-	set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
-	set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 	set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 
 	# Including default assignments

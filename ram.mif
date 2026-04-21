@@ -1,0 +1,15 @@
+-- Timur RV32IMC
+-- RAM Initialisation File
+-- All locations initialised to 0
+-- RAM is at 0x20000000 in the address map
+
+DEPTH = 1024;
+WIDTH = 32;
+ADDRESS_RADIX = HEX;
+DATA_RADIX = HEX;
+
+CONTENT BEGIN
+
+[0..3FF] : 00000000;
+
+END;

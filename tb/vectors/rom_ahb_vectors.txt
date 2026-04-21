@@ -1,0 +1,33 @@
+// rom_ahb test vectors
+// format: HRESETn(bin) HSEL(bin) HADDR(hex) HTRANS(hex) exp_HRDATA(hex) wait_type(0=async_check 1=clock_then_check)
+// HTRANS: 0=IDLE 1=BUSY 2=NONSEQ 3=SEQ  — active when HTRANS[1]=1 AND HSEL=1
+// wait_type=0: check HRDATA after #3 (verifies async reset — no clock needed)
+// wait_type=1: wait posedge HCLK then #1 before checking (verifies pipelined addr read)
+// Memory stamped by testbench:
+//   mem[0]=00000013  mem[1]=AABBCCDD  mem[2]=DEADBEEF
+//   mem[3]=CAFEBABE  mem[4]=12345678  mem[5]=ABCDABCD
+//
+// ── Test 1: async reset → addr_reg=0x000 → HRDATA=mem[0] ──
+0 0 00000000 0 00000013 0
+// ── Test 2: reset holds over clock edge; active-looking inputs are ignored ──
+0 1 00000008 2 00000013 1
+// ── Test 3: release reset, HTRANS=IDLE (inactive) → addr_reg holds 0x000 ──
+1 1 00000008 0 00000013 1
+// ── Test 4: NONSEQ to 0x008 → addr_reg=0x008 → HRDATA=mem[2]=DEADBEEF ──
+1 1 00000008 2 DEADBEEF 1
+// ── Test 5: NONSEQ to 0x00C → addr_reg=0x00C → HRDATA=mem[3]=CAFEBABE ──
+1 1 0000000C 2 CAFEBABE 1
+// ── Test 6: HSEL=0 → inactive → addr_reg holds 0x00C ──
+1 0 00000010 2 CAFEBABE 1
+// ── Test 7: HTRANS=BUSY (HTRANS[1]=0) → inactive → addr_reg holds 0x00C ──
+1 1 00000010 1 CAFEBABE 1
+// ── Test 8: NONSEQ to 0x010 → addr_reg=0x010 → HRDATA=mem[4]=12345678 ──
+1 1 00000010 2 12345678 1
+// ── Test 9: SEQ to 0x014 → addr_reg=0x014 → HRDATA=mem[5]=ABCDABCD ──
+1 1 00000014 3 ABCDABCD 1
+// ── Test 10: NONSEQ to 0x004 → addr_reg=0x004 → HRDATA=mem[1]=AABBCCDD ──
+1 1 00000004 2 AABBCCDD 1
+// ── Test 11: async reset mid-operation → addr_reg=0x000 → HRDATA=mem[0] ──
+0 1 00000014 2 00000013 0
+// ── Test 12: release reset, capture addr 0x000 → HRDATA=mem[0]=00000013 ──
+1 1 00000000 2 00000013 1
