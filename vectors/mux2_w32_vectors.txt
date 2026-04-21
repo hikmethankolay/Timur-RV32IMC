@@ -1,0 +1,24 @@
+// mux2 WIDTH=32 test vectors (32-bit hex values)
+// format: in0(hex) in1(hex) sel(bin) expected_out(hex)
+// sel=0 passes in0
+DEADBEEF CAFEBABE 0 DEADBEEF
+// sel=1 passes in1
+DEADBEEF CAFEBABE 1 CAFEBABE
+// all zeros vs all ones, sel=0
+00000000 FFFFFFFF 0 00000000
+// all zeros vs all ones, sel=1
+00000000 FFFFFFFF 1 FFFFFFFF
+// walking ones, sel=0
+12345678 9ABCDEF0 0 12345678
+// walking ones, sel=1
+12345678 9ABCDEF0 1 9ABCDEF0
+// patterned halves, sel=0
+AAAA5555 5555AAAA 0 AAAA5555
+// patterned halves, sel=1
+AAAA5555 5555AAAA 1 5555AAAA
+// MSB only
+80000000 00000001 0 80000000
+// LSB only
+80000000 00000001 1 00000001
+// sel=0 ignores in1 completely
+A5A5A5A5 DEADBEEF 0 A5A5A5A5

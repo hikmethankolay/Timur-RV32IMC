@@ -1,0 +1,25 @@
+// mux4 WIDTH=8 test vectors
+// format: in0(hex) in1(hex) in2(hex) in3(hex) sel(bin) expected_out(hex)
+// sel=00 passes in0
+AA BB CC DD 00 AA
+// sel=01 passes in1
+AA BB CC DD 01 BB
+// sel=10 passes in2
+AA BB CC DD 10 CC
+// sel=11 passes in3
+AA BB CC DD 11 DD
+// change in1 while sel=01, output must track
+AA 11 CC DD 01 11
+// change in2 while sel=10, output must track
+AA BB 22 DD 10 22
+// all zeros
+00 00 00 00 00 00
+// all ones
+FF FF FF FF 11 FF
+// sel=00 ignores in1/in2/in3
+AA BB CC DD 00 AA
+// sel=11 ignores in0/in1/in2
+AA BB CC DD 11 DD
+// alternating patterns
+55 AA 55 AA 01 AA
+55 AA 55 AA 10 55

@@ -1,0 +1,25 @@
+// d_ff test vectors
+// format: rst_n(bin) en(bin) d(hex) expected_q(hex) wait_type(0=async_check 1=clock_then_check)
+// wait_type=0 : check q immediately after #3 (tests async reset - no clock needed)
+// wait_type=1 : wait for posedge clk then check q
+//
+// ── Test 1: async reset drives q to 0 immediately, no clock needed ──
+0 1 AA 00 0
+// ── Test 2: q stays 0 while rst_n=0 even after a clock edge ──
+0 1 AA 00 1
+// ── Test 3: release reset, en=0, q must hold (not capture d) ──
+1 0 BB 00 1
+// ── Test 4: en=1, d captured on rising edge ──
+1 1 AA AA 1
+// ── Test 5: en=0, q holds previous value ──
+1 0 FF AA 1
+// ── Test 6: en=1, new value captured ──
+1 1 55 55 1
+// ── Test 7: multiple captures ──
+1 1 12 12 1
+1 1 34 34 1
+1 1 FF FF 1
+// ── Test 8: async reset mid-operation ──
+0 1 AB 00 0
+// ── Test 9: recover from reset, capture works again ──
+1 1 CD CD 1

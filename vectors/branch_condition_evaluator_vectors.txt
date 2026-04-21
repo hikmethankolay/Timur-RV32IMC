@@ -1,0 +1,44 @@
+// branch_condition_evaluator test vectors
+// format: zero(bin) alu_result_msb(bin) overflow(bin) cout(bin) BranchType(dec) exp_BranchTaken(bin)
+// BranchType: 0=BEQ  1=BNE  4=BLT  5=BGE  6=BLTU  7=BGEU  (2,3=reserved/default→0)
+//
+// --- BEQ (BranchType=0): taken = zero ---
+1 0 0 0 0 1
+0 0 0 0 0 0
+1 1 1 1 0 1
+//
+// --- BNE (BranchType=1): taken = ~zero ---
+0 0 0 0 1 1
+1 0 0 0 1 0
+//
+// --- BLT (BranchType=4): taken = alu_result_msb ^ overflow (signed a < b) ---
+// msb=1 ovf=0 → 1 (result negative, no overflow → a < b)
+0 1 0 0 4 1
+// msb=0 ovf=0 → 0 (result non-negative, no overflow → a >= b)
+0 0 0 0 4 0
+// msb=0 ovf=1 → 1 (result positive but overflow → a < b)
+0 0 1 0 4 1
+// msb=1 ovf=1 → 0 (result negative but overflow → a >= b)
+0 1 1 0 4 0
+//
+// --- BGE (BranchType=5): taken = ~(alu_result_msb ^ overflow) (signed a >= b) ---
+// msb=0 ovf=0 → 1 (a >= b)
+0 0 0 0 5 1
+// msb=1 ovf=0 → 0 (a < b)
+0 1 0 0 5 0
+// msb=1 ovf=1 → 1 (overflow flips: a >= b)
+0 1 1 0 5 1
+// msb=0 ovf=1 → 0 (overflow flips: a < b)
+0 0 1 0 5 0
+//
+// --- BLTU (BranchType=6): taken = ~cout (unsigned a < b, borrow means no carry-out) ---
+0 0 0 0 6 1
+0 0 0 1 6 0
+//
+// --- BGEU (BranchType=7): taken = cout (unsigned a >= b) ---
+0 0 0 1 7 1
+0 0 0 0 7 0
+//
+// --- default / reserved (BranchType=2,3): BranchTaken always 0 ---
+0 0 0 0 2 0
+1 1 1 1 3 0

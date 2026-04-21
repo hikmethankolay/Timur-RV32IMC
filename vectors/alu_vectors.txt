@@ -1,0 +1,60 @@
+// alu test vectors
+// format: a(hex) b(hex) ALUControl(dec) exp_result(hex) exp_zero(bin) exp_cout(bin) exp_overflow(bin)
+// ALUControl: 0=AND 1=OR 2=ADD 6=SUB 7=SLT 8=XOR 9=SLL 10=SRL 11=SRA
+// 16=MUL 17=MULH 18=MULHSU 19=MULHU (low/high halves per multiplier.v; ALUControl[1:0] = mul_op)
+// cout/overflow always reflect the internal adder (a +/- b per sub), not only ADD/SUB results.
+// AND — adder is a+b (sub=0)
+FFFF0000 00FF00FF 0 00FF0000 0 1 0
+// ADD
+00000001 00000001 2 00000002 0 0 0
+FFFFFFFF 00000001 2 00000000 1 1 0
+// SUB
+00000005 00000003 6 00000002 0 1 0
+00000003 00000005 6 FFFFFFFE 0 0 0
+80000000 00000001 6 7FFFFFFF 0 1 1
+// SLT
+00000003 00000005 7 00000001 0 0 0
+00000005 00000003 7 00000000 1 1 0
+// signed overflow on ADD
+7FFFFFFF 00000001 2 80000000 0 0 1
+// XOR
+DEADBEEF 00FF00FF 8 DE52BE10 0 0 0
+// shifts (shamt = b[4:0])
+00000001 00000004 9 00000010 0 0 0
+80000000 00000001 10 40000000 0 0 0
+80000000 00000003 11 F0000000 0 0 0
+// OR — result nonzero; adder a+b
+12345678 00000000 1 12345678 0 0 0
+// M extension — result from multiplier; adder still a+b (sub=0)
+00000003 00000004 16 0000000C 0 0 0
+80000000 00000002 16 00000000 1 0 0
+80000000 00000002 17 FFFFFFFF 0 0 0
+80000000 80000000 17 40000000 0 1 1
+80000000 FFFFFFFF 18 80000000 0 1 1
+80000000 FFFFFFFF 19 7FFFFFFF 0 1 1
+12345678 9ABCDEF0 16 242D2080 0 0 0
+12345678 9ABCDEF0 17 F8CC93D6 0 0 0
+00000000 00000000 16 00000000 1 0 0
+// zero
+00000000 00000000 2 00000000 1 0 0
+// default opcode → result 0; adder still a+b (sub=0)
+00000000 00000000 31 00000000 1 0 0
+// M extension — DIV/DIVU/REM/REMU (ALUControl 20-23 = 5'b10100..10111)
+// For div ops the TB pulses div_start and waits for div_done; cout/overflow
+// still reflect the internal adder (a+b, sub=0) but are not checked for these rows.
+// ctrl=20 DIV  signed:   10/3=3;   adder 10+3=13 cout=0 ovf=0
+0000000A 00000003 20 00000003 0 0 0
+// ctrl=21 DIVU unsigned: UINT_MAX/2=7FFFFFFF; adder FFFFFFFF+2=1_00000001 cout=1 ovf=0
+FFFFFFFF 00000002 21 7FFFFFFF 0 1 0
+// ctrl=22 REM  signed:   -10%3=-1; adder FFFFFFF6+3=FFFFFFF9 cout=0 ovf=0
+FFFFFFF6 00000003 22 FFFFFFFF 0 0 0
+// ctrl=23 REMU unsigned: 10%3=1;   adder 10+3=13 cout=0 ovf=0
+0000000A 00000003 23 00000001 0 0 0
+// ctrl=20 DIV  div-by-zero: quotient=FFFFFFFF; adder 7+0=7 cout=0 ovf=0
+00000007 00000000 20 FFFFFFFF 0 0 0
+// ctrl=22 REM  div-by-zero: remainder=a;       adder 7+0=7 cout=0 ovf=0
+00000007 00000000 22 00000007 0 0 0
+// ctrl=20 DIV  signed overflow INT_MIN/-1: quotient=INT_MIN; adder 80000000+FFFFFFFF=17FFFFFFF cout=1 ovf=1
+80000000 FFFFFFFF 20 80000000 0 1 1
+// ctrl=21 DIVU 0/5=0 (zero result); adder 0+5=5 cout=0 ovf=0
+00000000 00000005 21 00000000 1 0 0

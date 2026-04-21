@@ -1,0 +1,22 @@
+// mux2 WIDTH=5 test vectors (5-bit values, hex 00..1F)
+// format: in0(hex) in1(hex) sel(bin) expected_out(hex)
+// sel=0 passes in0
+0A 15 0 0A
+// sel=1 passes in1
+0A 15 1 15
+// max value on in0, sel=0
+1F 00 0 1F
+// max value on in1, sel=1
+00 1F 1 1F
+// all zeros
+00 00 0 00
+// all ones
+1F 1F 1 1F
+// alternating patterns, sel=0
+15 0A 0 15
+// alternating patterns, sel=1
+15 0A 1 0A
+// sel=0 ignores in1
+12 1E 0 12
+// sel=1 ignores in0
+1E 12 1 12

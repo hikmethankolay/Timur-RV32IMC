@@ -1,0 +1,40 @@
+// divider test vectors
+// format: a(hex) b(hex) div_op(dec) exp_quotient(hex) exp_remainder(hex)
+// div_op bit0 controls sign: 0 = signed (DIV/REM), 1 = unsigned (DIVU/REMU)
+// divider always outputs both quotient and remainder; which one the ALU forwards
+// depends on ALUControl[2] — both are checked here.
+//
+// --- Signed (div_op=0, is_signed=1) ---
+// 10 / 3 = 3 rem 1
+0000000A 00000003 0 00000003 00000001
+// -10 / 3 = -3 rem -1
+FFFFFFF6 00000003 0 FFFFFFFD FFFFFFFF
+// 10 / -3 = -3 rem 1
+0000000A FFFFFFFD 0 FFFFFFFD 00000001
+// -10 / -3 = 3 rem -1
+FFFFFFF6 FFFFFFFD 0 00000003 FFFFFFFF
+// 1 / 1 = 1 rem 0
+00000001 00000001 0 00000001 00000000
+// 0 / 5 = 0 rem 0
+00000000 00000005 0 00000000 00000000
+// div-by-zero (signed): quotient=FFFFFFFF, remainder=a
+00000007 00000000 0 FFFFFFFF 00000007
+// signed overflow: INT_MIN / -1 => quotient=INT_MIN, remainder=0
+80000000 FFFFFFFF 0 80000000 00000000
+//
+// --- Unsigned (div_op=1, is_signed=0) ---
+// 10 / 3 = 3 rem 1
+0000000A 00000003 1 00000003 00000001
+// UINT_MAX / 2 = 2147483647 rem 1
+FFFFFFFF 00000002 1 7FFFFFFF 00000001
+// 0 / 3 = 0 rem 0
+00000000 00000003 1 00000000 00000000
+// UINT_MAX / UINT_MAX = 1 rem 0
+FFFFFFFF FFFFFFFF 1 00000001 00000000
+// div-by-zero (unsigned): quotient=FFFFFFFF, remainder=a
+00000005 00000000 1 FFFFFFFF 00000005
+// 20/4=5 rem 0
+00000014 00000004 0 00000005 00000000
+// signed -20/4=-5 rem 0 
+// -20=FFFFFFEC; |a|/|b|=5 rem 0; a_neg XOR b_neg=1 => quot=-5=FFFFFFFB; a_neg=1 => rem=0
+FFFFFFEC 00000004 0 FFFFFFFB 00000000

@@ -1,0 +1,19 @@
+// adder_32bit test vectors
+// format: a(hex) b(hex) sub(bin) exp_result(hex) exp_cout(bin) exp_overflow(bin)
+// sub=0 -> a+b, sub=1 -> a-b (2's complement via ~b + sub)
+// doc cases — simple add
+00000001 00000001 0 00000002 0 0
+// wrap with unsigned carry out
+FFFFFFFF 00000001 0 00000000 1 0
+// subtract, positive difference (cout=1 means no borrow for this implementation)
+00000005 00000003 1 00000002 1 0
+// subtract, negative result in 2's complement
+00000003 00000005 1 FFFFFFFE 0 0
+// signed overflow: largest positive + 1
+7FFFFFFF 00000001 0 80000000 0 1
+// signed underflow: smallest negative - 1
+80000000 00000001 1 7FFFFFFF 1 1
+// zero identity
+00000000 00000000 0 00000000 0 0
+// all-ones plus zero (no carry)
+FFFFFFFF 00000000 0 FFFFFFFF 0 0

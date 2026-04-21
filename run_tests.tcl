@@ -1,0 +1,112 @@
+# ============================================================
+# Timur RV32IMC - Regression Testbench Runner
+# Auto-discovers all *_tb.v files in tb/ folder
+# No temp files / do files are created.
+# ============================================================
+
+# ── collect source files ──
+set rtl_files [glob -nocomplain rtl/*.v]
+set rtl_files [lsearch -all -inline -not $rtl_files *_bb.v]
+set tb_files  [glob -nocomplain tb/*.v]
+set all_files [concat $rtl_files $tb_files]
+
+# ── auto-discover testbench module names ──
+set testbenches {}
+foreach f $tb_files {
+    lappend testbenches [file rootname [file tail $f]]
+}
+
+if {[llength $testbenches] == 0} {
+    puts "ERROR: no *_tb.v files found in tb/ folder"
+    return
+}
+
+# ── create work library ──
+puts "Creating work library..."
+if {[file exists work]} {
+    vdel -lib work -all
+}
+vlib work
+vmap work work
+
+# ── compile all files once ──
+puts "Compiling all sources..."
+if {[catch {eval vlog -quiet $all_files} err]} {
+    puts "COMPILE ERROR: $err"
+    return
+}
+puts "Compile OK."
+
+# ── safety nets: any $stop / runtime error resumes instead of
+#    parking at the VSIM> prompt and hanging the batch run. ──
+onbreak {resume}
+onerror {resume}
+
+# ── results ──
+set passed      0
+set failed      0
+set failed_list {}
+
+puts ""
+puts "============================================"
+puts " Timur RV32IMC - Running All Tests"
+puts " Found [llength $testbenches] testbench(es)"
+puts "============================================"
+
+foreach tb $testbenches {
+    puts ""
+    puts "--------------------------------------------"
+    puts " Running: $tb"
+    puts "--------------------------------------------"
+
+    # Load the testbench. -onfinish stop makes $finish halt the
+    # simulation (without killing vsim) so run -all can return.
+    if {[catch {vsim -quiet -onfinish stop work.$tb} err]} {
+        puts "LOAD ERROR ($tb): $err"
+        incr failed
+        lappend failed_list $tb
+        continue
+    }
+
+    # Re-assert handlers inside this simulation context.
+    onbreak {resume}
+    onerror {resume}
+
+    if {[catch {run -all} err]} {
+        puts "RUN ERROR ($tb): $err"
+    }
+
+    # Read the testbench's internal counters directly - no log files.
+    set f_val "?"
+    set t_val "?"
+    catch {set f_val [examine -radix decimal /${tb}/failed]}
+    catch {set t_val [examine -radix decimal /${tb}/total]}
+
+    catch {quit -sim}
+
+    if {[string is integer -strict $f_val] && $f_val == 0
+        && [string is integer -strict $t_val] && $t_val > 0} {
+        puts "RESULT: PASSED - $tb ($t_val test(s))"
+        incr passed
+    } else {
+        puts "RESULT: FAILED - $tb (failed=$f_val total=$t_val)"
+        incr failed
+        lappend failed_list $tb
+    }
+}
+
+# ── summary ──
+puts ""
+puts "============================================"
+puts " REGRESSION COMPLETE"
+puts "============================================"
+puts " PASSED : $passed"
+puts " FAILED : $failed"
+if {[llength $failed_list] > 0} {
+    puts " Failed testbenches:"
+    foreach f $failed_list {
+        puts "   - $f"
+    }
+}
+puts "============================================"
+puts ""
