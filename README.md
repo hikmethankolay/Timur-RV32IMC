@@ -90,7 +90,7 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 ## ISA Support
 
 | Extension | Description | Status |
-|-----------|-------------|--------|
+| --------- | ----------- | ------ |
 | **RV32I** | Base 32-bit integer instructions | ✅ Phase 2 Complete |
 | **RV32M** | Hardware multiply & divide (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU) | ✅ Phase 2 Complete |
 | **RV32C** | 16-bit compressed instructions | 🔜 Phase 11 |
@@ -104,7 +104,7 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 **Phase 2 complete — Execution Datapath fully verified.**
 
 | Phase | Description | Status |
-|-------|-------------|--------|
+| ----- | ----------- | ------ |
 | 1 | Foundational primitives (Mux2, Mux4, DFF, ALTPLL) | ✅ Complete |
 | 2 | Execution datapath — ALU, Barrel Shifter, Multiplier, Divider, Branch Evaluator | ✅ Complete |
 | 3 | State & memory — PC, Register File, ROM AHB slave, RAM AHB slave | 🔜 Next |
@@ -206,7 +206,7 @@ The system uses the AMBA bus hierarchy: AHB for high-bandwidth paths (CPU, DMA, 
 ### AHB Address Map
 
 | Range | Slave | Size |
-|-------|-------|------|
+| ----- | ----- | ---- |
 | `0x0000_0000 – 0x0000_FFFF` | Instruction ROM | 64 KB |
 | `0x2000_0000 – 0x2000_FFFF` | Data RAM | 64 KB |
 | `0x4000_0000 – 0x4000_FFFF` | AHB → APB Bridge | — |
@@ -214,7 +214,7 @@ The system uses the AMBA bus hierarchy: AHB for high-bandwidth paths (CPU, DMA, 
 ### APB Address Map (within bridge)
 
 | Range | Peripheral | Registers |
-|-------|------------|-----------|
+| ----- | ---------- | --------- |
 | `0x4000_0000 – 0x4000_00FF` | UART | DATA, STATUS, CTRL |
 | `0x4000_0100 – 0x4000_01FF` | GPIO | OUT, IN, DIR |
 | `0x4000_0200 – 0x4000_02FF` | DMAC control | SRC, DST, LEN, CTRL, STATUS |
@@ -261,7 +261,7 @@ stall = load_use_hazard OR bus_wait OR div_busy
 ```
 
 | Source | Duration | Mechanism |
-|--------|----------|-----------|
+| ------ | -------- | --------- |
 | Load-use hazard | Exactly 1 cycle | LW result not available until end of MEM; cannot be forwarded |
 | AHB bus wait (`!HREADY`) | N cycles | APB bridge holds `HREADY=0` during SETUP and ACCESS phases |
 | Divider busy | 32 cycles | DIV/REM sequential execution; MUL is 1-cycle (no stall) |
@@ -297,7 +297,7 @@ A two-part DMA controller: APB control registers (SRC, DST, LEN, CTRL, STATUS) t
 ## Tool Stack
 
 | Tool | Purpose |
-|------|---------|
+| ---- | ------- |
 | Verilog / SystemVerilog | HDL implementation |
 | Intel Quartus Prime | Synthesis, place & route, timing analysis |
 | ALTPLL Megafunction | PLL / clock generation |
