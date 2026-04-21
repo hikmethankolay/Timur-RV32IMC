@@ -57,7 +57,7 @@ module alu_tb;
         rst_n = 1;
         @(posedge clk); #1;
 
-        file = $fopen("vectors/alu_vectors.txt", "r");
+        file = $fopen("tb/tb/vectors/alu_vectors.txt", "r");
         if (file == 0) begin
             $display("ERROR: could not open alu_vectors.txt");
             failed = failed + 1;

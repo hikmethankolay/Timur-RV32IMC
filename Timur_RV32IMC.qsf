@@ -65,34 +65,34 @@ set_global_assignment -name EDA_TEST_BENCH_NAME mux4_tb -section_id eda_simulati
 set_global_assignment -name EDA_DESIGN_INSTANCE_NAME NA -section_id mux4_tb
 set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME mux4_tb -section_id mux4_tb
 set_global_assignment -name EDA_TEST_BENCH_FILE tb/mux2_tb.v -section_id mux2_tb
-set_global_assignment -name EDA_TEST_BENCH_FILE rtl/mux2.v -section_id mux2_tb
+set_global_assignment -name EDA_TEST_BENCH_FILE rtl/primitives/mux2.v -section_id mux2_tb
 set_global_assignment -name EDA_TEST_BENCH_FILE tb/mux4_tb.v -section_id mux4_tb
-set_global_assignment -name EDA_TEST_BENCH_FILE rtl/mux4.v -section_id mux4_tb
+set_global_assignment -name EDA_TEST_BENCH_FILE rtl/primitives/mux4.v -section_id mux4_tb
 set_global_assignment -name EDA_TEST_BENCH_NAME d_ff_tb -section_id eda_simulation
 set_global_assignment -name EDA_DESIGN_INSTANCE_NAME NA -section_id d_ff_tb
 set_global_assignment -name EDA_TEST_BENCH_MODULE_NAME d_ff_tb -section_id d_ff_tb
 set_global_assignment -name EDA_TEST_BENCH_FILE tb/d_ff_tb.v -section_id d_ff_tb
-set_global_assignment -name EDA_TEST_BENCH_FILE rtl/d_ff.v -section_id d_ff_tb
-set_global_assignment -name VERILOG_FILE rtl/multiplier.v
-set_global_assignment -name VERILOG_FILE rtl/divider.v
-set_global_assignment -name VERILOG_FILE rtl/branch_condition_evaluator.v
+set_global_assignment -name EDA_TEST_BENCH_FILE rtl/primitives/d_ff.v -section_id d_ff_tb
+set_global_assignment -name VERILOG_FILE rtl/execution/multiplier.v
+set_global_assignment -name VERILOG_FILE rtl/execution/divider.v
+set_global_assignment -name VERILOG_FILE rtl/execution/branch_condition_evaluator.v
 set_global_assignment -name VERILOG_FILE tb/multiplier_tb.v
 set_global_assignment -name VERILOG_FILE tb/divider_tb.v
 set_global_assignment -name VERILOG_FILE tb/branch_condition_evaluator_tb.v
 set_global_assignment -name VERILOG_FILE tb/alu_tb.v
 set_global_assignment -name VERILOG_FILE tb/barrel_shifter_tb.v
 set_global_assignment -name VERILOG_FILE tb/adder_32bit_tb.v
-set_global_assignment -name VERILOG_FILE rtl/barrel_shifter.v
-set_global_assignment -name VERILOG_FILE rtl/alu.v
-set_global_assignment -name VERILOG_FILE rtl/adder_32bit.v
-set_global_assignment -name VERILOG_FILE rtl/d_ff.v
+set_global_assignment -name VERILOG_FILE rtl/execution/barrel_shifter.v
+set_global_assignment -name VERILOG_FILE rtl/execution/alu.v
+set_global_assignment -name VERILOG_FILE rtl/execution/adder_32bit.v
+set_global_assignment -name VERILOG_FILE rtl/primitives/d_ff.v
 set_global_assignment -name VERILOG_FILE tb/d_ff_tb.v
-set_global_assignment -name VERILOG_FILE rtl/mux2.v
+set_global_assignment -name VERILOG_FILE rtl/primitives/mux2.v
 set_global_assignment -name VERILOG_FILE tb/mux2_tb.v
-set_global_assignment -name VERILOG_FILE rtl/Timur_RV32IMC.v
-set_global_assignment -name VERILOG_FILE rtl/mux4.v
+set_global_assignment -name VERILOG_FILE rtl/top/Timur_RV32IMC.v
+set_global_assignment -name VERILOG_FILE rtl/primitives/mux4.v
 set_global_assignment -name VERILOG_FILE tb/mux4_tb.v
-set_global_assignment -name QIP_FILE rtl/cpu_pll.qip
+set_global_assignment -name QIP_FILE rtl/primitives/cpu_pll.qip
 set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
 set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top

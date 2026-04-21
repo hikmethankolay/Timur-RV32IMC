@@ -5,7 +5,7 @@
 # ============================================================
 
 # ── collect source files ──
-set rtl_files [glob -nocomplain rtl/*.v]
+set rtl_files [glob -nocomplain rtl/**/*.v]
 set rtl_files [lsearch -all -inline -not $rtl_files *_bb.v]
 set tb_files  [glob -nocomplain tb/*.v]
 set all_files [concat $rtl_files $tb_files]

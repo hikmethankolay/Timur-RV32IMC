@@ -62,7 +62,7 @@ module divider_tb;
         rst_n = 1;
         @(posedge clk); #1;
 
-        file = $fopen("vectors/divider_vectors.txt", "r");
+        file = $fopen("tb/tb/vectors/divider_vectors.txt", "r");
         if (file == 0) begin
             $display("ERROR: could not open divider_vectors.txt");
             failed = failed + 1;

@@ -25,7 +25,7 @@ module d_ff_tb;
         en    = 0;
         d     = 8'h00;
 
-        file = $fopen("vectors/d_ff_vectors.txt", "r");
+        file = $fopen("tb/tb/vectors/d_ff_vectors.txt", "r");
         if (file == 0) begin
             $display("ERROR: could not open d_ff_vectors.txt");
             $finish;

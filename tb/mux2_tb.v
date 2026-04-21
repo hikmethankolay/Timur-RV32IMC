@@ -156,9 +156,9 @@ module mux2_tb;
     endtask
 
     initial begin
-        run_width_1 ("vectors/mux2_w1_vectors.txt");
-        run_width_5 ("vectors/mux2_w5_vectors.txt");
-        run_width_32("vectors/mux2_w32_vectors.txt");
+        run_width_1 ("tb/tb/vectors/mux2_w1_vectors.txt");
+        run_width_5 ("tb/tb/vectors/mux2_w5_vectors.txt");
+        run_width_32("tb/tb/vectors/mux2_w32_vectors.txt");
 
         $display("-----------------------------");
         if (failed == 0)

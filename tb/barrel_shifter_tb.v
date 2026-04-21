@@ -29,7 +29,7 @@ module barrel_shifter_tb;
         shamt      = 5'h0;
         shift_type = 2'h0;
 
-        file = $fopen("vectors/barrel_shifter_vectors.txt", "r");
+        file = $fopen("tb/tb/vectors/barrel_shifter_vectors.txt", "r");
         if (file == 0) begin
             $display("ERROR: could not open barrel_shifter_vectors.txt");
             failed = failed + 1;

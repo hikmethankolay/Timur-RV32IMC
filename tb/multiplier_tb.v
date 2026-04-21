@@ -27,7 +27,7 @@ module multiplier_tb;
         b      = 32'h0;
         mul_op = 2'h0;
 
-        file = $fopen("vectors/multiplier_vectors.txt", "r");
+        file = $fopen("tb/tb/vectors/multiplier_vectors.txt", "r");
         if (file == 0) begin
             $display("ERROR: could not open multiplier_vectors.txt");
             failed = failed + 1;
