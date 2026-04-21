@@ -119,8 +119,8 @@ module mux4_tb;
     endtask
 
     initial begin
-        run_width_8 ("tb/tb/vectors/mux4_w8_vectors.txt");
-        run_width_32("tb/tb/vectors/mux4_w32_vectors.txt");
+        run_width_8 ("tb/vectors/mux4_w8_vectors.txt");
+        run_width_32("tb/vectors/mux4_w32_vectors.txt");
 
         $display("-----------------------------");
         if (failed == 0)

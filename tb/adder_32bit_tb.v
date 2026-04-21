@@ -33,7 +33,7 @@ module adder_32bit_tb;
         b   = 32'h0;
         sub = 1'b0;
 
-        file = $fopen("tb/tb/vectors/adder_32bit_vectors.txt", "r");
+        file = $fopen("tb/vectors/adder_32bit_vectors.txt", "r");
         if (file == 0) begin
             $display("ERROR: could not open adder_32bit_vectors.txt");
             failed = failed + 1;

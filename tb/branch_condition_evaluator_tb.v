@@ -32,7 +32,7 @@ module branch_condition_evaluator_tb;
         cout           = 0;
         BranchType     = 3'h0;
 
-        file = $fopen("tb/tb/vectors/branch_condition_evaluator_vectors.txt", "r");
+        file = $fopen("tb/vectors/branch_condition_evaluator_vectors.txt", "r");
         if (file == 0) begin
             $display("ERROR: could not open branch_condition_evaluator_vectors.txt");
             failed = failed + 1;
