@@ -99,3 +99,6 @@ desktop.ini
 # Editor temp files
 *.tmp
 *~
+
+# Documentation source files
+*.docx
