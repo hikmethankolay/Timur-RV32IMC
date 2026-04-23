@@ -111,8 +111,8 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 | ----- | ----------- | ------ |
 | 1 | Foundational primitives (Mux2, Mux4, DFF, ALTPLL) | ✅ Complete |
 | 2 | Execution datapath — ALU, Barrel Shifter, Multiplier, Divider, Branch Evaluator | ✅ Complete |
-| 3 | State & memory — PC, Register File, ROM AHB slave, RAM AHB slave | 🔜 Next |
-| 4 | Instruction decode & control — ImmGen, Parser, ALU Decoder, Main Control | 🔜 |
+| 3 | State & memory — PC, Register File, ROM AHB slave, RAM AHB slave | ✅ Complete |
+| 4 | Instruction decode & control — ImmGen, Parser, ALU Decoder, Main Control | 🔜 Next|
 | 5 | Single-cycle integration (HREADY=1 assumed) | 🔜 |
 | 6 | 5-stage pipelining with pipeline registers | 🔜 |
 | 7 | Hazard resolution — forwarding, load-use, HREADY, div_busy, branch flush | 🔜 |
