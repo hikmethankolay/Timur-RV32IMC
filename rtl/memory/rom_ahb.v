@@ -12,12 +12,11 @@ module rom_ahb (
     output        HRESP      // Response status — used: hardwired 0 (OKAY)
 );
 
-    (* ram_init_file = "rom.mif" *) reg [31:0] mem [0:1023];
-
+    (* ram_init_file = "rom.mif" *) reg [31:0] mem [0:16383];
 
     integer i;
     initial begin
-        for (i = 0; i < 1024; i = i + 1) begin
+        for (i = 0; i < 16384; i = i + 1) begin
             mem[i] = 32'h00000013;
         end
         $readmemh("rom.hex",mem);
@@ -34,7 +33,7 @@ module rom_ahb (
         end
     end
     
-    assign HRDATA = mem[addr_reg[11:2]];
+    assign HRDATA = mem[addr_reg[15:2]];
 
     assign HREADY = 1'b1;
     assign HRESP  = 1'b0;
