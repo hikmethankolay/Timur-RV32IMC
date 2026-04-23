@@ -16,10 +16,8 @@ module rom_ahb (
 
     integer i;
     initial begin
-        for (i = 0; i < 16384; i = i + 1) begin
+        for (i = 0; i < 16384; i = i + 1)
             mem[i] = 32'h00000013;
-        end
-        $readmemh("rom.hex",mem);
     end
 
     reg [31:0] addr_reg;

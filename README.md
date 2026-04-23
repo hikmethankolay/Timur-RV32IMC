@@ -25,7 +25,7 @@
     - [Phase 10 — CSR Register File and Privileged Architecture](#phase-10--csr-register-file-and-privileged-architecture)
     - [Phase 11 — C Extension Decompressor](#phase-11--c-extension-decompressor)
     - [Phase 12 — C Software Layer](#phase-12--c-software-layer)
-  - [Bus Architecture & Address Map](#bus-architecture--address-map)
+  - [Bus Architecture \& Address Map](#bus-architecture--address-map)
     - [AHB Address Map](#ahb-address-map)
     - [APB Address Map (within bridge)](#apb-address-map-within-bridge)
     - [AHB Masters](#ahb-masters)
@@ -40,7 +40,11 @@
     - [Prerequisites](#prerequisites)
     - [Cloning](#cloning)
   - [Simulation](#simulation)
-  - [Building & Programming](#building--programming)
+    - [Simulation Prerequisites](#simulation-prerequisites)
+    - [Running all tests](#running-all-tests)
+    - [Running a single testbench manually](#running-a-single-testbench-manually)
+    - [Testbench conventions](#testbench-conventions)
+  - [Building \& Programming](#building--programming)
   - [C Software Layer](#c-software-layer)
   - [Project Roadmap](#project-roadmap)
   - [Directory Structure](#directory-structure)
@@ -441,7 +445,7 @@ The memory layout follows the address map above: `.text` and `.rodata` in ROM at
 ```text
 Phase 1  ✅  Primitives (Mux2, Mux4, DFF, PLL)
 Phase 2  ✅  Execution Datapath (ALU + M-extension)
-Phase 3  🔜  PC, Register File, ROM/RAM AHB slaves
+Phase 3  ✅  PC, Register File, ROM/RAM AHB slaves
 Phase 4  🔜  Decode stage (ImmGen, Parser, Control)
 Phase 5  🔜  Single-cycle CPU integration
 Phase 6  🔜  5-stage pipeline registers
