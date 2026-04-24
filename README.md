@@ -105,7 +105,7 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 ## Current Status
 
-**Phase 2 complete — Execution Datapath fully verified.**
+**Phase 4 complete — Instruction Decode and Control fully verified.**
 
 | Phase | Description | Status |
 | ----- | ----------- | ------ |
