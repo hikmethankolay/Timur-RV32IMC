@@ -1,0 +1,31 @@
+# ALUOp funct3 funct7 exp_ALUControl  (all hex)
+# ALUOp=00 -> ADD (funct3/funct7 ignored)
+00 0 00 02
+00 7 7f 02
+# ALUOp=01 -> SUB (funct3/funct7 ignored)
+01 0 00 06
+01 7 7f 06
+# ALUOp=10, funct7=0000001 -> M-extension
+02 0 01 10
+02 1 01 11
+02 2 01 12
+02 3 01 13
+02 4 01 14
+02 5 01 15
+02 6 01 16
+02 7 01 17
+# ALUOp=10, funct7[5]=0 -> standard R-type (ADD SLL SLT SLTU XOR SRL OR AND)
+02 0 00 02
+02 1 00 09
+02 2 00 07
+02 3 00 0c
+02 4 00 08
+02 5 00 0a
+02 6 00 01
+02 7 00 00
+# ALUOp=10, funct7=0100000 (funct7[5]=1) -> SUB and SRA
+02 0 20 06
+02 5 20 0b
+# ALUOp=11 -> default (ADD)
+03 0 00 02
+03 7 7f 02
