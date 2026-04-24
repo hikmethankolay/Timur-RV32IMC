@@ -112,8 +112,8 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 | 1 | Foundational primitives (Mux2, Mux4, DFF, ALTPLL) | ✅ Complete |
 | 2 | Execution datapath — ALU, Barrel Shifter, Multiplier, Divider, Branch Evaluator | ✅ Complete |
 | 3 | State & memory — PC, Register File, ROM AHB slave, RAM AHB slave | ✅ Complete |
-| 4 | Instruction decode & control — ImmGen, Parser, ALU Decoder, Main Control | 🔜 Next|
-| 5 | Single-cycle integration (HREADY=1 assumed) | 🔜 |
+| 4 | Instruction decode & control — ImmGen, Parser, ALU Decoder, Main Control | ✅ Complete |
+| 5 | Single-cycle integration (HREADY=1 assumed) | 🔜 Next |
 | 6 | 5-stage pipelining with pipeline registers | 🔜 |
 | 7 | Hazard resolution — forwarding, load-use, HREADY, div_busy, branch flush | 🔜 |
 | 8 | APB peripherals — GPIO, UART, DMAC control registers, AHB-to-APB bridge | 🔜 |
@@ -446,7 +446,7 @@ The memory layout follows the address map above: `.text` and `.rodata` in ROM at
 Phase 1  ✅  Primitives (Mux2, Mux4, DFF, PLL)
 Phase 2  ✅  Execution Datapath (ALU + M-extension)
 Phase 3  ✅  PC, Register File, ROM/RAM AHB slaves
-Phase 4  🔜  Decode stage (ImmGen, Parser, Control)
+Phase 4  ✅  Decode stage (ImmGen, Parser, Control)
 Phase 5  🔜  Single-cycle CPU integration
 Phase 6  🔜  5-stage pipeline registers
 Phase 7  🔜  Hazard resolution (forwarding, stalls, flush)
