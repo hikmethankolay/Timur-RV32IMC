@@ -66,7 +66,7 @@ module divider (
                             done <= 1;
                         end else begin
                             busy <= 1;
-                            bit_counter <= 31;
+                            bit_counter <= 6'd31;
                             dividend_reg <= a_abs;
                             divisor_reg <= b_abs;
                             quotient_reg <= 0;
@@ -80,19 +80,19 @@ module divider (
                 end
 
                 RUNNING: begin
-                    remainder_reg <= {remainder_reg[31:0], dividend_reg[bit_counter]};
 
                     if ({remainder_reg[31:0], dividend_reg[bit_counter]} >= {1'b0, divisor_reg}) begin
-                        remainder_reg <= {remainder_reg[31:0], dividend_reg[bit_counter]} - {1'b0, divisor_reg};
+                        remainder_reg             <= {remainder_reg[31:0], dividend_reg[bit_counter]} - {1'b0, divisor_reg};
                         quotient_reg[bit_counter] <= 1;
                     end else begin
+                        remainder_reg             <= {remainder_reg[31:0], dividend_reg[bit_counter]};
                         quotient_reg[bit_counter] <= 0;
                     end
-
-                    if (bit_counter == 0) begin
+                    
+                    if (bit_counter == 6'd0) begin
                         state <= DONE;
                     end else begin
-                        bit_counter <= bit_counter - 1;
+                        bit_counter <= bit_counter - 6'd1;
                     end
                 end
 
