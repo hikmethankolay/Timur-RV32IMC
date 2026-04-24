@@ -14,12 +14,6 @@ module rom_ahb (
 
     (* ram_init_file = "rom.mif" *) reg [31:0] mem [0:16383];
 
-    integer i;
-    initial begin
-        for (i = 0; i < 16384; i = i + 1)
-            mem[i] = 32'h00000013;
-    end
-
     reg [31:0] addr_reg;
     wire active = HSEL && HTRANS[1];
     

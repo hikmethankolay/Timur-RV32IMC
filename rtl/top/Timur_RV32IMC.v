@@ -139,13 +139,13 @@ module Timur_RV32IMC(
         .ALUControl(ALUControl)
     );
 
-    registers register_memory(
+    registers register_memory (
         .clk(clk),
         .rs1_addr(rs1_addr),
         .rs2_addr(rs2_addr),
-        .rd_addr(rd_addr),
-        .rd_data(rd_data),
-        .reg_write(RegWrite)
+        .rd_addr(rd),
+        .rd_data(reg_write_data),
+        .reg_write(RegWrite),
         .rs1_data(rs1_data),
         .rs2_data(rs2_data)
     );
@@ -166,6 +166,7 @@ module Timur_RV32IMC(
 
     alu arithmetic_logic_unit(
         .clk(clk),
+        .rst_n(rst_n),
         .a(alu_a),
         .b(alu_b),
         .ALUControl(ALUControl),
