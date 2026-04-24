@@ -1,15 +1,14 @@
--- Timur RV32IMC
--- RAM Initialisation File
+-- Timur RV32IMC — Data RAM
+-- 64 KB = 16384 x 32-bit words (0x2000_0000 – 0x2000_FFFF)
 -- All locations initialised to 0
--- RAM is at 0x20000000 in the address map
 
-DEPTH = 1024;
+DEPTH = 16384;
 WIDTH = 32;
 ADDRESS_RADIX = HEX;
 DATA_RADIX = HEX;
 
 CONTENT BEGIN
 
-[0..3FF] : 00000000;
+[0000..3FFF] : 00000000;
 
 END;

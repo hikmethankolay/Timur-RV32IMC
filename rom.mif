@@ -1,56 +1,14 @@
--- Timur RV32IMC Test Program
--- Tests: ADDI, ADD, SUB, AND, OR, XOR, SLL, SRL, SRA, SW, LW, BEQ, JAL
--- Register usage:
---   x1  = 10
---   x2  = 3
---   x3  = result of operations
---   x4  = loop counter
+-- Timur RV32IMC — Instruction ROM
+-- 64 KB = 16384 x 32-bit words (0x0000_0000 – 0x0000_FFFF)
+-- All locations initialised to NOP (ADDI x0, x0, 0)
 
-DEPTH = 1024;
+DEPTH = 16384;
 WIDTH = 32;
 ADDRESS_RADIX = HEX;
 DATA_RADIX = HEX;
 
 CONTENT BEGIN
 
--- ── Setup ──────────────────────────────────────
-0   : 00A00093;   -- ADDI x1, x0, 10      x1 = 10
-1   : 00300113;   -- ADDI x2, x0, 3       x2 = 3
-2   : 00000193;   -- ADDI x3, x0, 0       x3 = 0
-
--- ── Arithmetic ─────────────────────────────────
-3   : 002081B3;   -- ADD  x3, x1, x2      x3 = 10 + 3  = 13
-4   : 402081B3;   -- SUB  x3, x1, x2      x3 = 10 - 3  = 7
-5   : 002091B3;   -- SLL  x3, x1, x2      x3 = 10 << 3 = 80
-
--- ── Logic ──────────────────────────────────────
-6   : 0020F1B3;   -- AND  x3, x1, x2      x3 = 10 & 3  = 2
-7   : 0020E1B3;   -- OR   x3, x1, x2      x3 = 10 | 3  = 11
-8   : 0020C1B3;   -- XOR  x3, x1, x2      x3 = 10 ^ 3  = 9
-
--- ── Shift ──────────────────────────────────────
-9   : 0020D1B3;   -- SRL  x3, x1, x2      x3 = 10 >> 3 = 1
-A   : 4020D1B3;   -- SRA  x3, x1, x2      x3 = 10 >>> 3 = 1
-
--- ── Memory test ────────────────────────────────
--- Store x1 to RAM address 0x20000000
-B   : 200001B7;   -- LUI  x3, 0x20000     x3 = 0x20000000
-C   : 00118023;   -- SW   x1, 0(x3)       mem[0x20000000] = 10
-D   : 0001A083;   -- LW   x1, 0(x3)       x1 = mem[0x20000000] = 10
-
--- ── Branch test ────────────────────────────────
--- BEQ x1, x1 → should be taken → skips ADDI
-E   : 00108463;   -- BEQ  x1, x1, +8      jump to address 0x1C (skip next)
-F   : DEADC0B7;   -- LUI  x3, 0xDEADC     SKIPPED if branch works
-10  : 00100193;   -- ADDI x3, x0, 1       x3 = 1 (branch target)
-
--- ── Multiply test ──────────────────────────────
-11  : 022081B3;   -- MUL  x3, x1, x2      x3 = 10 * 3 = 30
-
--- ── Infinite loop ──────────────────────────────
-12  : 0000006F;   -- JAL  x0, 0           jump to self (halt)
-
--- ── Unused entries default to NOP ──────────────
-[13..3FF] : 00000013;   -- NOP
+[0000..3FFF] : 00000013;
 
 END;
