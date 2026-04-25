@@ -128,7 +128,7 @@ module main_control_unit (
                 Branch = 1'b0;
                 MemRead = 1'b0;
                 MemToReg = 1'b0;
-                ALUOp = 2'b10;
+                ALUOp = 2'b00;
                 MemWrite = 1'b0;
                 ALUSrc = 1'b1;
                 RegWrite = 1'b1;

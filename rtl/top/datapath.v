@@ -71,7 +71,9 @@ module datapath(
     wire [2:0]  HSIZE;
     wire [31:0] HWDATA;
     wire [31:0] HRDATA;
-    wire        HREADY;
+    wire        HREADY_ROM;
+    wire        HREADY_RAM;
+    wire        HREADY;           // muxed from active slave
     wire        HRESP;
     wire        HSEL_ROM;
     wire        HSEL_RAM;
@@ -100,7 +102,7 @@ module datapath(
         .HSIZE   (3'b010),
         .HWDATA  (32'b0),
         .HRDATA  (instruction),
-        .HREADY  (HREADY),
+        .HREADY  (HREADY_ROM),
         .HRESP   (HRESP)
     );
 
@@ -164,10 +166,18 @@ module datapath(
         .out(alu_b)
     );
 
-     mux2 #(.WIDTH(32)) ALUA_Mux(
+    wire [31:0] alu_a_premux;
+    mux2 #(.WIDTH(32)) ALUA_Mux(
         .in0(rs1_data),
         .in1(pc_current),
-        .sel(opcode == 7'b0010111),
+        .sel(opcode == 7'b0010111),   // AUIPC → pc_current
+        .out(alu_a_premux)
+    );
+    // LUI: force alu_a to 0 so result = 0 + imm = imm
+    mux2 #(.WIDTH(32)) ALUA_LUI_Mux(
+        .in0(alu_a_premux),
+        .in1(32'b0),
+        .sel(opcode == 7'b0110111),   // LUI → 0
         .out(alu_a)
     );
 
@@ -213,12 +223,15 @@ module datapath(
         .HSIZE   (funct3),
         .HWDATA  (HWDATA),    // registered rs2_data, valid in data phase
         .HRDATA  (mem_read_data),
-        .HREADY  (HREADY),
+        .HREADY  (HREADY_RAM),
         .HRESP   (HRESP)
     );
 
     assign HSEL_ROM = (pc_next[31:16] == 16'h0000);
     assign HSEL_RAM = (alu_result[31:16] == 16'h2000);
+
+    assign HREADY = HSEL_RAM ? HREADY_RAM :
+                    HSEL_ROM ? HREADY_ROM : 1'b1;
 
     // JAL/JALR detection for jump PC selection and link-address writeback
     wire IsJAL  = (opcode == 7'b1101111);

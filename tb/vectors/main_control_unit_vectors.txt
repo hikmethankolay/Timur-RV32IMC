@@ -16,8 +16,8 @@
 6f 0 00 00  0 0 0 0 0 0 1 0 0 0 0 0
 # JALR (0x67)
 67 0 00 00  0 0 0 0 0 1 1 0 0 0 0 0
-# LUI (0x37)
-37 0 00 00  0 0 0 2 0 1 1 0 0 0 0 0
+# LUI (0x37) — ALUOp=0 (ADD), alu_a forced to 0 in datapath → result = 0+imm = imm
+37 0 00 00  0 0 0 0 0 1 1 0 0 0 0 0
 # AUIPC (0x17)
 17 0 00 00  0 0 0 0 0 1 1 0 0 0 0 0
 # FENCE (0x0f)
