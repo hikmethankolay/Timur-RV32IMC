@@ -57,7 +57,7 @@ module Timur_RV32IMC_tb;
         repeat (50) begin
             @(posedge clk);
             cycle = cycle + 1;
-            $display("Cycle %0d | PC=%08h | instr=%08h | x1=%0d x2=%0d x3=%0d x4=%0d x5=%0d x6=%0d x7=%0d",
+            $display("Cycle %0d | PC=%08h | instr=%08h | x1=%0d x2=%0d x3=%0d x4=%0d x5=%0d x6=%0d x7=%0d x8=%0d",
                 cycle,
                 dut.cpu.pc_current,
                 dut.cpu.instruction,
@@ -67,7 +67,8 @@ module Timur_RV32IMC_tb;
                 dut.cpu.register_memory.regs[4],
                 dut.cpu.register_memory.regs[5],
                 dut.cpu.register_memory.regs[6],
-                dut.cpu.register_memory.regs[7]
+                dut.cpu.register_memory.regs[7],
+                dut.cpu.register_memory.regs[8]
             );
         end
 
@@ -89,6 +90,12 @@ module Timur_RV32IMC_tb;
         //   DEADC2B7  LUI  x5, 0xDEADC     SKIPPED
         //   DEADC337  LUI  x6, 0xDEADC     SKIPPED
         //   00100393  ADDI x7, x0, 1        x7 = 1  (branch target)
+        //   00C0006F  JAL  x0, +12          jump to 0x4c → x6 stays 1
+        //   00200313  ADDI x6, x0, 2        SKIPPED (would overwrite x6)
+        //   00628663  BEQ  x5, x6, +12     SKIPPED
+        //   00200413  ADDI x8, x0, 2        x8 = 2  (JAL lands here)
+        //   00840463  BEQ  x8, x8, +8      always taken → skip sentinel
+        //   DEADB437  LUI  x8, 0xDEADB     SKIPPED (sentinel for wrong branch)
         //   0000006F  JAL  x0, 0            infinite loop
         // -------------------------------------------------------
         $display("-----------------------------");
@@ -100,7 +107,8 @@ module Timur_RV32IMC_tb;
         t = t + 1; check(dut.cpu.register_memory.regs[4], 32'd2,        t); // x4 = LW (loaded x3)
         t = t + 1; check(dut.cpu.register_memory.regs[5], 32'd1,        t); // x5 = 1, NOT 0xDEADC000
         t = t + 1; check(dut.cpu.register_memory.regs[6], 32'd1,        t); // x6 = 1, NOT 0xDEADC000
-        t = t + 1; check(dut.cpu.register_memory.regs[7], 32'd1,        t); // x7 = 1 (branch target ran)
+        t = t + 1; check(dut.cpu.register_memory.regs[7], 32'd1,        t); // x7 = 1 (BEQ taken: branch target ran)
+        t = t + 1; check(dut.cpu.register_memory.regs[8], 32'd2,        t); // x8 = 2 (BEQ not-taken: fell through)
 
         $display("-----------------------------");
         if (failed == 0)

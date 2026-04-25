@@ -195,12 +195,20 @@ module datapath(
         .BranchTaken(BranchTaken)
     );
 
+    wire [1:0] htrans_ram;
+    mux2 #(.WIDTH(2)) htrans_mux (
+        .in0 (2'b00),
+        .in1 (2'b10),
+        .sel (MemRead | MemWrite),
+        .out (htrans_ram)
+    );
+
     ram_ahb data_memory(
         .HCLK    (clk),
         .HRESETn (rst_n),
         .HSEL    (HSEL_RAM),
         .HADDR   (alu_result),
-        .HTRANS  ((MemRead | MemWrite) ? 2'b10 : 2'b00),
+        .HTRANS  (htrans_ram),
         .HWRITE  (MemWrite),
         .HSIZE   (funct3),
         .HWDATA  (HWDATA),    // registered rs2_data, valid in data phase
@@ -212,8 +220,21 @@ module datapath(
     assign HSEL_ROM = (pc_next[31:16] == 16'h0000);
     assign HSEL_RAM = (alu_result[31:16] == 16'h2000);
 
+    // JAL/JALR detection for jump PC selection and link-address writeback
+    wire IsJAL  = (opcode == 7'b1101111);
+    wire IsJALR = (opcode == 7'b1100111);
+
+    // JAL/JALR write PC+4 as the link address into rd
+    wire [31:0] wb_pre_mem;
+    mux2 #(.WIDTH(32)) jal_link_mux (
+        .in0 (alu_result),
+        .in1 (pc_plus4),
+        .sel (IsJAL | IsJALR),
+        .out (wb_pre_mem)
+    );
+
     mux2 #(.WIDTH(32)) memory_to_reg_mux (
-        .in0(alu_result),
+        .in0(wb_pre_mem),
         .in1(mem_read_data),
         .sel(MemToReg),
         .out(reg_write_data)
@@ -239,10 +260,21 @@ module datapath(
         .overflow ()
     );
 
+    // JALR target = (rs1 + imm) with bit 0 forced to 0 (per RISC-V spec)
+    wire [31:0] jalr_target = {alu_result[31:1], 1'b0};
+    // JAL uses branch_target (PC + imm_j); JALR uses jalr_target (rs1+imm_i & ~1)
+    wire [31:0] jump_target;
+    mux2 #(.WIDTH(32)) jalr_target_mux (
+        .in0 (branch_target),
+        .in1 (jalr_target),
+        .sel (IsJALR),
+        .out (jump_target)
+    );
+
     mux2 #(.WIDTH(32)) pc_next_mux (
         .in0 (pc_plus4),
-        .in1 (branch_target),
-        .sel (Branch & BranchTaken),
+        .in1 (jump_target),
+        .sel ((Branch & BranchTaken) | IsJAL | IsJALR),
         .out (pc_next)
     );
 
