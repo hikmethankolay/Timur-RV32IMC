@@ -76,6 +76,12 @@ module datapath(
     wire        HSEL_ROM;
     wire        HSEL_RAM;
 
+    // AHB data-phase register: holds rs2_data so HWDATA is valid one cycle
+    // after the address phase (as required by AHB-Lite for write transfers).
+    reg [31:0] hwdata_d;
+    always @(posedge clk) hwdata_d <= rs2_data;
+    assign HWDATA = hwdata_d;
+
     pc program_counter(
         .clk(clk),
         .rst_n(rst_n),
@@ -88,7 +94,7 @@ module datapath(
         .HCLK    (clk),
         .HRESETn (rst_n),
         .HSEL    (HSEL_ROM),
-        .HADDR   (pc_current),
+        .HADDR   (pc_next),   // present next PC so addr_reg == PC after posedge
         .HTRANS  (2'b10), // TEMPORARY
         .HWRITE  (1'b0),
         .HSIZE   (3'b010),
@@ -197,13 +203,13 @@ module datapath(
         .HTRANS  ((MemRead | MemWrite) ? 2'b10 : 2'b00),
         .HWRITE  (MemWrite),
         .HSIZE   (funct3),
-        .HWDATA  (rs2_data),
+        .HWDATA  (HWDATA),    // registered rs2_data, valid in data phase
         .HRDATA  (mem_read_data),
         .HREADY  (HREADY),
         .HRESP   (HRESP)
     );
 
-    assign HSEL_ROM = (pc_current[31:16] == 16'h0000);
+    assign HSEL_ROM = (pc_next[31:16] == 16'h0000);
     assign HSEL_RAM = (alu_result[31:16] == 16'h2000);
 
     mux2 #(.WIDTH(32)) memory_to_reg_mux (

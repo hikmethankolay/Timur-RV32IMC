@@ -6,7 +6,12 @@
 
 # ── collect source files ──
 set rtl_files [glob -nocomplain rtl/**/*.v]
+# Drop black-box stubs and the full PLL megafunction (cpu_pll.v instantiates
+# altpll which requires altera_mf — not available in plain ModelSim).
+# cpu_pll_bb.v is the simulation-safe stub; add it back explicitly.
 set rtl_files [lsearch -all -inline -not $rtl_files *_bb.v]
+set rtl_files [lsearch -all -inline -not $rtl_files */cpu_pll.v]
+lappend rtl_files rtl/primitives/cpu_pll_bb.v
 set tb_files  [glob -nocomplain tb/*.v]
 set all_files [concat $rtl_files $tb_files]
 

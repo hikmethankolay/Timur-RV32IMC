@@ -30,11 +30,13 @@ module ram_ahb (
             hwrite_reg <= 1'b0;
             hsize_reg  <= 3'b0;
             hsel_reg   <= 1'b0;
-        end else begin
+        end else if (active) begin
             addr_reg   <= HADDR;
             hwrite_reg <= HWRITE;
             hsize_reg  <= HSIZE;
-            hsel_reg   <= active;
+            hsel_reg   <= 1'b1;
+        end else begin
+            hsel_reg   <= 1'b0;
         end
     end
 
