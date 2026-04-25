@@ -14,6 +14,10 @@ module rom_ahb (
 
     (* ram_init_file = "rom.mif" *) reg [31:0] mem [0:16383];
 
+    initial begin
+        $readmemh("test_rom.hex", mem);
+    end
+
     reg [31:0] addr_reg;
     wire active = HSEL && HTRANS[1];
     
