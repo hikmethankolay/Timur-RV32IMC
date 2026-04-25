@@ -105,7 +105,7 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 ## Current Status
 
-**Phase 4 complete — Instruction Decode and Control fully verified.**
+**Phase 5 complete — Single-cycle CPU integration verified.**
 
 | Phase | Description | Status |
 | ----- | ----------- | ------ |
@@ -113,8 +113,8 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 | 2 | Execution datapath — ALU, Barrel Shifter, Multiplier, Divider, Branch Evaluator | ✅ Complete |
 | 3 | State & memory — PC, Register File, ROM AHB slave, RAM AHB slave | ✅ Complete |
 | 4 | Instruction decode & control — ImmGen, Parser, ALU Decoder, Main Control | ✅ Complete |
-| 5 | Single-cycle integration (HREADY=1 assumed) | 🔜 Next |
-| 6 | 5-stage pipelining with pipeline registers | 🔜 |
+| 5 | Single-cycle integration (HREADY=1 assumed) | ✅ Complete |
+| 6 | 5-stage pipelining with pipeline registers | 🔜 Next |
 | 7 | Hazard resolution — forwarding, load-use, HREADY, div_busy, branch flush | 🔜 |
 | 8 | APB peripherals — GPIO, UART, DMAC control registers, AHB-to-APB bridge | 🔜 |
 | 9 | Full AHB bus fabric — arbiter, CPU master, DMAC master, top-level | 🔜 |
@@ -158,7 +158,17 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 ### Phase 5 — Single-Cycle Integration
 
-No new RTL files. Phase 5 wires all Phase 1–4 modules inside `Timur_RV32IMC.v` into a functioning single-cycle CPU. `HREADY` is assumed always 1 in this phase — the full AHB bus fabric is added in Phase 9. PC Next Logic uses two adders (PC+4 and PC+imm) feeding a mux controlled by `Branch AND BranchTaken`.
+- **`Timur_RV32IMC.v`** — Top-level single-cycle CPU integration. Wires all Phase 1–4 modules into a functioning single-cycle datapath. No new primitive modules are introduced; this phase is entirely about correct interconnect and verified end-to-end behaviour.
+
+  Key implementation decisions:
+  - **PC Next Logic:** Two adders run in parallel — one computes `PC+4` (sequential fetch), the other computes `PC+imm` (branch target). A mux controlled by `Branch AND BranchTaken` selects between them.
+  - **ALU Source mux:** `ALUSrc` from Main Control selects between `rs2_data` (register operand) and the sign-extended immediate.
+  - **Write-back mux:** `MemToReg` selects between `alu_result` and `ram_hrdata` for the register file write data.
+  - **AHB bus:** `HREADY` is tied to 1 — no wait states. The ROM and RAM AHB slaves already respond in a single cycle, so this simplification is exact for this phase.
+  - **LUI / AUIPC:** Handled by routing `pc` into the ALU B-input for AUIPC and setting `rs1=x0` for LUI so the adder computes `0 + imm`.
+  - **JAL / JALR:** `rd` receives `PC+4` (the link address) via a dedicated mux; the PC loads the jump target computed by the ALU.
+  - **Branch evaluation:** `BranchTaken` from `branch_condition_evaluator.v` is ANDed with the `Branch` control signal to gate spurious PC redirects on non-branch instructions.
+  - Verified against hand-assembled RV32IM test programs loaded via the ROM `.mif` file.
 
 ### Phase 6 — Pipeline Registers
 
@@ -447,8 +457,8 @@ Phase 1  ✅  Primitives (Mux2, Mux4, DFF, PLL)
 Phase 2  ✅  Execution Datapath (ALU + M-extension)
 Phase 3  ✅  PC, Register File, ROM/RAM AHB slaves
 Phase 4  ✅  Decode stage (ImmGen, Parser, Control)
-Phase 5  🔜  Single-cycle CPU integration
-Phase 6  🔜  5-stage pipeline registers
+Phase 5  ✅  Single-cycle CPU integration
+Phase 6  🔜  5-stage pipeline registers          ← Next
 Phase 7  🔜  Hazard resolution (forwarding, stalls, flush)
 Phase 8  🔜  APB peripherals (GPIO, UART, DMAC registers)
 Phase 9  🔜  Full AHB bus fabric + system top-level
