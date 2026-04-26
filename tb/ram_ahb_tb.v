@@ -43,7 +43,7 @@ module ram_ahb_tb;
         end
     endtask
 
-    // AHB read: address phase → clock (addr_reg updated, HRDATA combinatorial) → sample
+    // AHB read: address phase -> next clock -> sample full 32-bit aligned HRDATA
     task ahb_read;
         input  [31:0] addr;
         input  [2:0]  size;
@@ -56,6 +56,36 @@ module ram_ahb_tb;
             HSEL   = 0; HTRANS = 2'b00;
         end
     endtask
+
+    // CPU LSU-side load extraction/extension from full 32-bit bus HRDATA.
+    function [31:0] lsu_load_format;
+        input [31:0] word;
+        input [1:0]  addr_lsb;
+        input [2:0]  f3;
+        reg   [7:0]  b;
+        reg   [15:0] h;
+        begin
+            case (addr_lsb)
+                2'b00: b = word[7:0];
+                2'b01: b = word[15:8];
+                2'b10: b = word[23:16];
+                default: b = word[31:24];
+            endcase
+
+            if (addr_lsb[1] == 1'b0)
+                h = word[15:0];
+            else
+                h = word[31:16];
+
+            case (f3)
+                3'b000:  lsu_load_format = {{24{b[7]}}, b};
+                3'b100:  lsu_load_format = {24'b0, b};
+                3'b001:  lsu_load_format = {{16{h[15]}}, h};
+                3'b101:  lsu_load_format = {16'b0, h};
+                default: lsu_load_format = word;
+            endcase
+        end
+    endfunction
 
     task check;
         input [31:0] got;
@@ -107,58 +137,67 @@ module ram_ahb_tb;
         t = t + 1; check(rdata, 32'hCAFE_BABE, t);
 
         // -------------------------------------------------------
-        // Tests 4-7: byte writes then LB (sign-extend) reads
+        // Tests 4-7: byte writes then full-word reads + LSU LB checks
+        // Clear target word first so untouched lanes are deterministic.
         // Data must sit at the correct byte lane in HWDATA so the
         // byte-enable mux places it in the right mem byte.
         //   byte 0 → HWDATA[7:0],  byte 1 → HWDATA[15:8],
         //   byte 2 → HWDATA[23:16], byte 3 → HWDATA[31:24]
         // -------------------------------------------------------
+        ahb_write(32'h0000_0008, 3'b010, 32'h0000_0000); // clear word
         ahb_write(32'h0000_0008, 3'b000, 32'h0000_0012); // byte 0 ← 0x12
-        ahb_read (32'h0000_0008, 3'b000, rdata);          // LB: +ve, no sign ext
-        t = t + 1; check(rdata, 32'h0000_0012, t);
+        ahb_read (32'h0000_0008, 3'b000, rdata);
+        t = t + 1; check(rdata, 32'h0000_0012, t); // raw word
+        t = t + 1; check(lsu_load_format(rdata, 2'b00, 3'b000), 32'h0000_0012, t); // LB
 
         ahb_write(32'h0000_0009, 3'b000, 32'h0000_AB00); // byte 1 ← 0xAB
-        ahb_read (32'h0000_0009, 3'b000, rdata);          // LB: -ve, sign ext
-        t = t + 1; check(rdata, 32'hFFFF_FFAB, t);
+        ahb_read (32'h0000_0009, 3'b000, rdata);
+        t = t + 1; check(rdata, 32'h0000_AB12, t); // raw word
+        t = t + 1; check(lsu_load_format(rdata, 2'b01, 3'b000), 32'hFFFF_FFAB, t); // LB
 
         ahb_write(32'h0000_000A, 3'b000, 32'h007F_0000); // byte 2 ← 0x7F
-        ahb_read (32'h0000_000A, 3'b000, rdata);          // LB: +ve
-        t = t + 1; check(rdata, 32'h0000_007F, t);
+        ahb_read (32'h0000_000A, 3'b000, rdata);
+        t = t + 1; check(rdata, 32'h007F_AB12, t); // raw word
+        t = t + 1; check(lsu_load_format(rdata, 2'b10, 3'b000), 32'h0000_007F, t); // LB
 
         ahb_write(32'h0000_000B, 3'b000, 32'h8000_0000); // byte 3 ← 0x80
-        ahb_read (32'h0000_000B, 3'b000, rdata);          // LB: -ve, sign ext
-        t = t + 1; check(rdata, 32'hFFFF_FF80, t);
+        ahb_read (32'h0000_000B, 3'b000, rdata);
+        t = t + 1; check(rdata, 32'h807F_AB12, t); // raw word
+        t = t + 1; check(lsu_load_format(rdata, 2'b11, 3'b000), 32'hFFFF_FF80, t); // LB
 
-        // -------------------------------------------------------
-        // Tests 8-9: LBU (zero-extend) reads on same bytes
-        // -------------------------------------------------------
-        ahb_read(32'h0000_0009, 3'b100, rdata); // LBU byte1=0xAB
-        t = t + 1; check(rdata, 32'h0000_00AB, t);
+        // Tests 8-9: LBU (zero-extend) checks using raw full-word HRDATA
+        ahb_read(32'h0000_0009, 3'b100, rdata);
+        t = t + 1; check(rdata, 32'h807F_AB12, t); // raw word unchanged by HSIZE
+        t = t + 1; check(lsu_load_format(rdata, 2'b01, 3'b100), 32'h0000_00AB, t);
 
-        ahb_read(32'h0000_000B, 3'b100, rdata); // LBU byte3=0x80
-        t = t + 1; check(rdata, 32'h0000_0080, t);
+        ahb_read(32'h0000_000B, 3'b100, rdata);
+        t = t + 1; check(rdata, 32'h807F_AB12, t); // raw word unchanged by HSIZE
+        t = t + 1; check(lsu_load_format(rdata, 2'b11, 3'b100), 32'h0000_0080, t);
 
-        // -------------------------------------------------------
-        // Tests 10-11: halfword writes then LH (sign-extend) reads
+        // Tests 10-11: halfword writes then full-word reads + LSU LH checks
+        // Clear target word first so untouched halfword is deterministic.
         //   low  half (addr[1]=0) → HWDATA[15:0]
         //   high half (addr[1]=1) → HWDATA[31:16]
         // -------------------------------------------------------
+        ahb_write(32'h0000_0010, 3'b010, 32'h0000_0000); // clear word
         ahb_write(32'h0000_0010, 3'b001, 32'h0000_ABCD); // half[15:0] ← 0xABCD
-        ahb_read (32'h0000_0010, 3'b001, rdata);          // LH: -ve, sign ext
-        t = t + 1; check(rdata, 32'hFFFF_ABCD, t);
+        ahb_read (32'h0000_0010, 3'b001, rdata);
+        t = t + 1; check(rdata, 32'h0000_ABCD, t); // raw word
+        t = t + 1; check(lsu_load_format(rdata, 2'b00, 3'b001), 32'hFFFF_ABCD, t); // LH
 
         ahb_write(32'h0000_0012, 3'b001, 32'h1234_0000); // half[31:16] ← 0x1234
-        ahb_read (32'h0000_0012, 3'b001, rdata);          // LH: +ve
-        t = t + 1; check(rdata, 32'h0000_1234, t);
+        ahb_read (32'h0000_0012, 3'b001, rdata);
+        t = t + 1; check(rdata, 32'h1234_ABCD, t); // raw word
+        t = t + 1; check(lsu_load_format(rdata, 2'b10, 3'b001), 32'h0000_1234, t); // LH
 
-        // -------------------------------------------------------
-        // Tests 12-13: LHU (zero-extend) reads on same halves
-        // -------------------------------------------------------
-        ahb_read(32'h0000_0010, 3'b101, rdata); // LHU low half=0xABCD
-        t = t + 1; check(rdata, 32'h0000_ABCD, t);
+        // Tests 12-13: LHU (zero-extend) checks using raw full-word HRDATA
+        ahb_read(32'h0000_0010, 3'b101, rdata);
+        t = t + 1; check(rdata, 32'h1234_ABCD, t); // raw word unchanged by HSIZE
+        t = t + 1; check(lsu_load_format(rdata, 2'b00, 3'b101), 32'h0000_ABCD, t);
 
-        ahb_read(32'h0000_0012, 3'b101, rdata); // LHU high half=0x1234
-        t = t + 1; check(rdata, 32'h0000_1234, t);
+        ahb_read(32'h0000_0012, 3'b101, rdata);
+        t = t + 1; check(rdata, 32'h1234_ABCD, t); // raw word unchanged by HSIZE
+        t = t + 1; check(lsu_load_format(rdata, 2'b10, 3'b101), 32'h0000_1234, t);
 
         // -------------------------------------------------------
         // Test 14: HTRANS=IDLE suppresses write (active=0, hsel_reg stays 0)

@@ -12,89 +12,77 @@ module ram_ahb (
     output        HRESP
 );
 
-    (* ramstyle = "M10K" *) reg [7:0] mem0 [0:16383];
-    (* ramstyle = "M10K" *) reg [7:0] mem1 [0:16383];
-    (* ramstyle = "M10K" *) reg [7:0] mem2 [0:16383];
-    (* ramstyle = "M10K" *) reg [7:0] mem3 [0:16383];
+    (* ramstyle = "block" *) reg [7:0] mem0 [0:16383];
+    (* ramstyle = "block" *) reg [7:0] mem1 [0:16383];
+    (* ramstyle = "block" *) reg [7:0] mem2 [0:16383];
+    (* ramstyle = "block" *) reg [7:0] mem3 [0:16383];
 
-    wire active = HSEL && HTRANS[1];
+    // AHB active transfer condition (NONSEQ or SEQ)
+    wire active = HSEL & HTRANS[1];
 
-    // address phase registers
-    reg [31:0] addr_reg;
-    reg        hwrite_reg;
-    reg [2:0]  hsize_reg;
-    reg        hsel_reg;
+    // Address phase registers for write operations
+    reg [13:0] write_addr;
+    reg [3:0]  write_be;
+    reg        write_en;
 
+    // Byte enable generation logic
+    function [3:0] get_byte_enable;
+        input [1:0] addr;
+        input [2:0] size;
+        begin
+            case (size)
+                3'b000:  get_byte_enable = 4'b0001 << addr;               // Byte
+                3'b001:  get_byte_enable = 4'b0011 << {addr[1], 1'b0};    // Halfword
+                3'b010:  get_byte_enable = 4'b1111;                       // Word
+                default: get_byte_enable = 4'b0000;
+            endcase
+        end
+    endfunction
+
+    // --------------------------------------------------------
+    // Address Phase (Cycle 1): Latch Write Control Signals
+    // --------------------------------------------------------
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
-            addr_reg   <= 32'b0;
-            hwrite_reg <= 1'b0;
-            hsize_reg  <= 3'b0;
-            hsel_reg   <= 1'b0;
+            write_addr <= 14'b0;
+            write_be   <= 4'b0;
+            write_en   <= 1'b0;
         end else begin
-            addr_reg   <= HADDR;
-            hwrite_reg <= HWRITE;
-            hsize_reg  <= HSIZE;
-            hsel_reg   <= active;
-        end
-    end
-
-    // byte enables
-    reg [3:0] byte_enable;
-    always @(*) begin
-        case (hsize_reg)
-            3'b000, 3'b100: begin
-                case (addr_reg[1:0])
-                    2'b00: byte_enable = 4'b0001;
-                    2'b01: byte_enable = 4'b0010;
-                    2'b10: byte_enable = 4'b0100;
-                    2'b11: byte_enable = 4'b1000;
-                endcase
+            if (active && HWRITE) begin
+                write_addr <= HADDR[15:2];
+                write_be   <= get_byte_enable(HADDR[1:0], HSIZE);
+                write_en   <= 1'b1;
+            end else begin
+                write_en   <= 1'b0;
             end
-            3'b001, 3'b101: byte_enable = addr_reg[1] ? 4'b1100 : 4'b0011;
-            3'b010:         byte_enable = 4'b1111;
-            default:        byte_enable = 4'b0000;
-        endcase
-    end
-
-    reg [7:0] read_byte0, read_byte1, read_byte2, read_byte3;
-
-    always @(posedge HCLK) begin
-        read_byte0 <= mem0[HADDR[15:2]];
-        read_byte1 <= mem1[HADDR[15:2]];
-        read_byte2 <= mem2[HADDR[15:2]];
-        read_byte3 <= mem3[HADDR[15:2]];
-
-        if (active && HWRITE) begin
-            if (byte_enable[0]) mem0[HADDR[15:2]] <= HWDATA[7:0];
-            if (byte_enable[1]) mem1[HADDR[15:2]] <= HWDATA[15:8];
-            if (byte_enable[2]) mem2[HADDR[15:2]] <= HWDATA[23:16];
-            if (byte_enable[3]) mem3[HADDR[15:2]] <= HWDATA[31:24];
         end
     end
 
-    wire [31:0] word_read = {read_byte3, read_byte2, read_byte1, read_byte0};
-
-    wire [7:0]  byte_sel  = (addr_reg[1:0] == 2'b00) ? word_read[7:0]   :
-                            (addr_reg[1:0] == 2'b01) ? word_read[15:8]  :
-                            (addr_reg[1:0] == 2'b10) ? word_read[23:16] :
-                                                       word_read[31:24];
-
-    wire [15:0] half_sel  = addr_reg[1] ? word_read[31:16] : word_read[15:0];
-
-    reg [31:0] formatted;
-    always @(*) begin
-        case (hsize_reg)
-            3'b000:  formatted = {{24{byte_sel[7]}}, byte_sel};
-            3'b001:  formatted = {{16{half_sel[15]}}, half_sel};
-            3'b010:  formatted = word_read;
-            3'b100:  formatted = {24'b0, byte_sel};
-            3'b101:  formatted = {16'b0, half_sel};
-            default: formatted = 32'b0;
-        endcase
+    // --------------------------------------------------------
+    // Data Phase (Cycle 2): Synchronous RAM Write & Read
+    // --------------------------------------------------------
+    
+    // Write Port using latched Address Phase signals
+    always @(posedge HCLK) begin
+        if (write_en) begin
+            if (write_be[0]) mem0[write_addr] <= HWDATA[7:0];
+            if (write_be[1]) mem1[write_addr] <= HWDATA[15:8];
+            if (write_be[2]) mem2[write_addr] <= HWDATA[23:16];
+            if (write_be[3]) mem3[write_addr] <= HWDATA[31:24];
+        end
     end
 
-    assign HRDATA = formatted;
+    // Read Port using current Address Phase signals
+    reg [31:0] read_data;
+    always @(posedge HCLK) begin
+        if (active && !HWRITE) begin
+            // Synchronous read ensures data is ready precisely on the next clock (Data Phase)
+            read_data <= {mem3[HADDR[15:2]], mem2[HADDR[15:2]], mem1[HADDR[15:2]], mem0[HADDR[15:2]]};
+        end
+    end
+
+    // Output assignments (Zero-wait-state response)
+    assign HRDATA = read_data;
     assign HREADY = 1'b1;
     assign HRESP  = 1'b0;
 

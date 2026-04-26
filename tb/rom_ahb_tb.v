@@ -26,11 +26,58 @@ module rom_ahb_tb;
 
     integer file, r, slen;
     reg [31:0] exp_hrdata;
+    reg [31:0] raw_word;
     reg        wait_type;   // 0 = async check (no clock), 1 = clock then check
     reg [8*256-1:0] line;
     integer failed   = 0;
     integer total    = 0;
     integer test_num = 0;
+
+    task ahb_read_word;
+        input [31:0] addr;
+        input [2:0]  size;
+        output [31:0] data;
+        begin
+            HSEL   = 1'b1;
+            HWRITE = 1'b0;
+            HADDR  = addr;
+            HSIZE  = size;
+            HTRANS = 2'b10;
+            @(posedge HCLK); #1;
+            data = HRDATA;
+            HSEL   = 1'b0;
+            HTRANS = 2'b00;
+        end
+    endtask
+
+    function [31:0] lsu_load_format;
+        input [31:0] word;
+        input [1:0]  addr_lsb;
+        input [2:0]  f3;
+        reg   [7:0]  b;
+        reg   [15:0] h;
+        begin
+            case (addr_lsb)
+                2'b00: b = word[7:0];
+                2'b01: b = word[15:8];
+                2'b10: b = word[23:16];
+                default: b = word[31:24];
+            endcase
+
+            if (addr_lsb[1] == 1'b0)
+                h = word[15:0];
+            else
+                h = word[31:16];
+
+            case (f3)
+                3'b000:  lsu_load_format = {{24{b[7]}}, b};
+                3'b100:  lsu_load_format = {24'b0, b};
+                3'b001:  lsu_load_format = {{16{h[15]}}, h};
+                3'b101:  lsu_load_format = {16'b0, h};
+                default: lsu_load_format = word;
+            endcase
+        end
+    endfunction
 
     initial begin
         HCLK    = 0;
@@ -88,6 +135,48 @@ module rom_ahb_tb;
         end
 
         $fclose(file);
+
+        // Extra directed checks for new behavior:
+        // ROM must return full aligned word irrespective of HSIZE and HADDR[1:0].
+        raw_word = 32'b0;
+        ahb_read_word(32'h0000_0005, 3'b000, raw_word); // byte-sized read to unaligned address
+        test_num = test_num + 1; total = total + 1;
+        if (raw_word !== 32'hAABBCCDD) begin
+            $display("FAIL test %0d: raw HRDATA=%h (exp AABBCCDD)", test_num, raw_word);
+            failed = failed + 1;
+        end else begin
+            $display("PASS test %0d: raw HRDATA=%h", test_num, raw_word);
+        end
+
+        test_num = test_num + 1; total = total + 1;
+        if (lsu_load_format(raw_word, 2'b01, 3'b000) !== 32'hFFFF_FFCC) begin
+            $display("FAIL test %0d: LSU LB result=%h (exp FFFFFFCC)", test_num,
+                     lsu_load_format(raw_word, 2'b01, 3'b000));
+            failed = failed + 1;
+        end else begin
+            $display("PASS test %0d: LSU LB result=%h", test_num,
+                     lsu_load_format(raw_word, 2'b01, 3'b000));
+        end
+
+        raw_word = 32'b0;
+        ahb_read_word(32'h0000_0006, 3'b101, raw_word); // halfword-sized read to unaligned address
+        test_num = test_num + 1; total = total + 1;
+        if (raw_word !== 32'hAABBCCDD) begin
+            $display("FAIL test %0d: raw HRDATA=%h (exp AABBCCDD)", test_num, raw_word);
+            failed = failed + 1;
+        end else begin
+            $display("PASS test %0d: raw HRDATA=%h", test_num, raw_word);
+        end
+
+        test_num = test_num + 1; total = total + 1;
+        if (lsu_load_format(raw_word, 2'b10, 3'b101) !== 32'h0000_AABB) begin
+            $display("FAIL test %0d: LSU LHU result=%h (exp 0000AABB)", test_num,
+                     lsu_load_format(raw_word, 2'b10, 3'b101));
+            failed = failed + 1;
+        end else begin
+            $display("PASS test %0d: LSU LHU result=%h", test_num,
+                     lsu_load_format(raw_word, 2'b10, 3'b101));
+        end
 
         $display("-----------------------------");
         if (failed == 0)

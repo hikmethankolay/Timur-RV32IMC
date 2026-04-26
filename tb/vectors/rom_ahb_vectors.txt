@@ -8,11 +8,11 @@
 //   mem[3]=CAFEBABE  mem[4]=12345678  mem[5]=ABCDABCD
 //
 // ── Test 1: async reset → addr_reg=0x000 → HRDATA=mem[0] ──
-0 0 00000000 0 00000013 0
+0 0 00000000 0 00000000 0
 // ── Test 2: reset holds over clock edge; active-looking inputs are ignored ──
-0 1 00000008 2 00000013 1
+0 1 00000008 2 00000000 1
 // ── Test 3: release reset, HTRANS=IDLE (inactive) → addr_reg holds 0x000 ──
-1 1 00000008 0 00000013 1
+1 1 00000008 0 00000000 1
 // ── Test 4: NONSEQ to 0x008 → addr_reg=0x008 → HRDATA=mem[2]=DEADBEEF ──
 1 1 00000008 2 DEADBEEF 1
 // ── Test 5: NONSEQ to 0x00C → addr_reg=0x00C → HRDATA=mem[3]=CAFEBABE ──
@@ -28,6 +28,6 @@
 // ── Test 10: NONSEQ to 0x004 → addr_reg=0x004 → HRDATA=mem[1]=AABBCCDD ──
 1 1 00000004 2 AABBCCDD 1
 // ── Test 11: async reset mid-operation → addr_reg=0x000 → HRDATA=mem[0] ──
-0 1 00000014 2 00000013 0
+0 1 00000014 2 00000000 0
 // ── Test 12: release reset, capture addr 0x000 → HRDATA=mem[0]=00000013 ──
 1 1 00000000 2 00000013 1

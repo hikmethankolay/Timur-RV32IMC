@@ -15,7 +15,7 @@
 
 # Quartus Prime: Generate Tcl File for Project
 # File: Timur_RV32IMC.tcl
-# Generated on: Sun Apr 26 18:53:07 2026
+# Generated on: Sun Apr 26 21:57:46 2026
 
 # Load Quartus Prime Tcl Project package
 package require ::quartus::project
@@ -130,10 +130,11 @@ if {$make_assignments} {
 	set_global_assignment -name VERILOG_FILE tb/mux4_tb.v
 	set_global_assignment -name QIP_FILE rtl/primitives/cpu_pll.qip
 	set_global_assignment -name SOURCE_FILE db/Timur_RV32IMC.cmp.rdb
+	set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON
+	set_global_assignment -name NUM_PARALLEL_PROCESSORS 16
 	set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 
 	# Including default assignments
-	set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON -family "MAX 10"
 	set_global_assignment -name TIMING_ANALYZER_REPORT_WORST_CASE_TIMING_PATHS OFF -family "MAX 10"
 	set_global_assignment -name TIMING_ANALYZER_CCPP_TRADEOFF_TOLERANCE 0 -family "MAX 10"
 	set_global_assignment -name TDC_CCPP_TRADEOFF_TOLERANCE 0 -family "MAX 10"
