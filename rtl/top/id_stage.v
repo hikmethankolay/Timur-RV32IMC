@@ -2,6 +2,7 @@ module id_stage(
     input         clk,
     input  [31:0] instruction,
     // Writeback feedback
+    input  [4:0]  rd_addr_wb,
     input  [31:0] rd_data,
     input         RegWrite,
     // Outputs
@@ -35,7 +36,7 @@ module id_stage(
         .clk      (clk),
         .rs1_addr (rs1_addr),
         .rs2_addr (rs2_addr),
-        .rd_addr  (rd),
+        .rd_addr  (rd_addr_wb),
         .rd_data  (rd_data),
         .reg_write(RegWrite),
         .rs1_data (rs1_data),

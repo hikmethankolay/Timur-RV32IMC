@@ -12,7 +12,10 @@ module ex_stage(
     input  [31:0] pc_current,
     input  [31:0] pc_plus4,
     output [31:0] alu_result,
-    output [31:0] pc_next
+    output [31:0] jump_target_out,
+    output [31:0] branch_target_out,
+    output        BranchTaken_out,
+    output        pc_redirect
 );
     wire [31:0] alu_a, alu_b, alu_a_premux;
     wire        zero, cout, overflow;
@@ -22,6 +25,7 @@ module ex_stage(
 
     wire IsJAL  = (opcode == 7'b1101111);
     wire IsJALR = (opcode == 7'b1100111);
+    wire take_pc_redirect = (Branch & BranchTaken) | IsJAL | IsJALR;
 
     mux2 #(.WIDTH(32)) ALUB_Mux(
         .in0(rs2_data),
@@ -89,10 +93,8 @@ module ex_stage(
         .out(jump_target)
     );
 
-    mux2 #(.WIDTH(32)) pc_next_mux(
-        .in0(pc_plus4),
-        .in1(jump_target),
-        .sel((Branch & BranchTaken) | IsJAL | IsJALR),
-        .out(pc_next)
-    );
+    assign jump_target_out   = jump_target;
+    assign branch_target_out = branch_target;
+    assign BranchTaken_out   = BranchTaken;
+    assign pc_redirect       = take_pc_redirect;
 endmodule

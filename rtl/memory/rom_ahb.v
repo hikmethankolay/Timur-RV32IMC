@@ -1,15 +1,15 @@
 module rom_ahb (
-    input         HCLK,      // AHB clock — used: clocks address register
-    input         HRESETn,   // Active-low async reset — used: resets address register
-    input         HSEL,      // Slave select — used: gates address registration
-    input  [31:0] HADDR,     // AHB address bus — used: registered and used to index ROM
-    input  [1:0]  HTRANS,    // Transfer type — used: HTRANS[1] detects active transfer
-    input         HWRITE,    // Write/read select — NOT USED: ROM ignores all writes
-    input  [2:0]  HSIZE,     // Transfer size — NOT USED: ROM always returns full word
-    input  [31:0] HWDATA,    // Write data — NOT USED: ROM is read-only
-    output [31:0] HRDATA,    // Read data — used: instruction word sent to CPU
-    output        HREADY,    // Transfer complete — used: hardwired 1, ROM is single-cycle
-    output        HRESP      // Response status — used: hardwired 0 (OKAY)
+    input         HCLK,      // AHB clock
+    input         HRESETn,   // Active-low async reset
+    input         HSEL,      // Slave select from address decoder
+    input  [31:0] HADDR,     // AHB address bus
+    input  [1:0]  HTRANS,    // Transfer type — active when HTRANS[1]=1
+    input         HWRITE,    // Ignored — ROM is read-only
+    input  [2:0]  HSIZE,     // Ignored — ROM always returns full word
+    input  [31:0] HWDATA,    // Ignored — ROM is read-only
+    output [31:0] HRDATA,    // Read data (instruction word)
+    output        HREADY,    // Always 1 — single-cycle slave
+    output        HRESP      // Always 0 — OKAY
 );
 
     (* ram_init_file = "rom.mif" *) reg [31:0] mem [0:16383];
@@ -18,9 +18,10 @@ module rom_ahb (
         $readmemh("test_rom.hex", mem);
     end
 
-    reg [31:0] addr_reg;
     wire active = HSEL && HTRANS[1];
-    
+
+    reg [31:0] addr_reg;
+
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn) begin
             addr_reg <= 32'b0;
@@ -28,11 +29,9 @@ module rom_ahb (
             addr_reg <= HADDR;
         end
     end
-    
-    assign HRDATA = mem[addr_reg[15:2]];
 
+    assign HRDATA = mem[addr_reg[15:2]];
     assign HREADY = 1'b1;
     assign HRESP  = 1'b0;
-
 
 endmodule

@@ -59,8 +59,8 @@ module Timur_RV32IMC_tb;
             cycle = cycle + 1;
             $display("Cycle %0d | PC=%08h | instr=%08h | x1=%0d x2=%0d x3=%0d x4=%0d x5=%0d x6=%0d x7=%0d x8=%0d",
                 cycle,
-                dut.cpu.pc_current,
-                dut.cpu.instruction,
+                dut.cpu.if_pc_current,
+                dut.cpu.if_instruction,
                 dut.cpu.decode.register_file.regs[1],
                 dut.cpu.decode.register_file.regs[2],
                 dut.cpu.decode.register_file.regs[3],

@@ -4,11 +4,12 @@ module if_stage(
     input  [31:0] pc_next,
     output [31:0] instruction,
     output [31:0] pc_current,
+    output [31:0] pc_instr,
     output [31:0] pc_plus4
 );
     wire HRESP;
     wire HREADY_ROM;
-    wire HSEL_ROM = (pc_next[31:16] == 16'h0000);
+    wire HSEL_ROM = (pc_current[31:16] == 16'h0000);
 
     pc program_counter(
         .clk    (clk),
@@ -22,7 +23,7 @@ module if_stage(
         .HCLK    (clk),
         .HRESETn (rst_n),
         .HSEL    (HSEL_ROM),
-        .HADDR   (pc_next),
+        .HADDR   (pc_current),
         .HTRANS  (2'b10),
         .HWRITE  (1'b0),
         .HSIZE   (3'b010),
@@ -31,6 +32,15 @@ module if_stage(
         .HREADY  (HREADY_ROM),
         .HRESP   (HRESP)
     );
+
+    // pc_instr lags pc_current by one cycle so it matches the instruction
+    // returned by the AHB ROM, whose HRDATA is one cycle behind HADDR.
+    reg [31:0] pc_instr_reg;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) pc_instr_reg <= 32'b0;
+        else        pc_instr_reg <= pc_current;
+    end
+    assign pc_instr = pc_instr_reg;
 
     adder_32bit pc_plus4_adder(
         .a       (pc_current),

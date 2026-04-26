@@ -43,24 +43,23 @@ module ram_ahb (
     reg [3:0] byte_enable;
     always @(*) begin
         case (hsize_reg)
-            3'b000: begin
+            3'b000, 3'b100: begin
                 case (addr_reg[1:0])
                     2'b00: byte_enable = 4'b0001;
                     2'b01: byte_enable = 4'b0010;
                     2'b10: byte_enable = 4'b0100;
                     2'b11: byte_enable = 4'b1000;
+                endcase
+            end
+            3'b001, 3'b101: begin
+                case (addr_reg[1:0])
+                    2'b00:   byte_enable = 4'b0011;
+                    2'b10:   byte_enable = 4'b1100;
                     default: byte_enable = 4'b0000;
                 endcase
             end
-            3'b001: begin
-                case (addr_reg[1])
-                    1'b0: byte_enable = 4'b0011;
-                    1'b1: byte_enable = 4'b1100;
-                    default: byte_enable = 4'b0000;
-                endcase
-            end
-            3'b010:  byte_enable = 4'b1111;
-            default: byte_enable = 4'b1111;
+            3'b010:  byte_enable = (addr_reg[1:0] == 2'b00) ? 4'b1111 : 4'b0000;
+            default: byte_enable = 4'b0000;
         endcase
     end
 
@@ -73,37 +72,33 @@ module ram_ahb (
         end
     end
 
-    reg [31:0] word_reg;
+    wire [31:0] word_read = {
+        mem3[addr_reg[15:2]],
+        mem2[addr_reg[15:2]],
+        mem1[addr_reg[15:2]],
+        mem0[addr_reg[15:2]]
+    };
 
-    always @(posedge HCLK) begin
-        word_reg <= {
-            mem3[addr_reg[15:2]],
-            mem2[addr_reg[15:2]],
-            mem1[addr_reg[15:2]],
-            mem0[addr_reg[15:2]]
-        };
-    end
+    wire [7:0]  byte_sel = (addr_reg[1:0] == 2'b00) ? word_read[7:0]   :
+                           (addr_reg[1:0] == 2'b01) ? word_read[15:8]  :
+                           (addr_reg[1:0] == 2'b10) ? word_read[23:16] :
+                                                      word_read[31:24];
 
-    wire [7:0]  byte_sel = (addr_reg[1:0] == 2'b00) ? word_reg[7:0]   :
-                           (addr_reg[1:0] == 2'b01) ? word_reg[15:8]  :
-                           (addr_reg[1:0] == 2'b10) ? word_reg[23:16] :
-                                                      word_reg[31:24];
+    wire [15:0] half_sel = addr_reg[1] ? word_read[31:16] : word_read[15:0];
 
-    wire [15:0] half_sel = addr_reg[1] ? word_reg[31:16] : word_reg[15:0];
-
-    reg [31:0] hrdata_reg;
+    reg [31:0] formatted;
     always @(*) begin
         case (hsize_reg)
-            3'b000: hrdata_reg = {{24{byte_sel[7]}}, byte_sel};
-            3'b001: hrdata_reg = {{16{half_sel[15]}}, half_sel};
-            3'b010: hrdata_reg = word_reg;
-            3'b100: hrdata_reg = {24'b0, byte_sel};
-            3'b101: hrdata_reg = {16'b0, half_sel};
-            default: hrdata_reg = word_reg;
+            3'b000:  formatted = {{24{byte_sel[7]}}, byte_sel};
+            3'b001:  formatted = {{16{half_sel[15]}}, half_sel};
+            3'b010:  formatted = word_read;
+            3'b100:  formatted = {24'b0, byte_sel};
+            3'b101:  formatted = {16'b0, half_sel};
+            default: formatted = 32'b0;
         endcase
     end
 
-    assign HRDATA = hrdata_reg;
+    assign HRDATA = (hsel_reg && !hwrite_reg) ? formatted : 32'b0;
     assign HREADY = 1'b1;
     assign HRESP  = 1'b0;
 
