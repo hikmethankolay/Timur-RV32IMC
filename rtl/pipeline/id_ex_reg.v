@@ -53,7 +53,30 @@ module id_ex_reg (
     output reg        IsMRET_out
 );
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n || flush) begin
+        if (!rst_n) begin
+            pc_out       <= 32'b0;
+            rs1_data_out <= 32'b0;
+            rs2_data_out <= 32'b0;
+            imm_out      <= 32'b0;
+            rs1_addr_out <= 5'b0;
+            rs2_addr_out <= 5'b0;
+            rd_addr_out  <= 5'b0;
+            opcode_out   <= 7'b0;
+            ALUControl_out <= 5'b0;
+            ALUSrc_out   <= 1'b0;
+            Branch_out   <= 1'b0;
+            MemRead_out  <= 1'b0;
+            MemWrite_out <= 1'b0;
+            MemToReg_out <= 1'b0;
+            RegWrite_out <= 1'b0;
+            funct3_out   <= 3'b0;
+            CSRWrite_out <= 1'b0;
+            CSROp_out    <= 2'b0;
+            csr_addr_out <= 12'b0;
+            IsECALL_out  <= 1'b0;
+            IsEBREAK_out <= 1'b0;
+            IsMRET_out   <= 1'b0;
+        end else if (flush) begin
             pc_out       <= 32'b0;
             rs1_data_out <= 32'b0;
             rs2_data_out <= 32'b0;

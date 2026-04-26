@@ -12,13 +12,14 @@ module ram_ahb (
     output        HRESP
 );
 
-    reg [7:0] mem0 [0:16383];
-    reg [7:0] mem1 [0:16383];
-    reg [7:0] mem2 [0:16383];
-    reg [7:0] mem3 [0:16383];
+    (* ramstyle = "M10K" *) reg [7:0] mem0 [0:16383];
+    (* ramstyle = "M10K" *) reg [7:0] mem1 [0:16383];
+    (* ramstyle = "M10K" *) reg [7:0] mem2 [0:16383];
+    (* ramstyle = "M10K" *) reg [7:0] mem3 [0:16383];
 
     wire active = HSEL && HTRANS[1];
 
+    // address phase registers
     reg [31:0] addr_reg;
     reg        hwrite_reg;
     reg [2:0]  hsize_reg;
@@ -30,16 +31,15 @@ module ram_ahb (
             hwrite_reg <= 1'b0;
             hsize_reg  <= 3'b0;
             hsel_reg   <= 1'b0;
-        end else if (active) begin
+        end else begin
             addr_reg   <= HADDR;
             hwrite_reg <= HWRITE;
             hsize_reg  <= HSIZE;
-            hsel_reg   <= 1'b1;
-        end else begin
-            hsel_reg   <= 1'b0;
+            hsel_reg   <= active;
         end
     end
 
+    // byte enables
     reg [3:0] byte_enable;
     always @(*) begin
         case (hsize_reg)
@@ -51,40 +51,36 @@ module ram_ahb (
                     2'b11: byte_enable = 4'b1000;
                 endcase
             end
-            3'b001, 3'b101: begin
-                case (addr_reg[1:0])
-                    2'b00:   byte_enable = 4'b0011;
-                    2'b10:   byte_enable = 4'b1100;
-                    default: byte_enable = 4'b0000;
-                endcase
-            end
-            3'b010:  byte_enable = (addr_reg[1:0] == 2'b00) ? 4'b1111 : 4'b0000;
-            default: byte_enable = 4'b0000;
+            3'b001, 3'b101: byte_enable = addr_reg[1] ? 4'b1100 : 4'b0011;
+            3'b010:         byte_enable = 4'b1111;
+            default:        byte_enable = 4'b0000;
         endcase
     end
 
+    reg [7:0] read_byte0, read_byte1, read_byte2, read_byte3;
+
     always @(posedge HCLK) begin
-        if (hsel_reg && hwrite_reg) begin
-            if (byte_enable[0]) mem0[addr_reg[15:2]] <= HWDATA[7:0];
-            if (byte_enable[1]) mem1[addr_reg[15:2]] <= HWDATA[15:8];
-            if (byte_enable[2]) mem2[addr_reg[15:2]] <= HWDATA[23:16];
-            if (byte_enable[3]) mem3[addr_reg[15:2]] <= HWDATA[31:24];
+        read_byte0 <= mem0[HADDR[15:2]];
+        read_byte1 <= mem1[HADDR[15:2]];
+        read_byte2 <= mem2[HADDR[15:2]];
+        read_byte3 <= mem3[HADDR[15:2]];
+
+        if (active && HWRITE) begin
+            if (byte_enable[0]) mem0[HADDR[15:2]] <= HWDATA[7:0];
+            if (byte_enable[1]) mem1[HADDR[15:2]] <= HWDATA[15:8];
+            if (byte_enable[2]) mem2[HADDR[15:2]] <= HWDATA[23:16];
+            if (byte_enable[3]) mem3[HADDR[15:2]] <= HWDATA[31:24];
         end
     end
 
-    wire [31:0] word_read = {
-        mem3[addr_reg[15:2]],
-        mem2[addr_reg[15:2]],
-        mem1[addr_reg[15:2]],
-        mem0[addr_reg[15:2]]
-    };
+    wire [31:0] word_read = {read_byte3, read_byte2, read_byte1, read_byte0};
 
-    wire [7:0]  byte_sel = (addr_reg[1:0] == 2'b00) ? word_read[7:0]   :
-                           (addr_reg[1:0] == 2'b01) ? word_read[15:8]  :
-                           (addr_reg[1:0] == 2'b10) ? word_read[23:16] :
-                                                      word_read[31:24];
+    wire [7:0]  byte_sel  = (addr_reg[1:0] == 2'b00) ? word_read[7:0]   :
+                            (addr_reg[1:0] == 2'b01) ? word_read[15:8]  :
+                            (addr_reg[1:0] == 2'b10) ? word_read[23:16] :
+                                                       word_read[31:24];
 
-    wire [15:0] half_sel = addr_reg[1] ? word_read[31:16] : word_read[15:0];
+    wire [15:0] half_sel  = addr_reg[1] ? word_read[31:16] : word_read[15:0];
 
     reg [31:0] formatted;
     always @(*) begin
@@ -98,7 +94,7 @@ module ram_ahb (
         endcase
     end
 
-    assign HRDATA = (hsel_reg && !hwrite_reg) ? formatted : 32'b0;
+    assign HRDATA = formatted;
     assign HREADY = 1'b1;
     assign HRESP  = 1'b0;
 

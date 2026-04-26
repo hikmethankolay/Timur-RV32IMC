@@ -15,7 +15,7 @@
 
 # Quartus Prime: Generate Tcl File for Project
 # File: Timur_RV32IMC.tcl
-# Generated on: Sun Apr 26 02:45:19 2026
+# Generated on: Sun Apr 26 18:53:07 2026
 
 # Load Quartus Prime Tcl Project package
 package require ::quartus::project
@@ -79,6 +79,10 @@ if {$make_assignments} {
 	set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 	set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
 	set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+	set_global_assignment -name VERILOG_FILE rtl/pipeline/mem_wb_reg.v
+	set_global_assignment -name VERILOG_FILE rtl/pipeline/if_id_reg.v
+	set_global_assignment -name VERILOG_FILE rtl/pipeline/id_ex_reg.v
+	set_global_assignment -name VERILOG_FILE rtl/pipeline/ex_mem_reg.v
 	set_global_assignment -name VERILOG_FILE tb/Timur_RV32IMC_tb.v
 	set_global_assignment -name VERILOG_FILE rtl/top/wb_stage.v
 	set_global_assignment -name VERILOG_FILE rtl/top/mem_stage.v
