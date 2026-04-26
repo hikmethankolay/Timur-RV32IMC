@@ -61,14 +61,14 @@ module Timur_RV32IMC_tb;
                 cycle,
                 dut.cpu.pc_current,
                 dut.cpu.instruction,
-                dut.cpu.register_memory.regs[1],
-                dut.cpu.register_memory.regs[2],
-                dut.cpu.register_memory.regs[3],
-                dut.cpu.register_memory.regs[4],
-                dut.cpu.register_memory.regs[5],
-                dut.cpu.register_memory.regs[6],
-                dut.cpu.register_memory.regs[7],
-                dut.cpu.register_memory.regs[8]
+                dut.cpu.decode.register_file.regs[1],
+                dut.cpu.decode.register_file.regs[2],
+                dut.cpu.decode.register_file.regs[3],
+                dut.cpu.decode.register_file.regs[4],
+                dut.cpu.decode.register_file.regs[5],
+                dut.cpu.decode.register_file.regs[6],
+                dut.cpu.decode.register_file.regs[7],
+                dut.cpu.decode.register_file.regs[8]
             );
         end
 
@@ -101,14 +101,14 @@ module Timur_RV32IMC_tb;
         $display("-----------------------------");
         $display("Final register checks:");
 
-        t = t + 1; check(dut.cpu.register_memory.regs[1], 32'd5,        t); // x1 = ADDI 5
-        t = t + 1; check(dut.cpu.register_memory.regs[2], 32'h20000000, t); // x2 = LUI 0x20000
-        t = t + 1; check(dut.cpu.register_memory.regs[3], 32'd2,        t); // x3 = SUB 5-3
-        t = t + 1; check(dut.cpu.register_memory.regs[4], 32'd2,        t); // x4 = LW (loaded x3)
-        t = t + 1; check(dut.cpu.register_memory.regs[5], 32'd1,        t); // x5 = 1, NOT 0xDEADC000
-        t = t + 1; check(dut.cpu.register_memory.regs[6], 32'd1,        t); // x6 = 1, NOT 0xDEADC000
-        t = t + 1; check(dut.cpu.register_memory.regs[7], 32'd1,        t); // x7 = 1 (BEQ taken: branch target ran)
-        t = t + 1; check(dut.cpu.register_memory.regs[8], 32'd2,        t); // x8 = 2 (BEQ not-taken: fell through)
+        t = t + 1; check(dut.cpu.decode.register_file.regs[1], 32'd5,        t); // x1 = ADDI 5
+        t = t + 1; check(dut.cpu.decode.register_file.regs[2], 32'h20000000, t); // x2 = LUI 0x20000
+        t = t + 1; check(dut.cpu.decode.register_file.regs[3], 32'd2,        t); // x3 = SUB 5-3
+        t = t + 1; check(dut.cpu.decode.register_file.regs[4], 32'd2,        t); // x4 = LW (loaded x3)
+        t = t + 1; check(dut.cpu.decode.register_file.regs[5], 32'd1,        t); // x5 = 1, NOT 0xDEADC000
+        t = t + 1; check(dut.cpu.decode.register_file.regs[6], 32'd1,        t); // x6 = 1, NOT 0xDEADC000
+        t = t + 1; check(dut.cpu.decode.register_file.regs[7], 32'd1,        t); // x7 = 1 (BEQ taken: branch target ran)
+        t = t + 1; check(dut.cpu.decode.register_file.regs[8], 32'd2,        t); // x8 = 2 (BEQ not-taken: fell through)
 
         $display("-----------------------------");
         if (failed == 0)

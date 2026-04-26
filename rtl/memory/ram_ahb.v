@@ -73,12 +73,8 @@ module ram_ahb (
         end
     end
 
-    reg [31:0] word;
-    always @(posedge HCLK) begin
-        if (active)
-            word <= {mem3[HADDR[15:2]], mem2[HADDR[15:2]],
-                     mem1[HADDR[15:2]], mem0[HADDR[15:2]]};
-    end
+    wire [31:0] word = {mem3[addr_reg[15:2]], mem2[addr_reg[15:2]],
+                     mem1[addr_reg[15:2]], mem0[addr_reg[15:2]]};
 
     wire [7:0]  byte_sel = (addr_reg[1:0] == 2'b00) ? word[7:0]   :
                            (addr_reg[1:0] == 2'b01) ? word[15:8]  :
