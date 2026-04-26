@@ -15,7 +15,7 @@
 
 # Quartus Prime: Generate Tcl File for Project
 # File: Timur_RV32IMC.tcl
-# Generated on: Wed Apr 22 00:06:16 2026
+# Generated on: Sun Apr 26 02:45:19 2026
 
 # Load Quartus Prime Tcl Project package
 package require ::quartus::project
@@ -43,7 +43,6 @@ if {[is_project_open]} {
 if {$make_assignments} {
 	set_global_assignment -name FAMILY "MAX 10"
 	set_global_assignment -name DEVICE 10M50DAF484C7G
-	set_global_assignment -name TOP_LEVEL_ENTITY alu
 	set_global_assignment -name ORIGINAL_QUARTUS_VERSION 25.1STD.0
 	set_global_assignment -name PROJECT_CREATION_TIME_DATE "22:12:28  APRIL 06, 2026"
 	set_global_assignment -name LAST_QUARTUS_VERSION "25.1std.0 Lite Edition"
@@ -80,6 +79,25 @@ if {$make_assignments} {
 	set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 	set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
 	set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+	set_global_assignment -name VERILOG_FILE tb/Timur_RV32IMC_tb.v
+	set_global_assignment -name VERILOG_FILE rtl/top/wb_stage.v
+	set_global_assignment -name VERILOG_FILE rtl/top/mem_stage.v
+	set_global_assignment -name VERILOG_FILE rtl/top/if_stage.v
+	set_global_assignment -name VERILOG_FILE rtl/top/id_stage.v
+	set_global_assignment -name VERILOG_FILE rtl/top/ex_stage.v
+	set_global_assignment -name SDC_FILE Timur_RV32IMC.sdc
+	set_global_assignment -name MIF_FILE rom.mif
+	set_global_assignment -name MIF_FILE ram.mif
+	set_global_assignment -name VERILOG_FILE tb/ram_ahb_tb.v
+	set_global_assignment -name VERILOG_FILE tb/main_control_unit_tb.v
+	set_global_assignment -name VERILOG_FILE tb/instr_parser_tb.v
+	set_global_assignment -name VERILOG_FILE tb/imm_gen_tb.v
+	set_global_assignment -name VERILOG_FILE tb/alu_decoder_tb.v
+	set_global_assignment -name VERILOG_FILE rtl/memory/ram_ahb.v
+	set_global_assignment -name VERILOG_FILE rtl/decode/main_control_unit.v
+	set_global_assignment -name VERILOG_FILE rtl/decode/instr_parser.v
+	set_global_assignment -name VERILOG_FILE rtl/decode/imm_gen.v
+	set_global_assignment -name VERILOG_FILE rtl/decode/alu_decoder.v
 	set_global_assignment -name VERILOG_FILE tb/rom_ahb_tb.v
 	set_global_assignment -name VERILOG_FILE tb/registers_tb.v
 	set_global_assignment -name VERILOG_FILE tb/pc_tb.v
@@ -103,9 +121,11 @@ if {$make_assignments} {
 	set_global_assignment -name VERILOG_FILE rtl/primitives/mux2.v
 	set_global_assignment -name VERILOG_FILE tb/mux2_tb.v
 	set_global_assignment -name VERILOG_FILE rtl/top/Timur_RV32IMC.v
+	set_global_assignment -name VERILOG_FILE rtl/top/datapath.v
 	set_global_assignment -name VERILOG_FILE rtl/primitives/mux4.v
 	set_global_assignment -name VERILOG_FILE tb/mux4_tb.v
 	set_global_assignment -name QIP_FILE rtl/primitives/cpu_pll.qip
+	set_global_assignment -name SOURCE_FILE db/Timur_RV32IMC.cmp.rdb
 	set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 
 	# Including default assignments
