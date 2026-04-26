@@ -1,6 +1,7 @@
 module datapath(
     input  clk,
     input  rst_n,
+    input  stall,
     output [31:0] pc_out
 );
     // IF stage wires
@@ -37,6 +38,12 @@ module datapath(
     wire [31:0] ex_alu_result, ex_pc_plus4, ex_branch_target, ex_jump_target;
     wire        ex_BranchTaken, ex_pc_redirect;
 
+    reg ex_pc_redirect_d;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) ex_pc_redirect_d <= 1'b0;
+        else        ex_pc_redirect_d <= ex_pc_redirect;
+    end
+
     // EX/MEM register wires
     wire [31:0] mem_alu_result, mem_rs2_data, mem_branch_target, mem_pc_plus4;
     wire [4:0]  mem_rd_addr;
@@ -63,6 +70,8 @@ module datapath(
     if_stage fetch(
         .clk        (clk),
         .rst_n      (rst_n),
+        .pc_en      (~stall),
+        .if_flush   (ex_pc_redirect),
         .pc_next    (pc_next),
         .instruction(if_instruction),
         .pc_current (if_pc_current),
@@ -73,8 +82,8 @@ module datapath(
     if_id_reg if_id_pipe(
         .clk      (clk),
         .rst_n    (rst_n),
-        .enable   (1'b1),
-        .flush    (ex_pc_redirect),
+        .enable   (~stall),
+        .flush    (ex_pc_redirect | ex_pc_redirect_d),
         .pc_in    (if_pc_instr),
         .instr_in (if_instruction),
         .pc_out   (id_pc),
@@ -127,7 +136,7 @@ module datapath(
     id_ex_reg id_ex_pipe(
         .clk          (clk),
         .rst_n        (rst_n),
-        .enable       (1'b1),
+        .enable       (~stall),
         .flush        (ex_pc_redirect),
         .pc_in        (id_pc),
         .rs1_data_in  (id_rs1_data),

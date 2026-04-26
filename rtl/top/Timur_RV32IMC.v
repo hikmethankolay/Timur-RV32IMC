@@ -21,6 +21,7 @@ module Timur_RV32IMC (
     datapath cpu (
         .clk    (clk_cpu),
         .rst_n  (cpu_rst_n),
+        .stall  (1'b0),
         .pc_out (pc_out)
     );
 

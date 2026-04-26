@@ -1,6 +1,8 @@
 module if_stage(
     input         clk,
     input         rst_n,
+    input         pc_en,
+    input         if_flush,
     input  [31:0] pc_next,
     output [31:0] instruction,
     output [31:0] pc_current,
@@ -14,7 +16,7 @@ module if_stage(
     pc program_counter(
         .clk    (clk),
         .rst_n  (rst_n),
-        .en     (1'b1),
+        .en     (pc_en),
         .pc_next(pc_next),
         .pc     (pc_current)
     );
@@ -33,12 +35,15 @@ module if_stage(
         .HRESP   (HRESP)
     );
 
-    // pc_instr lags pc_current by one cycle so it matches the instruction
-    // returned by the AHB ROM, whose HRDATA is one cycle behind HADDR.
+    // pc_instr lags pc_current by one cycle to match the AHB ROM's HRDATA
+    // latency. Treated as a true pipeline register: cleared on if_flush
+    // (paired with IF/ID flush on a branch redirect) and frozen when pc_en
+    // is low (paired with PC freeze on a stall).
     reg [31:0] pc_instr_reg;
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) pc_instr_reg <= 32'b0;
-        else        pc_instr_reg <= pc_current;
+        if (!rst_n)        pc_instr_reg <= 32'b0;
+        else if (if_flush) pc_instr_reg <= 32'b0;
+        else if (pc_en)    pc_instr_reg <= pc_current;
     end
     assign pc_instr = pc_instr_reg;
 
