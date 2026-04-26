@@ -105,7 +105,7 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 ## Current Status
 
-**Phase 5 complete — Single-cycle CPU integration verified.**
+**Phase 6 complete — 5-stage pipeline registers integrated and verified.**
 
 | Phase | Description | Status |
 | ----- | ----------- | ------ |
@@ -114,8 +114,8 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 | 3 | State & memory — PC, Register File, ROM AHB slave, RAM AHB slave | ✅ Complete |
 | 4 | Instruction decode & control — ImmGen, Parser, ALU Decoder, Main Control | ✅ Complete |
 | 5 | Single-cycle integration (HREADY=1 assumed) | ✅ Complete |
-| 6 | 5-stage pipelining with pipeline registers | 🔜 Next |
-| 7 | Hazard resolution — forwarding, load-use, HREADY, div_busy, branch flush | 🔜 |
+| 6 | 5-stage pipelining with pipeline registers | ✅ Complete |
+| 7 | Hazard resolution — forwarding, load-use, HREADY, div_busy, branch flush | 🔜 Next |
 | 8 | APB peripherals — GPIO, UART, DMAC control registers, AHB-to-APB bridge | 🔜 |
 | 9 | Full AHB bus fabric — arbiter, CPU master, DMAC master, top-level | 🔜 |
 | 10 | CSR register file, trap mechanism, MRET | 🔜 |
@@ -458,8 +458,8 @@ Phase 2  ✅  Execution Datapath (ALU + M-extension)
 Phase 3  ✅  PC, Register File, ROM/RAM AHB slaves
 Phase 4  ✅  Decode stage (ImmGen, Parser, Control)
 Phase 5  ✅  Single-cycle CPU integration
-Phase 6  🔜  5-stage pipeline registers          ← Next
-Phase 7  🔜  Hazard resolution (forwarding, stalls, flush)
+Phase 6  ✅  5-stage pipeline registers
+Phase 7  🔜  Hazard resolution (forwarding, stalls, flush)   ← Next
 Phase 8  🔜  APB peripherals (GPIO, UART, DMAC registers)
 Phase 9  🔜  Full AHB bus fabric + system top-level
 Phase 10 🔜  CSR file, trap mechanism, M-mode
