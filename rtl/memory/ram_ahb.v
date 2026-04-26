@@ -73,25 +73,33 @@ module ram_ahb (
         end
     end
 
-    wire [31:0] word = {mem3[addr_reg[15:2]], mem2[addr_reg[15:2]],
-                     mem1[addr_reg[15:2]], mem0[addr_reg[15:2]]};
+    reg [31:0] word_reg;
 
-    wire [7:0]  byte_sel = (addr_reg[1:0] == 2'b00) ? word[7:0]   :
-                           (addr_reg[1:0] == 2'b01) ? word[15:8]  :
-                           (addr_reg[1:0] == 2'b10) ? word[23:16] :
-                                                      word[31:24];
+    always @(posedge HCLK) begin
+        word_reg <= {
+            mem3[addr_reg[15:2]],
+            mem2[addr_reg[15:2]],
+            mem1[addr_reg[15:2]],
+            mem0[addr_reg[15:2]]
+        };
+    end
 
-    wire [15:0] half_sel = addr_reg[1] ? word[31:16] : word[15:0];
+    wire [7:0]  byte_sel = (addr_reg[1:0] == 2'b00) ? word_reg[7:0]   :
+                           (addr_reg[1:0] == 2'b01) ? word_reg[15:8]  :
+                           (addr_reg[1:0] == 2'b10) ? word_reg[23:16] :
+                                                      word_reg[31:24];
+
+    wire [15:0] half_sel = addr_reg[1] ? word_reg[31:16] : word_reg[15:0];
 
     reg [31:0] hrdata_reg;
     always @(*) begin
         case (hsize_reg)
             3'b000: hrdata_reg = {{24{byte_sel[7]}}, byte_sel};
             3'b001: hrdata_reg = {{16{half_sel[15]}}, half_sel};
-            3'b010: hrdata_reg = word;
+            3'b010: hrdata_reg = word_reg;
             3'b100: hrdata_reg = {24'b0, byte_sel};
             3'b101: hrdata_reg = {16'b0, half_sel};
-            default: hrdata_reg = word;
+            default: hrdata_reg = word_reg;
         endcase
     end
 
