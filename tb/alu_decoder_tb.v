@@ -1,17 +1,19 @@
 `timescale 1ns/1ps
 //
 // alu_decoder_tb — vector-driven regression for the alu_decoder module.
-// Purely combinational: apply {ALUOp, funct3, funct7}, wait #10, check ALUControl.
-// Vector format (hex): ALUOp funct3 funct7 exp_ALUControl
+// Purely combinational: apply {opcode, ALUOp, funct3, funct7}, wait #10, check ALUControl.
+// Vector format (hex): opcode ALUOp funct3 funct7 exp_ALUControl
 //
 module alu_decoder_tb;
 
+    reg  [6:0] opcode;
     reg  [1:0] ALUOp;
     reg  [2:0] funct3;
     reg  [6:0] funct7;
     wire [4:0] ALUControl;
 
     alu_decoder dut (
+        .opcode    (opcode),
         .ALUOp     (ALUOp),
         .funct3    (funct3),
         .funct7    (funct7),
@@ -25,7 +27,8 @@ module alu_decoder_tb;
     integer          test_num = 0;
 
     task run_vectors(input [8*64-1:0] filename);
-        reg [1:0] op_tmp;
+        reg [6:0] op_tmp;
+        reg [1:0] aluop_tmp;
         reg [2:0] f3_tmp;
         reg [6:0] f7_tmp;
         reg [4:0] exp_ctrl;
@@ -39,23 +42,24 @@ module alu_decoder_tb;
                     line = 0;
                     slen = $fgets(line, file);
                     if (slen > 0) begin
-                        r = $sscanf(line, "%h %h %h %h",
-                                    op_tmp, f3_tmp, f7_tmp, exp_ctrl);
-                        if (r == 4) begin
-                            ALUOp  = op_tmp;
+                        r = $sscanf(line, "%h %h %h %h %h",
+                                    op_tmp, aluop_tmp, f3_tmp, f7_tmp, exp_ctrl);
+                        if (r == 5) begin
+                            opcode = op_tmp;
+                            ALUOp  = aluop_tmp;
                             funct3 = f3_tmp;
                             funct7 = f7_tmp;
                             #10;
                             test_num = test_num + 1;
                             total    = total    + 1;
                             if (ALUControl !== exp_ctrl) begin
-                                $display("FAIL test %0d: ALUOp=%02b funct3=%03b funct7=%07b | got ALUControl=%05b | exp %05b",
-                                          test_num, ALUOp, funct3, funct7,
+                                $display("FAIL test %0d: opcode=%07b ALUOp=%02b funct3=%03b funct7=%07b | got ALUControl=%05b | exp %05b",
+                                          test_num, opcode, ALUOp, funct3, funct7,
                                           ALUControl, exp_ctrl);
                                 failed = failed + 1;
                             end else begin
-                                $display("PASS test %0d: ALUOp=%02b funct3=%03b funct7=%07b | ALUControl=%05b",
-                                          test_num, ALUOp, funct3, funct7,
+                                $display("PASS test %0d: opcode=%07b ALUOp=%02b funct3=%03b funct7=%07b | ALUControl=%05b",
+                                          test_num, opcode, ALUOp, funct3, funct7,
                                           ALUControl);
                             end
                         end
@@ -67,6 +71,7 @@ module alu_decoder_tb;
     endtask
 
     initial begin
+        opcode = 7'b0110011;
         ALUOp  = 2'b00;
         funct3 = 3'b000;
         funct7 = 7'b0000000;

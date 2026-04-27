@@ -1,31 +1,53 @@
-# ALUOp funct3 funct7 exp_ALUControl  (all hex)
-# ALUOp=00 -> ADD (funct3/funct7 ignored)
-00 0 00 02
-00 7 7f 02
-# ALUOp=01 -> SUB (funct3/funct7 ignored)
-01 0 00 06
-01 7 7f 06
-# ALUOp=10, funct7=0000001 -> M-extension
-02 0 01 10
-02 1 01 11
-02 2 01 12
-02 3 01 13
-02 4 01 14
-02 5 01 15
-02 6 01 16
-02 7 01 17
-# ALUOp=10, funct7[5]=0 -> standard R-type (ADD SLL SLT SLTU XOR SRL OR AND)
-02 0 00 02
-02 1 00 09
-02 2 00 07
-02 3 00 0c
-02 4 00 08
-02 5 00 0a
-02 6 00 01
-02 7 00 00
-# ALUOp=10, funct7=0100000 (funct7[5]=1) -> SUB and SRA
-02 0 20 06
-02 5 20 0b
+# opcode ALUOp funct3 funct7 exp_ALUControl  (all hex)
+# ALUOp=00 -> ADD (funct3/funct7 ignored). opcode irrelevant.
+33 00 0 00 02
+33 00 7 7f 02
+# ALUOp=01 -> SUB (funct3/funct7 ignored). opcode irrelevant.
+33 01 0 00 06
+33 01 7 7f 06
+# R-type (opcode 0110011), ALUOp=10, funct7=0000001 -> M-extension
+33 02 0 01 10
+33 02 1 01 11
+33 02 2 01 12
+33 02 3 01 13
+33 02 4 01 14
+33 02 5 01 15
+33 02 6 01 16
+33 02 7 01 17
+# R-type, ALUOp=10, funct7[5]=0 -> standard R-type (ADD SLL SLT SLTU XOR SRL OR AND)
+33 02 0 00 02
+33 02 1 00 09
+33 02 2 00 07
+33 02 3 00 0c
+33 02 4 00 08
+33 02 5 00 0a
+33 02 6 00 01
+33 02 7 00 00
+# R-type, ALUOp=10, funct7=0100000 (funct7[5]=1) -> SUB and SRA
+33 02 0 20 06
+33 02 5 20 0b
+# I-arith (opcode 0010011), ALUOp=10 -> ADDI/SLTI/SLTIU/XORI/ORI/ANDI
+# These must IGNORE funct7 entirely (it's part of imm[11:5]).
+13 02 0 00 02
+13 02 2 00 07
+13 02 3 00 0c
+13 02 4 00 08
+13 02 6 00 01
+13 02 7 00 00
+# I-arith with negative-immediate-style funct7 bits set — must still be ADD/etc.
+# This is the regression that breaks ADDI x2, x0, -3 if funct7[5] leaks.
+13 02 0 7f 02
+13 02 0 20 02
+13 02 0 40 02
+13 02 2 7f 07
+13 02 3 7f 0c
+13 02 4 7f 08
+13 02 6 7f 01
+13 02 7 7f 00
+# I-arith shifts (SLLI/SRLI/SRAI) DO use funct7[5] to pick logical vs arith.
+13 02 1 00 09
+13 02 5 00 0a
+13 02 5 20 0b
 # ALUOp=11 -> default (ADD)
-03 0 00 02
-03 7 7f 02
+33 03 0 00 02
+33 03 7 7f 02

@@ -105,8 +105,16 @@ module ex_stage(
     // by which point the pipeline has advanced and is_div_op is no
     // longer asserted (or refers to a fresh DIV instruction).
     wire is_div_op = (ALUControl[4:2] == 3'b101);
+    wire div_busy_raw;
     reg  div_inflight;
-    wire div_start = is_div_op & ~div_busy & ~div_inflight;
+    wire div_start = is_div_op & ~div_busy_raw & ~div_inflight;
+
+    // Extend div_busy to include the start cycle. The divider's busy
+    // register goes high one cycle after start fires (non-blocking
+    // assignment in IDLE→RUNNING transition). Without this OR, the
+    // hazard detection unit sees div_busy=0 at the cycle DIV first
+    // enters EX, ID/EX advances away, and the DIV result is lost.
+    assign div_busy = div_busy_raw | div_start;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)             div_inflight <= 1'b0;
@@ -125,7 +133,7 @@ module ex_stage(
         .zero      (zero),
         .cout      (cout),
         .overflow  (overflow),
-        .div_busy  (div_busy),
+        .div_busy  (div_busy_raw),
         .div_done  (div_done)
     );
 

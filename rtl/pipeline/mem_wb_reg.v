@@ -1,6 +1,8 @@
 module mem_wb_reg (
     input         clk,
     input         rst_n,
+    input         flush,
+    input         enable,
     // datapath
     input  [31:0] mem_read_data_in,
     input  [31:0] alu_result_in,
@@ -35,7 +37,17 @@ module mem_wb_reg (
             RegWrite_out      <= 1'b0;
             csr_rdata_out     <= 32'b0;
             CSRToReg_out      <= 1'b0;
-        end else begin
+        end else if (flush) begin
+            mem_read_data_out <= 32'b0;
+            alu_result_out    <= 32'b0;
+            rd_addr_out       <= 5'b0;
+            pc_plus4_out      <= 32'b0;
+            opcode_out        <= 7'b0;
+            MemToReg_out      <= 1'b0;
+            RegWrite_out      <= 1'b0;
+            csr_rdata_out     <= 32'b0;
+            CSRToReg_out      <= 1'b0;
+        end else if (enable) begin
             mem_read_data_out <= mem_read_data_in;
             alu_result_out    <= alu_result_in;
             rd_addr_out       <= rd_addr_in;

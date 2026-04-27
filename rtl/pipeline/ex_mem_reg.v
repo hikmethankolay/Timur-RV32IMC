@@ -2,6 +2,7 @@ module ex_mem_reg (
     input         clk,
     input         rst_n,
     input         flush,
+    input         enable,
     // datapath
     input  [31:0] alu_result_in,
     input  [31:0] rs2_data_in,
@@ -90,7 +91,7 @@ module ex_mem_reg (
             IsECALL_out     <= 1'b0;
             IsEBREAK_out    <= 1'b0;
             IsMRET_out      <= 1'b0;
-        end else begin
+        end else if (enable) begin
             alu_result_out  <= alu_result_in;
             rs2_data_out    <= rs2_data_in;
             rd_addr_out     <= rd_addr_in;
