@@ -5,13 +5,22 @@
 # ============================================================
 
 # ── collect source files ──
-set rtl_files [glob -nocomplain rtl/**/*.v]
+set rtl_v_files  [glob -nocomplain rtl/**/*.v]
+set rtl_sv_files [glob -nocomplain rtl/**/*.sv]
+set rtl_files    [concat $rtl_v_files $rtl_sv_files]
 # Drop black-box stubs and the full PLL megafunction (cpu_pll.v instantiates
 # altpll which requires altera_mf — not available in plain ModelSim).
 # cpu_pll_bb.v is the simulation-safe stub; add it back explicitly.
 set rtl_files [lsearch -all -inline -not $rtl_files *_bb.v]
 set rtl_files [lsearch -all -inline -not $rtl_files */cpu_pll.v]
 lappend rtl_files rtl/primitives/cpu_pll_bb.v
+
+# SystemVerilog packages must compile before any module that imports them.
+# Hoist rtl/include/pipeline_pkg.sv to the head of the file list.
+set pkg_file rtl/include/pipeline_pkg.sv
+set rtl_files [lsearch -all -inline -not $rtl_files $pkg_file]
+set rtl_files [linsert $rtl_files 0 $pkg_file]
+
 set tb_files  [glob -nocomplain tb/*.v]
 set all_files [concat $rtl_files $tb_files]
 
@@ -35,8 +44,10 @@ vlib work
 vmap work work
 
 # ── compile all files once ──
+# -sv enables SystemVerilog (packages, packed structs, import).
+# +incdir lets `import pipeline_pkg::*;` resolve from rtl/include/.
 puts "Compiling all sources..."
-if {[catch {eval vlog -quiet $all_files} err]} {
+if {[catch {eval vlog -quiet -sv +incdir+rtl/include $all_files} err]} {
     puts "COMPILE ERROR: $err"
     return
 }

@@ -7,7 +7,6 @@ module ex_stage(
     input  [31:0] rs2_data,
     input  [31:0] imm,
     input  [31:0] pc_current,
-    input  [31:0] pc_plus4,
 
     // Decoded fields
     input  [6:0]  opcode,
@@ -24,11 +23,22 @@ module ex_stage(
 
     // Outputs
     output [31:0] alu_result,
+    output [31:0] pc_plus4,
     output [31:0] jump_target_out,
     output [31:0] branch_target_out,
     output        BranchTaken_out,
     output        div_busy
 );
+
+    // ─── pc_plus4 (for JAL/JALR link, propagated through EX/MEM/WB) ─
+    adder_32bit pc_plus4_adder(
+        .a       (pc_current),
+        .b       (32'h00000004),
+        .sub     (1'b0),
+        .result  (pc_plus4),
+        .cout    (),
+        .overflow()
+    );
 
     // ─── opcode constants & predicates ─────────────────────────────
     localparam [6:0] OPC_LUI   = 7'b0110111;

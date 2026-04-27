@@ -1,26 +1,31 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// datapath
+// ─────────────────────────────────────────────────────────────────────────────
+// Top-level CPU datapath. Five-stage pipeline: IF → ID → EX → MEM → WB.
+// Stage-internal logic lives in if_stage / id_stage / ex_stage / mem_stage /
+// wb_stage. This module is mostly:
+//   - stage instances
+//   - the four pipeline registers
+//   - hazard / forwarding glue that crosses stage boundaries
+// Branch redirect logic (PC mux, branch_flush_d, if_id_flush) is owned by
+// if_stage. ID-stage outputs are bundled into pipeline_pkg::id_decoded_t.
+// ─────────────────────────────────────────────────────────────────────────────
+import pipeline_pkg::*;
+
 module datapath(
     input  clk,
     input  rst_n,
     output [31:0] pc_out
 );
     // ─── IF stage wires ──────────────────────────────────────────────
-    wire [31:0] if_pc_current, if_pc_instr, if_pc_plus4, if_instruction;
-    wire [31:0] pc_next;
+    wire [31:0] if_pc_current, if_pc_instr, if_instruction;
+    wire        if_id_flush;
 
     // ─── IF/ID register wires ────────────────────────────────────────
     wire [31:0] id_pc, id_instruction;
 
-    // ─── ID stage / control wires ────────────────────────────────────
-    wire [6:0]  id_opcode;
-    wire [4:0]  id_rd;
-    wire [2:0]  id_funct3;
-    wire [4:0]  id_rs1_addr, id_rs2_addr;
-    wire [6:0]  id_funct7;
-    wire [31:0] id_imm, id_rs1_data, id_rs2_data;
-    wire        id_Branch, id_MemRead, id_MemToReg, id_MemWrite, id_ALUSrc, id_RegWrite;
-    wire        id_CSRWrite, id_IsECALL, id_IsEBREAK, id_IsMRET;
-    wire [1:0]  id_ALUOp, id_CSROp;
-    wire [4:0]  id_ALUControl;
+    // ─── ID stage bundle ─────────────────────────────────────────────
+    id_decoded_t id_decoded;
 
     // ─── ID/EX register wires ────────────────────────────────────────
     wire [31:0] ex_pc, ex_rs1_data, ex_rs2_data, ex_imm;
@@ -67,39 +72,26 @@ module datapath(
     wire hready_combined = hready_rom & hready_ram;
 
     // ─── Branch resolution (2-cycle, evaluated in MEM) ───────────────
-    // branch_flush is the 1-cycle "redirect" pulse: it is HIGH during the
-    // cycle the branch sits in MEM. Used to:
-    //   - select mem_branch_target into PC,
-    //   - clear pc_instr_reg (the AHB-ROM data-phase shadow PC),
-    //   - flush the speculative instruction in IF/ID,
-    //   - flush the speculative instruction in ID/EX,
-    //   - flush the speculative instruction already in EX/MEM (Bug #2).
-    //
-    // Because the AHB ROM has 1-cycle read latency, the cycle AFTER a
-    // redirect still has stale HRDATA (the wrong-path fetch). Without
-    // a second flush cycle, that stale instruction would be latched
-    // into IF/ID. branch_flush_d extends the IF/ID flush window by one
-    // cycle so that stale instruction is dropped (Bug #3).
-    wire branch_flush = mem_Branch & mem_BranchTaken;
-    reg  branch_flush_d;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) branch_flush_d <= 1'b0;
-        else        branch_flush_d <= branch_flush;
-    end
-    wire if_id_flush = branch_flush | branch_flush_d;
+    // branch_taken is the 1-cycle "redirect" pulse: it is HIGH during the
+    // cycle the branch sits in MEM. Drives:
+    //   - if_stage's pc_next mux + pc_instr_reg flush + if_id_flush
+    //     extension (handled internally in if_stage)
+    //   - flush rail of ID/EX (kill the speculative slot)
+    //   - flush rail of EX/MEM (kill the branch's own EX-shadow, Bug #2)
+    wire branch_taken = mem_Branch & mem_BranchTaken;
 
     // ─── IF stage ────────────────────────────────────────────────────
     if_stage fetch(
-        .clk        (clk),
-        .rst_n      (rst_n),
-        .pc_en      (~stall),
-        .if_flush   (branch_flush),
-        .pc_next    (pc_next),
-        .instruction(if_instruction),
-        .pc_current (if_pc_current),
-        .pc_instr   (if_pc_instr),
-        .pc_plus4   (if_pc_plus4),
-        .HREADY_ROM (hready_rom)
+        .clk          (clk),
+        .rst_n        (rst_n),
+        .pc_en        (~stall),
+        .branch_taken (branch_taken),
+        .branch_target(mem_branch_target),
+        .instruction  (if_instruction),
+        .pc_current   (if_pc_current),
+        .pc_instr     (if_pc_instr),
+        .HREADY_ROM   (hready_rom),
+        .if_id_flush  (if_id_flush)
     );
 
     if_id_reg if_id_pipe(
@@ -120,46 +112,7 @@ module datapath(
         .rd_addr_wb (wb_rd_addr),
         .rd_data    (reg_write_data),
         .RegWrite   (wb_RegWrite),
-        .opcode     (id_opcode),
-        .rd         (id_rd),
-        .funct3     (id_funct3),
-        .rs1_addr   (id_rs1_addr),
-        .rs2_addr   (id_rs2_addr),
-        .funct7     (id_funct7),
-        .imm        (id_imm),
-        .rs1_data   (id_rs1_data),
-        .rs2_data   (id_rs2_data)
-    );
-
-    main_control_unit control(
-        .opcode   (id_opcode),
-        .funct3   (id_funct3),
-        .funct7   (id_funct7),
-        .rs2_addr (id_rs2_addr),
-        .Branch   (id_Branch),
-        .MemRead  (id_MemRead),
-        .MemToReg (id_MemToReg),
-        .ALUOp    (id_ALUOp),
-        .MemWrite (id_MemWrite),
-        .ALUSrc   (id_ALUSrc),
-        .RegWrite (id_RegWrite),
-        .CSRWrite (id_CSRWrite),
-        .CSROp    (id_CSROp),
-        .IsECALL  (id_IsECALL),
-        .IsEBREAK (id_IsEBREAK),
-        .IsMRET   (id_IsMRET)
-    );
-
-    // alu_decoder takes opcode now to honour RISC-V ISA: funct7[5] is
-    // only meaningful for R-type (and the I-arith shift forms). For
-    // ADDI/XORI/etc the funct7 bits are part of imm[11:5] and must be
-    // ignored. (Bug #1)
-    alu_decoder alu_dec(
-        .opcode    (id_opcode),
-        .ALUOp     (id_ALUOp),
-        .funct3    (id_funct3),
-        .funct7    (id_funct7),
-        .ALUControl(id_ALUControl)
+        .id_decoded (id_decoded)
     );
 
     // ─── ID/EX register ──────────────────────────────────────────────
@@ -168,34 +121,34 @@ module datapath(
     //     EX-stage operation finishes against frozen operands.
     //   - bubble_stall (load-use, bus-wait): inject a NOP into EX so the
     //     stalling instruction stays in IF/ID and the consumer waits.
-    //   - branch_flush: take precedence to flush the speculative slot.
+    //   - branch_taken: take precedence to flush the speculative slot.
     id_ex_reg id_ex_pipe(
         .clk          (clk),
         .rst_n        (rst_n),
         .enable       (~freeze_stall),
-        .flush        (branch_flush | bubble_stall),
+        .flush        (branch_taken | bubble_stall),
         .pc_in        (id_pc),
-        .rs1_data_in  (id_rs1_data),
-        .rs2_data_in  (id_rs2_data),
-        .imm_in       (id_imm),
-        .rs1_addr_in  (id_rs1_addr),
-        .rs2_addr_in  (id_rs2_addr),
-        .rd_addr_in   (id_rd),
-        .opcode_in    (id_opcode),
-        .ALUControl_in(id_ALUControl),
-        .ALUSrc_in    (id_ALUSrc),
-        .Branch_in    (id_Branch),
-        .MemRead_in   (id_MemRead),
-        .MemWrite_in  (id_MemWrite),
-        .MemToReg_in  (id_MemToReg),
-        .RegWrite_in  (id_RegWrite),
-        .funct3_in    (id_funct3),
-        .CSRWrite_in  (id_CSRWrite),
-        .CSROp_in     (id_CSROp),
-        .csr_addr_in  (id_instruction[31:20]),
-        .IsECALL_in   (id_IsECALL),
-        .IsEBREAK_in  (id_IsEBREAK),
-        .IsMRET_in    (id_IsMRET),
+        .rs1_data_in  (id_decoded.rs1_data),
+        .rs2_data_in  (id_decoded.rs2_data),
+        .imm_in       (id_decoded.imm),
+        .rs1_addr_in  (id_decoded.rs1_addr),
+        .rs2_addr_in  (id_decoded.rs2_addr),
+        .rd_addr_in   (id_decoded.rd),
+        .opcode_in    (id_decoded.opcode),
+        .ALUControl_in(id_decoded.ALUControl),
+        .ALUSrc_in    (id_decoded.ALUSrc),
+        .Branch_in    (id_decoded.Branch),
+        .MemRead_in   (id_decoded.MemRead),
+        .MemWrite_in  (id_decoded.MemWrite),
+        .MemToReg_in  (id_decoded.MemToReg),
+        .RegWrite_in  (id_decoded.RegWrite),
+        .funct3_in    (id_decoded.funct3),
+        .CSRWrite_in  (id_decoded.CSRWrite),
+        .CSROp_in     (id_decoded.CSROp),
+        .csr_addr_in  (id_decoded.csr_addr),
+        .IsECALL_in   (id_decoded.IsECALL),
+        .IsEBREAK_in  (id_decoded.IsEBREAK),
+        .IsMRET_in    (id_decoded.IsMRET),
         .pc_out        (ex_pc),
         .rs1_data_out  (ex_rs1_data),
         .rs2_data_out  (ex_rs2_data),
@@ -218,15 +171,6 @@ module datapath(
         .IsECALL_out   (ex_IsECALL),
         .IsEBREAK_out  (ex_IsEBREAK),
         .IsMRET_out    (ex_IsMRET)
-    );
-
-    adder_32bit ex_pc_plus4_adder(
-        .a       (ex_pc),
-        .b       (32'h00000004),
-        .sub     (1'b0),
-        .result  (ex_pc_plus4),
-        .cout    (),
-        .overflow()
     );
 
     forwarding_unit forward(
@@ -265,8 +209,8 @@ module datapath(
         .ALUSrc            (ex_ALUSrc),
         .Branch            (ex_Branch),
         .pc_current        (ex_pc),
-        .pc_plus4          (ex_pc_plus4),
         .alu_result        (ex_alu_result),
+        .pc_plus4          (ex_pc_plus4),
         .jump_target_out   (ex_jump_target),
         .branch_target_out (ex_branch_target),
         .BranchTaken_out   (ex_BranchTaken),
@@ -277,24 +221,15 @@ module datapath(
         .div_busy          (div_busy)
     );
 
-    // PC redirect: branch_flush drives a 1-cycle redirect to the branch
-    // target captured in EX/MEM. Otherwise PC advances by 4.
-    mux2 #(.WIDTH(32)) pc_next_mux(
-        .in0(if_pc_plus4),
-        .in1(mem_branch_target),
-        .sel(branch_flush),
-        .out(pc_next)
-    );
-
     // ─── EX/MEM register ─────────────────────────────────────────────
-    // - flush=branch_flush so the speculative instruction in EX is
+    // - flush=branch_taken so the speculative instruction in EX is
     //   killed when the branch redirect fires (Bug #2).
     // - enable=~freeze_stall so the whole back end of the pipeline
     //   freezes during a multi-cycle DIV in EX (Bug #4).
     ex_mem_reg ex_mem_pipe(
         .clk              (clk),
         .rst_n            (rst_n),
-        .flush            (branch_flush),
+        .flush            (branch_taken),
         .enable           (~freeze_stall),
         .alu_result_in    (ex_alu_result),
         .rs2_data_in      (ex_rs2_data),

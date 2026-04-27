@@ -1,13 +1,3 @@
-// Note: load data is intentionally NOT carried through this register.
-// The data RAM is an AHB-Lite slave with a 1-cycle synchronous read:
-// the LW's address phase happens in MEM (cycle X), and ram_ahb's
-// internal read_data flop only captures the result at posedge X+1 —
-// exactly the same edge that latches this MEM/WB pipeline register.
-// Sampling mem_read_data here would therefore capture the *previous*
-// transaction's value. The RAM's read_data flop is itself the natural
-// MEM/WB latch for the load-data path, so the WB stage consumes the
-// MEM-stage formatted load_data wire directly while this register only
-// carries the control / non-load datapath signals.
 module mem_wb_reg (
     input         clk,
     input         rst_n,
