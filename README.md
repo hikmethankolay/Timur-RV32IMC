@@ -87,7 +87,7 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 **Pipeline stages:** IF → ID → EX → MEM → WB\
 **Bus standard:** ARM AMBA — AHB for high-speed paths, APB for peripherals\
-**Target FPGA:** Intel DE1-SoC (Cyclone V) — synthesized with Quartus Prime
+**Target FPGA:** Terasic DE10-Lite (Intel MAX 10 `10M50DAF484C7G`, 50K LEs) — synthesized with Quartus Prime
 
 ---
 
@@ -328,7 +328,7 @@ A two-part DMA controller: APB control registers (SRC, DST, LEN, CTRL, STATUS) t
 
 - Intel Quartus Prime (tested with 21.x / 22.x)
 - ModelSim-Intel FPGA Edition (bundled with Quartus)
-- DE1-SoC board (Cyclone V 5CSEMA5F31C6) or compatible Intel FPGA board
+- DE10-Lite board (MAX 10 `10M50DAF484C7G`) or compatible Intel FPGA board
 - RISC-V GNU Toolchain for the C software layer (Phase 12):
 
   ```bash
