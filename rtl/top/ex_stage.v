@@ -1,53 +1,118 @@
 module ex_stage(
     input         clk,
     input         rst_n,
+
+    // Operands (from ID/EX register)
     input  [31:0] rs1_data,
     input  [31:0] rs2_data,
     input  [31:0] imm,
+    input  [31:0] pc_current,
+    input  [31:0] pc_plus4,
+
+    // Decoded fields
     input  [6:0]  opcode,
     input  [2:0]  funct3,
     input  [4:0]  ALUControl,
     input         ALUSrc,
     input         Branch,
-    input  [31:0] pc_current,
-    input  [31:0] pc_plus4,
+
+    // Forwarding inputs (from forwarding_unit + later pipeline stages)
+    input  [1:0]  forwardA,
+    input  [1:0]  forwardB,
+    input  [31:0] mem_alu_result_fwd,    // EX/MEM stage producer value
+    input  [31:0] wb_value_fwd,          // MEM/WB writeback bus
+
+    // Outputs
     output [31:0] alu_result,
     output [31:0] jump_target_out,
     output [31:0] branch_target_out,
     output        BranchTaken_out,
-    output        pc_redirect
+    output        div_busy
 );
-    wire [31:0] alu_a, alu_b, alu_a_premux;
-    wire        zero, cout, overflow;
-    wire        div_busy, div_done;
-    wire        BranchTaken;
-    wire [31:0] branch_target, jump_target;
 
-    wire IsJAL  = (opcode == 7'b1101111);
-    wire IsJALR = (opcode == 7'b1100111);
-    wire take_pc_redirect = (Branch & BranchTaken) | IsJAL | IsJALR;
+    // ─── opcode constants & predicates ─────────────────────────────
+    localparam [6:0] OPC_LUI   = 7'b0110111;
+    localparam [6:0] OPC_AUIPC = 7'b0010111;
+    localparam [6:0] OPC_JAL   = 7'b1101111;
+    localparam [6:0] OPC_JALR  = 7'b1100111;
 
-    mux2 #(.WIDTH(32)) ALUB_Mux(
+    wire is_lui   = (opcode == OPC_LUI);
+    wire is_auipc = (opcode == OPC_AUIPC);
+    wire is_jal   = (opcode == OPC_JAL);
+    wire is_jalr  = (opcode == OPC_JALR);
+
+    // ─── Stage 1: forwarding muxes ─────────────────────────────────
+    // forwardA/B encoding:
+    //   00 = regfile,  01 = MEM/WB bus,  10 = EX/MEM alu_result,  11 = unused
+    wire [31:0] rs1_forwarded, rs2_forwarded;
+
+    mux4 #(.WIDTH(32)) FwdA_Mux(
+        .in0(rs1_data),
+        .in1(wb_value_fwd),
+        .in2(mem_alu_result_fwd),
+        .in3(32'b0),
+        .sel(forwardA),
+        .out(rs1_forwarded)
+    );
+
+    mux4 #(.WIDTH(32)) FwdB_Mux(
         .in0(rs2_data),
+        .in1(wb_value_fwd),
+        .in2(mem_alu_result_fwd),
+        .in3(32'b0),
+        .sel(forwardB),
+        .out(rs2_forwarded)
+    );
+
+    // ─── Stage 2: ALU operand source select ────────────────────────
+    //   alu_a:  rs1_forwarded (default) / pc_current (AUIPC) / 0 (LUI)
+    //   alu_b:  rs2_forwarded (default) / imm (ALUSrc=1)
+    wire [1:0] alu_a_sel = is_auipc ? 2'b01 :
+                           is_lui   ? 2'b10 :
+                                      2'b00;
+
+    wire [31:0] alu_a, alu_b;
+
+    mux4 #(.WIDTH(32)) ALUA_SrcMux(
+        .in0(rs1_forwarded),
+        .in1(pc_current),
+        .in2(32'b0),
+        .in3(32'b0),
+        .sel(alu_a_sel),
+        .out(alu_a)
+    );
+
+    mux2 #(.WIDTH(32)) ALUB_SrcMux(
+        .in0(rs2_forwarded),
         .in1(imm),
         .sel(ALUSrc),
         .out(alu_b)
     );
 
-    mux2 #(.WIDTH(32)) ALUA_Mux(
-        .in0(rs1_data),
-        .in1(pc_current),
-        .sel(opcode == 7'b0010111),   // AUIPC
-        .out(alu_a_premux)
-    );
+    // ─── ALU + flags ───────────────────────────────────────────────
+    //   alu_raw is the unmodified ALU output. It feeds the branch
+    //   evaluator (needs flags) and the JALR target computation.
+    //   The exposed alu_result OUTPUT is muxed below so EX/MEM
+    //   latches the correct writeback value for JAL/JALR.
+    wire [31:0] alu_raw;
+    wire        zero, cout, overflow;
+    wire        div_done;
 
-    // LUI: force alu_a to 0 so result = 0 + imm = imm
-    mux2 #(.WIDTH(32)) ALUA_LUI_Mux(
-        .in0(alu_a_premux),
-        .in1(32'b0),
-        .sel(opcode == 7'b0110111),   // LUI
-        .out(alu_a)
-    );
+    // Divide ops: ALUControl[4:2] == 3'b101 covers DIV/DIVU/REM/REMU.
+    // div_inflight prevents the divider from being restarted while the
+    // same DIV instruction sits in EX during the stall. It rises when
+    // start fires and falls one cycle after the divider asserts done,
+    // by which point the pipeline has advanced and is_div_op is no
+    // longer asserted (or refers to a fresh DIV instruction).
+    wire is_div_op = (ALUControl[4:2] == 3'b101);
+    reg  div_inflight;
+    wire div_start = is_div_op & ~div_busy & ~div_inflight;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)             div_inflight <= 1'b0;
+        else if (div_done)      div_inflight <= 1'b0;
+        else if (div_start)     div_inflight <= 1'b1;
+    end
 
     alu arithmetic_logic_unit(
         .clk       (clk),
@@ -55,8 +120,8 @@ module ex_stage(
         .a         (alu_a),
         .b         (alu_b),
         .ALUControl(ALUControl),
-        .div_start (1'b0),
-        .result    (alu_result),
+        .div_start (div_start),
+        .result    (alu_raw),
         .zero      (zero),
         .cout      (cout),
         .overflow  (overflow),
@@ -64,14 +129,25 @@ module ex_stage(
         .div_done  (div_done)
     );
 
+    // ─── Branch evaluation ─────────────────────────────────────────
+    wire BranchTaken;
+
     branch_condition_evaluator bce(
         .zero          (zero),
-        .alu_result_msb(alu_result[31]),
+        .alu_result_msb(alu_raw[31]),
         .overflow      (overflow),
         .cout          (cout),
         .BranchType    (funct3),
         .BranchTaken   (BranchTaken)
     );
+
+    // ─── Branch / jump target computation ──────────────────────────
+    //   branch_target = pc + imm           (B-type and JAL)
+    //   jalr_target   = (rs1+imm) & ~1     (JALR; uses raw ALU output)
+    //   jump_target   = JALR ? jalr_target : branch_target
+    wire [31:0] branch_target;
+    wire [31:0] jalr_target = {alu_raw[31:1], 1'b0};
+    wire [31:0] jump_target;
 
     adder_32bit branch_adder(
         .a       (pc_current),
@@ -82,19 +158,22 @@ module ex_stage(
         .overflow()
     );
 
-    // JALR target = (rs1 + imm) with bit 0 forced to 0
-    wire [31:0] jalr_target = {alu_result[31:1], 1'b0};
-
-    // JAL uses branch_target (PC + imm_j); JALR uses jalr_target (rs1+imm_i & ~1)
     mux2 #(.WIDTH(32)) jalr_target_mux(
         .in0(branch_target),
         .in1(jalr_target),
-        .sel(IsJALR),
+        .sel(is_jalr),
         .out(jump_target)
     );
 
+    // ─── Outputs ───────────────────────────────────────────────────
+    // JAL/JALR ride the same EX/MEM-resolved redirect path as B-type:
+    //   - branch_target_out carries the JALR-corrected jump target
+    //     (mux already selects jalr_target when is_jalr).
+    //   - BranchTaken_out is forced 1 so the EX/MEM flush rail fires
+    //     unconditionally for JAL/JALR.
+    assign alu_result        = (is_jal | is_jalr) ? pc_plus4 : alu_raw;
     assign jump_target_out   = jump_target;
-    assign branch_target_out = branch_target;
-    assign BranchTaken_out   = BranchTaken;
-    assign pc_redirect       = take_pc_redirect;
+    assign branch_target_out = jump_target;
+    assign BranchTaken_out   = BranchTaken | is_jal | is_jalr;
+
 endmodule

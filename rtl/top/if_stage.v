@@ -7,10 +7,10 @@ module if_stage(
     output [31:0] instruction,
     output [31:0] pc_current,
     output [31:0] pc_instr,
-    output [31:0] pc_plus4
+    output [31:0] pc_plus4,
+    output HREADY_ROM
 );
     wire HRESP;
-    wire HREADY_ROM;
     wire HSEL_ROM = (pc_current[31:16] == 16'h0000);
 
     pc program_counter(

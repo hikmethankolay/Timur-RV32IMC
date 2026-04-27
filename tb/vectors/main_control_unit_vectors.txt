@@ -12,10 +12,11 @@
 # Branch (0x63)
 63 0 00 00  1 0 0 1 0 0 0 0 0 0 0 0
 63 5 00 00  1 0 0 1 0 0 0 0 0 0 0 0
-# JAL (0x6f)
-6f 0 00 00  0 0 0 0 0 0 1 0 0 0 0 0
-# JALR (0x67)
-67 0 00 00  0 0 0 0 0 1 1 0 0 0 0 0
+# JAL (0x6f) — Branch=1: rides the EX/MEM-resolved redirect rail
+# (BranchTaken is forced 1 in EX for JAL/JALR). RegWrite=1 for the link.
+6f 0 00 00  1 0 0 0 0 0 1 0 0 0 0 0
+# JALR (0x67) — Branch=1, ALUSrc=1 so ALU computes rs1+imm in EX
+67 0 00 00  1 0 0 0 0 1 1 0 0 0 0 0
 # LUI (0x37) — ALUOp=0 (ADD), alu_a forced to 0 in datapath → result = 0+imm = imm
 37 0 00 00  0 0 0 0 0 1 1 0 0 0 0 0
 # AUIPC (0x17)

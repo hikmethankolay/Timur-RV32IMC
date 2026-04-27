@@ -103,3 +103,5 @@ desktop.ini
 # Documentation source files
 *.docx
 *.pdf
+/tools/__pycache__
+/.claude

@@ -1,12 +1,12 @@
 module datapath(
     input  clk,
     input  rst_n,
-    input  stall,
     output [31:0] pc_out
 );
     // IF stage wires
     wire [31:0] if_pc_current, if_pc_instr, if_pc_plus4, if_instruction;
     wire [31:0] pc_next;
+
 
     // IF/ID register wires
     wire [31:0] id_pc, id_instruction;
@@ -36,13 +36,8 @@ module datapath(
 
     // EX stage wires
     wire [31:0] ex_alu_result, ex_pc_plus4, ex_branch_target, ex_jump_target;
-    wire        ex_BranchTaken, ex_pc_redirect;
-
-    reg ex_pc_redirect_d;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) ex_pc_redirect_d <= 1'b0;
-        else        ex_pc_redirect_d <= ex_pc_redirect;
-    end
+    wire        ex_BranchTaken;
+    wire [1:0] fwd_a, fwd_b;
 
     // EX/MEM register wires
     wire [31:0] mem_alu_result, mem_rs2_data, mem_branch_target, mem_pc_plus4;
@@ -67,23 +62,33 @@ module datapath(
     // WB output
     wire [31:0] reg_write_data;
 
+    // Hazard detection unit
+    wire hready_rom, hready_ram, stall, div_busy, hready_combined;
+    assign hready_combined = hready_rom & hready_ram;
+
+    // Branch flush: BranchTaken latched in EX/MEM kills the two wrongly-
+    // fetched instructions (in IF/ID and ID/EX) and redirects PC to the
+    // branch target in the cycle after the branch is evaluated.
+    wire branch_flush = mem_Branch & mem_BranchTaken;
+
     if_stage fetch(
         .clk        (clk),
         .rst_n      (rst_n),
         .pc_en      (~stall),
-        .if_flush   (ex_pc_redirect),
+        .if_flush   (branch_flush),
         .pc_next    (pc_next),
         .instruction(if_instruction),
         .pc_current (if_pc_current),
         .pc_instr   (if_pc_instr),
-        .pc_plus4   (if_pc_plus4)
+        .pc_plus4   (if_pc_plus4),
+        .HREADY_ROM(hready_rom)
     );
 
     if_id_reg if_id_pipe(
         .clk      (clk),
         .rst_n    (rst_n),
         .enable   (~stall),
-        .flush    (ex_pc_redirect | ex_pc_redirect_d),
+        .flush    (branch_flush),
         .pc_in    (if_pc_instr),
         .instr_in (if_instruction),
         .pc_out   (id_pc),
@@ -137,7 +142,7 @@ module datapath(
         .clk          (clk),
         .rst_n        (rst_n),
         .enable       (~stall),
-        .flush        (ex_pc_redirect),
+        .flush        (branch_flush),
         .pc_in        (id_pc),
         .rs1_data_in  (id_rs1_data),
         .rs2_data_in  (id_rs2_data),
@@ -193,6 +198,27 @@ module datapath(
         .overflow()
     );
 
+    forwarding_unit forward(
+        .id_ex_rs1(ex_rs1_addr),
+        .id_ex_rs2(ex_rs2_addr),
+        .ex_mem_rd(mem_rd_addr),
+        .ex_mem_regwrite(mem_RegWrite),
+        .mem_wb_rd(wb_rd_addr),
+        .mem_wb_regwrite(wb_RegWrite),
+        .forwardA(fwd_a),
+        .forwardB(fwd_b)
+    );
+
+    hazard_detection_unit hdu(
+        .id_ex_memread (ex_MemRead),
+        .id_ex_rd      (ex_rd_addr),
+        .if_id_rs1     (id_instruction[19:15]),
+        .if_id_rs2     (id_instruction[24:20]),
+        .hready        (hready_combined),
+        .div_busy      (div_busy),
+        .stall         (stall)
+    );
+
     ex_stage execute(
         .clk              (clk),
         .rst_n            (rst_n),
@@ -210,13 +236,17 @@ module datapath(
         .jump_target_out  (ex_jump_target),
         .branch_target_out(ex_branch_target),
         .BranchTaken_out  (ex_BranchTaken),
-        .pc_redirect      (ex_pc_redirect)
+        .forwardA(fwd_a),
+        .forwardB(fwd_b),
+        .mem_alu_result_fwd(mem_alu_result),
+        .wb_value_fwd(reg_write_data),
+        .div_busy(div_busy)
     );
 
     mux2 #(.WIDTH(32)) pc_next_mux(
         .in0(if_pc_plus4),
-        .in1(ex_jump_target),
-        .sel(ex_pc_redirect),
+        .in1(mem_branch_target),
+        .sel(branch_flush),
         .out(pc_next)
     );
 
@@ -274,7 +304,8 @@ module datapath(
         .MemRead      (mem_MemRead),
         .MemWrite     (mem_MemWrite),
         .funct3       (mem_funct3),
-        .mem_read_data(mem_read_data)
+        .mem_read_data(mem_read_data),
+        .HREADY_RAM(hready_ram)
     );
 
     mem_wb_reg mem_wb_pipe(

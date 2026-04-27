@@ -6,14 +6,15 @@ module mem_stage(
     input         MemRead,
     input         MemWrite,
     input  [2:0]  funct3,
-    output [31:0] mem_read_data
+    output [31:0] mem_read_data,
+    output HREADY_RAM
 );
     // AHB data-phase register: holds rs2_data so HWDATA is valid one cycle
     // after the address phase (as required by AHB-Lite for write transfers).
     reg  [31:0] hwdata_d;
     wire [31:0] HWDATA;
     wire [1:0]  htrans_ram;
-    wire        HREADY_RAM, HRESP;
+    wire        HRESP;
     wire        HSEL_RAM = (alu_result[31:16] == 16'h2000);
     wire [31:0] mem_read_word;
 

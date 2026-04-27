@@ -94,8 +94,10 @@ module main_control_unit (
                 IsMRET = 1'b0;
             end
 
+            // JAL — Branch=1 so the EX/MEM-resolved redirect rail handles
+            // the unconditional jump (BranchTaken is forced 1 in EX for JAL/JALR).
             7'b1101111: begin
-                Branch = 1'b0;
+                Branch = 1'b1;
                 MemRead = 1'b0;
                 MemToReg = 1'b0;
                 ALUOp = 2'b00;
@@ -109,8 +111,10 @@ module main_control_unit (
                 IsMRET = 1'b0;
             end
 
+            // JALR — Branch=1, same rail as JAL/B-type. ALUSrc=1 so the ALU
+            // computes rs1+imm; EX stage masks the low bit for the JALR target.
             7'b1100111: begin
-                Branch = 1'b0;
+                Branch = 1'b1;
                 MemRead = 1'b0;
                 MemToReg = 1'b0;
                 ALUOp = 2'b00;
