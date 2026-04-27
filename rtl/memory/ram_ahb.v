@@ -12,10 +12,10 @@ module ram_ahb (
     output        HRESP
 );
 
-    (* ramstyle = "block" *) reg [7:0] mem0 [0:16383];
-    (* ramstyle = "block" *) reg [7:0] mem1 [0:16383];
-    (* ramstyle = "block" *) reg [7:0] mem2 [0:16383];
-    (* ramstyle = "block" *) reg [7:0] mem3 [0:16383];
+    (* ramstyle = "M9K" *) reg [7:0] mem0 [0:16383];
+    (* ramstyle = "M9K" *) reg [7:0] mem1 [0:16383];
+    (* ramstyle = "M9K" *) reg [7:0] mem2 [0:16383];
+    (* ramstyle = "M9K" *) reg [7:0] mem3 [0:16383];
 
     // AHB active transfer condition (NONSEQ or SEQ)
     wire active = HSEL & HTRANS[1];
@@ -61,8 +61,9 @@ module ram_ahb (
     // --------------------------------------------------------
     // Data Phase (Cycle 2): Synchronous RAM Write & Read
     // --------------------------------------------------------
-    
-    // Write Port using latched Address Phase signals
+
+    // Write port: per-byte synchronous write. Kept on its own always block
+    // (no async reset, no extra logic) so each bank infers as a single M9K.
     always @(posedge HCLK) begin
         if (write_en) begin
             if (write_be[0]) mem0[write_addr] <= HWDATA[7:0];
@@ -72,24 +73,40 @@ module ram_ahb (
         end
     end
 
-    // Read Port using current Address Phase signals
-    reg [31:0] read_data;
+    reg [31:0] ram_read_data;
     always @(posedge HCLK) begin
         if (active && !HWRITE) begin
-            if (write_en && (write_addr == HADDR[15:2])) begin
-                read_data[7:0]   <= write_be[0] ? HWDATA[7:0]   : mem0[HADDR[15:2]];
-                read_data[15:8]  <= write_be[1] ? HWDATA[15:8]  : mem1[HADDR[15:2]];
-                read_data[23:16] <= write_be[2] ? HWDATA[23:16] : mem2[HADDR[15:2]];
-                read_data[31:24] <= write_be[3] ? HWDATA[31:24] : mem3[HADDR[15:2]];
-            end else begin
-                // Synchronous read ensures data is ready precisely on the next clock (Data Phase)
-                read_data <= {mem3[HADDR[15:2]], mem2[HADDR[15:2]], mem1[HADDR[15:2]], mem0[HADDR[15:2]]};
-            end
+            ram_read_data[7:0]   <= mem0[HADDR[15:2]];
+            ram_read_data[15:8]  <= mem1[HADDR[15:2]];
+            ram_read_data[23:16] <= mem2[HADDR[15:2]];
+            ram_read_data[31:24] <= mem3[HADDR[15:2]];
         end
     end
 
+    // --------------------------------------------------------
+    // Read-After-Write Bypass (parallel to RAM, no inference impact)
+    // --------------------------------------------------------
+    reg        bypass_en_d;
+    reg [3:0]  bypass_be_d;
+    reg [31:0] bypass_data_d;
+    always @(posedge HCLK or negedge HRESETn) begin
+        if (!HRESETn) begin
+            bypass_en_d   <= 1'b0;
+            bypass_be_d   <= 4'b0;
+            bypass_data_d <= 32'b0;
+        end else begin
+            bypass_en_d   <= write_en && active && !HWRITE && (write_addr == HADDR[15:2]);
+            bypass_be_d   <= write_be;
+            bypass_data_d <= HWDATA;
+        end
+    end
+
+    assign HRDATA[7:0]   = (bypass_en_d && bypass_be_d[0]) ? bypass_data_d[7:0]   : ram_read_data[7:0];
+    assign HRDATA[15:8]  = (bypass_en_d && bypass_be_d[1]) ? bypass_data_d[15:8]  : ram_read_data[15:8];
+    assign HRDATA[23:16] = (bypass_en_d && bypass_be_d[2]) ? bypass_data_d[23:16] : ram_read_data[23:16];
+    assign HRDATA[31:24] = (bypass_en_d && bypass_be_d[3]) ? bypass_data_d[31:24] : ram_read_data[31:24];
+
     // Output assignments (Zero-wait-state response)
-    assign HRDATA = read_data;
     assign HREADY = 1'b1;
     assign HRESP  = 1'b0;
 

@@ -15,7 +15,7 @@
 
 # Quartus Prime: Generate Tcl File for Project
 # File: Timur_RV32IMC.tcl
-# Generated on: Sun Apr 26 21:57:46 2026
+# Generated on: Tue Apr 28 00:50:22 2026
 
 # Load Quartus Prime Tcl Project package
 package require ::quartus::project
@@ -79,59 +79,61 @@ if {$make_assignments} {
 	set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 	set_global_assignment -name PARTITION_FITTER_PRESERVATION_LEVEL PLACEMENT_AND_ROUTING -section_id Top
 	set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
+	set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON
+	set_global_assignment -name NUM_PARALLEL_PROCESSORS 16
+	set_global_assignment -name VERILOG_FILE tb/Timur_RV32IMC_tb.v
+	set_global_assignment -name VERILOG_FILE tb/rom_ahb_tb.v
+	set_global_assignment -name VERILOG_FILE tb/registers_tb.v
+	set_global_assignment -name VERILOG_FILE tb/ram_ahb_tb.v
+	set_global_assignment -name VERILOG_FILE tb/pc_tb.v
+	set_global_assignment -name VERILOG_FILE tb/mux4_tb.v
+	set_global_assignment -name VERILOG_FILE tb/mux2_tb.v
+	set_global_assignment -name VERILOG_FILE tb/multiplier_tb.v
+	set_global_assignment -name VERILOG_FILE tb/main_control_unit_tb.v
+	set_global_assignment -name VERILOG_FILE tb/instr_parser_tb.v
+	set_global_assignment -name VERILOG_FILE tb/imm_gen_tb.v
+	set_global_assignment -name VERILOG_FILE tb/hazard_detection_unit_tb.v
+	set_global_assignment -name VERILOG_FILE tb/forwarding_unit_tb.v
+	set_global_assignment -name VERILOG_FILE tb/divider_tb.v
+	set_global_assignment -name VERILOG_FILE tb/d_ff_tb.v
+	set_global_assignment -name VERILOG_FILE tb/branch_condition_evaluator_tb.v
+	set_global_assignment -name VERILOG_FILE tb/barrel_shifter_tb.v
+	set_global_assignment -name VERILOG_FILE tb/alu_tb.v
+	set_global_assignment -name VERILOG_FILE tb/alu_decoder_tb.v
+	set_global_assignment -name VERILOG_FILE tb/adder_32bit_tb.v
+	set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/wb_stage.sv
+	set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/Timur_RV32IMC.sv
+	set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/mem_stage.sv
+	set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/if_stage.sv
+	set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/id_stage.sv
+	set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/ex_stage.sv
+	set_global_assignment -name SYSTEMVERILOG_FILE rtl/top/datapath.sv
+	set_global_assignment -name VERILOG_FILE rtl/primitives/mux4.v
+	set_global_assignment -name VERILOG_FILE rtl/primitives/mux2.v
+	set_global_assignment -name VERILOG_FILE rtl/primitives/d_ff.v
+	set_global_assignment -name VERILOG_FILE rtl/primitives/cpu_pll.v
+	set_global_assignment -name QIP_FILE rtl/primitives/cpu_pll.qip
 	set_global_assignment -name VERILOG_FILE rtl/pipeline/mem_wb_reg.v
 	set_global_assignment -name VERILOG_FILE rtl/pipeline/if_id_reg.v
 	set_global_assignment -name VERILOG_FILE rtl/pipeline/id_ex_reg.v
 	set_global_assignment -name VERILOG_FILE rtl/pipeline/ex_mem_reg.v
-	set_global_assignment -name VERILOG_FILE tb/Timur_RV32IMC_tb.v
-	set_global_assignment -name VERILOG_FILE rtl/top/wb_stage.v
-	set_global_assignment -name VERILOG_FILE rtl/top/mem_stage.v
-	set_global_assignment -name VERILOG_FILE rtl/top/if_stage.v
-	set_global_assignment -name VERILOG_FILE rtl/top/id_stage.v
-	set_global_assignment -name VERILOG_FILE rtl/top/ex_stage.v
-	set_global_assignment -name SDC_FILE Timur_RV32IMC.sdc
-	set_global_assignment -name MIF_FILE rom.mif
-	set_global_assignment -name MIF_FILE ram.mif
-	set_global_assignment -name VERILOG_FILE tb/ram_ahb_tb.v
-	set_global_assignment -name VERILOG_FILE tb/main_control_unit_tb.v
-	set_global_assignment -name VERILOG_FILE tb/instr_parser_tb.v
-	set_global_assignment -name VERILOG_FILE tb/imm_gen_tb.v
-	set_global_assignment -name VERILOG_FILE tb/alu_decoder_tb.v
+	set_global_assignment -name VERILOG_FILE rtl/memory/rom_ahb.v
+	set_global_assignment -name VERILOG_FILE rtl/memory/registers.v
 	set_global_assignment -name VERILOG_FILE rtl/memory/ram_ahb.v
+	set_global_assignment -name VERILOG_FILE rtl/memory/pc.v
+	set_global_assignment -name SYSTEMVERILOG_FILE rtl/include/pipeline_pkg.sv
+	set_global_assignment -name VERILOG_FILE rtl/hazard/hazard_detection_unit.v
+	set_global_assignment -name VERILOG_FILE rtl/hazard/forwarding_unit.v
+	set_global_assignment -name VERILOG_FILE rtl/execution/multiplier.v
+	set_global_assignment -name VERILOG_FILE rtl/execution/divider.v
+	set_global_assignment -name VERILOG_FILE rtl/execution/branch_condition_evaluator.v
+	set_global_assignment -name VERILOG_FILE rtl/execution/barrel_shifter.v
+	set_global_assignment -name VERILOG_FILE rtl/execution/alu.v
+	set_global_assignment -name VERILOG_FILE rtl/execution/adder_32bit.v
 	set_global_assignment -name VERILOG_FILE rtl/decode/main_control_unit.v
 	set_global_assignment -name VERILOG_FILE rtl/decode/instr_parser.v
 	set_global_assignment -name VERILOG_FILE rtl/decode/imm_gen.v
 	set_global_assignment -name VERILOG_FILE rtl/decode/alu_decoder.v
-	set_global_assignment -name VERILOG_FILE tb/rom_ahb_tb.v
-	set_global_assignment -name VERILOG_FILE tb/registers_tb.v
-	set_global_assignment -name VERILOG_FILE tb/pc_tb.v
-	set_global_assignment -name VERILOG_FILE rtl/memory/rom_ahb.v
-	set_global_assignment -name VERILOG_FILE rtl/memory/registers.v
-	set_global_assignment -name VERILOG_FILE rtl/memory/pc.v
-	set_global_assignment -name VERILOG_FILE rtl/execution/multiplier.v
-	set_global_assignment -name VERILOG_FILE rtl/execution/divider.v
-	set_global_assignment -name VERILOG_FILE rtl/execution/branch_condition_evaluator.v
-	set_global_assignment -name VERILOG_FILE tb/multiplier_tb.v
-	set_global_assignment -name VERILOG_FILE tb/divider_tb.v
-	set_global_assignment -name VERILOG_FILE tb/branch_condition_evaluator_tb.v
-	set_global_assignment -name VERILOG_FILE tb/alu_tb.v
-	set_global_assignment -name VERILOG_FILE tb/barrel_shifter_tb.v
-	set_global_assignment -name VERILOG_FILE tb/adder_32bit_tb.v
-	set_global_assignment -name VERILOG_FILE rtl/execution/barrel_shifter.v
-	set_global_assignment -name VERILOG_FILE rtl/execution/alu.v
-	set_global_assignment -name VERILOG_FILE rtl/execution/adder_32bit.v
-	set_global_assignment -name VERILOG_FILE rtl/primitives/d_ff.v
-	set_global_assignment -name VERILOG_FILE tb/d_ff_tb.v
-	set_global_assignment -name VERILOG_FILE rtl/primitives/mux2.v
-	set_global_assignment -name VERILOG_FILE tb/mux2_tb.v
-	set_global_assignment -name VERILOG_FILE rtl/top/Timur_RV32IMC.v
-	set_global_assignment -name VERILOG_FILE rtl/top/datapath.v
-	set_global_assignment -name VERILOG_FILE rtl/primitives/mux4.v
-	set_global_assignment -name VERILOG_FILE tb/mux4_tb.v
-	set_global_assignment -name QIP_FILE rtl/primitives/cpu_pll.qip
-	set_global_assignment -name SOURCE_FILE db/Timur_RV32IMC.cmp.rdb
-	set_global_assignment -name TIMING_ANALYZER_MULTICORNER_ANALYSIS ON
-	set_global_assignment -name NUM_PARALLEL_PROCESSORS 16
 	set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 
 	# Including default assignments

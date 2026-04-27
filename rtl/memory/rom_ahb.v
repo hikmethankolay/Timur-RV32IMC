@@ -13,7 +13,7 @@ module rom_ahb (
 );
 
     // M10K inference with MIF initialization
-    (* romstyle = "block", ram_init_file = "rom.mif" *) reg [31:0] mem [0:16383];
+    (* ramstyle = "M9K" *) reg [31:0] mem [0:16383];
 
     initial begin
         $readmemh("test_rom.hex", mem);
