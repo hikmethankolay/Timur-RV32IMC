@@ -21,12 +21,14 @@ module if_stage(
         .pc     (pc_current)
     );
 
+    wire [1:0] htrans_rom = pc_en ? 2'b10 : 2'b00;
+
     rom_ahb program_memory(
         .HCLK    (clk),
         .HRESETn (rst_n),
         .HSEL    (HSEL_ROM),
         .HADDR   (pc_current),
-        .HTRANS  (2'b10),
+        .HTRANS  (htrans_rom),
         .HWRITE  (1'b0),
         .HSIZE   (3'b010),
         .HWDATA  (32'b0),

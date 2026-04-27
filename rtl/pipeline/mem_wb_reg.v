@@ -1,22 +1,26 @@
+// Note: load data is intentionally NOT carried through this register.
+// The data RAM is an AHB-Lite slave with a 1-cycle synchronous read:
+// the LW's address phase happens in MEM (cycle X), and ram_ahb's
+// internal read_data flop only captures the result at posedge X+1 —
+// exactly the same edge that latches this MEM/WB pipeline register.
+// Sampling mem_read_data here would therefore capture the *previous*
+// transaction's value. The RAM's read_data flop is itself the natural
+// MEM/WB latch for the load-data path, so the WB stage consumes the
+// MEM-stage formatted load_data wire directly while this register only
+// carries the control / non-load datapath signals.
 module mem_wb_reg (
     input         clk,
     input         rst_n,
     input         flush,
     input         enable,
-    // datapath
-    input  [31:0] mem_read_data_in,
     input  [31:0] alu_result_in,
     input  [4:0]  rd_addr_in,
     input  [31:0] pc_plus4_in,
     input  [6:0]  opcode_in,
-    // control
     input         MemToReg_in,
     input         RegWrite_in,
-    // CSR
     input  [31:0] csr_rdata_in,
     input         CSRToReg_in,
-    // outputs
-    output reg [31:0] mem_read_data_out,
     output reg [31:0] alu_result_out,
     output reg [4:0]  rd_addr_out,
     output reg [31:0] pc_plus4_out,
@@ -28,7 +32,6 @@ module mem_wb_reg (
 );
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            mem_read_data_out <= 32'b0;
             alu_result_out    <= 32'b0;
             rd_addr_out       <= 5'b0;
             pc_plus4_out      <= 32'b0;
@@ -38,7 +41,6 @@ module mem_wb_reg (
             csr_rdata_out     <= 32'b0;
             CSRToReg_out      <= 1'b0;
         end else if (flush) begin
-            mem_read_data_out <= 32'b0;
             alu_result_out    <= 32'b0;
             rd_addr_out       <= 5'b0;
             pc_plus4_out      <= 32'b0;
@@ -48,7 +50,6 @@ module mem_wb_reg (
             csr_rdata_out     <= 32'b0;
             CSRToReg_out      <= 1'b0;
         end else if (enable) begin
-            mem_read_data_out <= mem_read_data_in;
             alu_result_out    <= alu_result_in;
             rd_addr_out       <= rd_addr_in;
             pc_plus4_out      <= pc_plus4_in;

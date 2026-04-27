@@ -76,8 +76,15 @@ module ram_ahb (
     reg [31:0] read_data;
     always @(posedge HCLK) begin
         if (active && !HWRITE) begin
-            // Synchronous read ensures data is ready precisely on the next clock (Data Phase)
-            read_data <= {mem3[HADDR[15:2]], mem2[HADDR[15:2]], mem1[HADDR[15:2]], mem0[HADDR[15:2]]};
+            if (write_en && (write_addr == HADDR[15:2])) begin
+                read_data[7:0]   <= write_be[0] ? HWDATA[7:0]   : mem0[HADDR[15:2]];
+                read_data[15:8]  <= write_be[1] ? HWDATA[15:8]  : mem1[HADDR[15:2]];
+                read_data[23:16] <= write_be[2] ? HWDATA[23:16] : mem2[HADDR[15:2]];
+                read_data[31:24] <= write_be[3] ? HWDATA[31:24] : mem3[HADDR[15:2]];
+            end else begin
+                // Synchronous read ensures data is ready precisely on the next clock (Data Phase)
+                read_data <= {mem3[HADDR[15:2]], mem2[HADDR[15:2]], mem1[HADDR[15:2]], mem0[HADDR[15:2]]};
+            end
         end
     end
 

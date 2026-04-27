@@ -53,7 +53,7 @@ module datapath(
 
     // ─── MEM stage / MEM/WB wires ────────────────────────────────────
     wire [31:0] mem_read_data;
-    wire [31:0] wb_mem_read_data, wb_alu_result, wb_pc_plus4, wb_csr_rdata;
+    wire [31:0] wb_alu_result, wb_pc_plus4, wb_csr_rdata;
     wire [4:0]  wb_rd_addr;
     wire [6:0]  wb_opcode;
     wire        wb_MemToReg, wb_RegWrite, wb_CSRToReg;
@@ -353,12 +353,15 @@ module datapath(
 
     // ─── MEM/WB register ─────────────────────────────────────────────
     // enable=~freeze_stall to keep the whole back end frozen during DIV.
+    // Load data is *not* threaded through this register — see the comment
+    // at the top of mem_wb_reg.v for why. The RAM slave's own read_data
+    // flop is the MEM/WB boundary for that path, and mem_read_data feeds
+    // the WB stage directly.
     mem_wb_reg mem_wb_pipe(
         .clk              (clk),
         .rst_n            (rst_n),
         .flush            (1'b0),
         .enable           (~freeze_stall),
-        .mem_read_data_in (mem_read_data),
         .alu_result_in    (mem_alu_result),
         .rd_addr_in       (mem_rd_addr),
         .pc_plus4_in      (mem_pc_plus4),
@@ -367,7 +370,6 @@ module datapath(
         .RegWrite_in      (mem_RegWrite),
         .csr_rdata_in     (32'b0),
         .CSRToReg_in      (1'b0),
-        .mem_read_data_out(wb_mem_read_data),
         .alu_result_out   (wb_alu_result),
         .rd_addr_out      (wb_rd_addr),
         .pc_plus4_out     (wb_pc_plus4),
@@ -379,9 +381,15 @@ module datapath(
     );
 
     // ─── WB stage ────────────────────────────────────────────────────
+    // mem_read_data sources from ram_ahb's synchronous read_data flop
+    // (via the byte/half formatter in mem_stage). That flop clocks on
+    // the same edge as mem_wb_pipe, so on the LW's WB cycle the load
+    // value, the formatter's registered load_addr_lsb_d / load_funct3_d,
+    // and the MemToReg / rd / RegWrite controls from mem_wb_pipe are
+    // all valid simultaneously.
     wb_stage writeback(
         .alu_result    (wb_alu_result),
-        .mem_read_data (wb_mem_read_data),
+        .mem_read_data (mem_read_data),
         .pc_plus4      (wb_pc_plus4),
         .MemToReg      (wb_MemToReg),
         .opcode        (wb_opcode),
