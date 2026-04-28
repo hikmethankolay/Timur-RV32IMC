@@ -26,9 +26,12 @@ module datapath(
 
     // ─── ID stage bundle ─────────────────────────────────────────────
     id_decoded_t id_decoded;
+    wire [31:0] id_pc_plus4;       // PC+4 computed in ID
+    wire [31:0] id_branch_target;  // PC+imm computed in ID
 
     // ─── ID/EX register wires ────────────────────────────────────────
-    wire [31:0] ex_pc, ex_rs1_data, ex_rs2_data, ex_imm;
+    wire [31:0] ex_pc, ex_pc_plus4_pre, ex_branch_target_pre;
+    wire [31:0] ex_rs1_data, ex_rs2_data, ex_imm;
     wire [4:0]  ex_rs1_addr, ex_rs2_addr, ex_rd_addr;
     wire [6:0]  ex_opcode;
     wire [4:0]  ex_ALUControl;
@@ -68,7 +71,7 @@ module datapath(
 
     // ─── Hazard / handshake wires ────────────────────────────────────
     wire hready_rom, hready_ram;
-    wire stall, bubble_stall, freeze_stall, div_busy;
+    wire stall, bubble_stall, freeze_stall, div_busy, mul_busy;
     wire hready_combined = hready_rom & hready_ram;
 
     // ─── Branch resolution (2-cycle, evaluated in MEM) ───────────────
@@ -115,6 +118,27 @@ module datapath(
         .id_decoded (id_decoded)
     );
 
+    // ─── Pre-compute PC+4 and branch target in ID ───────────────────
+    // These adders used to sit in the EX stage; moving them here
+    // shortens the EX critical path by ~2–3 ns on MAX 10.
+    adder_32bit id_pc_plus4_adder(
+        .a       (id_pc),
+        .b       (32'h00000004),
+        .sub     (1'b0),
+        .result  (id_pc_plus4),
+        .cout    (),
+        .overflow()
+    );
+
+    adder_32bit id_branch_target_adder(
+        .a       (id_pc),
+        .b       (id_decoded.imm),
+        .sub     (1'b0),
+        .result  (id_branch_target),
+        .cout    (),
+        .overflow()
+    );
+
     // ─── ID/EX register ──────────────────────────────────────────────
     // Split-stall semantics:
     //   - freeze_stall (DIV in flight): hold ID/EX so the multi-cycle
@@ -128,6 +152,8 @@ module datapath(
         .enable       (~freeze_stall),
         .flush        (branch_taken | bubble_stall),
         .pc_in        (id_pc),
+        .pc_plus4_in  (id_pc_plus4),
+        .branch_target_in(id_branch_target),
         .rs1_data_in  (id_decoded.rs1_data),
         .rs2_data_in  (id_decoded.rs2_data),
         .imm_in       (id_decoded.imm),
@@ -150,6 +176,8 @@ module datapath(
         .IsEBREAK_in  (id_decoded.IsEBREAK),
         .IsMRET_in    (id_decoded.IsMRET),
         .pc_out        (ex_pc),
+        .pc_plus4_out  (ex_pc_plus4_pre),
+        .branch_target_out(ex_branch_target_pre),
         .rs1_data_out  (ex_rs1_data),
         .rs2_data_out  (ex_rs2_data),
         .imm_out       (ex_imm),
@@ -191,6 +219,7 @@ module datapath(
         .if_id_rs2    (id_instruction[24:20]),
         .hready       (hready_combined),
         .div_busy     (div_busy),
+        .mul_busy     (mul_busy),
         .stall        (stall),
         .bubble_stall (bubble_stall),
         .freeze_stall (freeze_stall)
@@ -209,6 +238,8 @@ module datapath(
         .ALUSrc            (ex_ALUSrc),
         .Branch            (ex_Branch),
         .pc_current        (ex_pc),
+        .pc_plus4_in       (ex_pc_plus4_pre),
+        .branch_target_in  (ex_branch_target_pre),
         .alu_result        (ex_alu_result),
         .pc_plus4          (ex_pc_plus4),
         .jump_target_out   (ex_jump_target),
@@ -218,7 +249,8 @@ module datapath(
         .forwardB          (fwd_b),
         .mem_alu_result_fwd(mem_alu_result),
         .wb_value_fwd      (reg_write_data),
-        .div_busy          (div_busy)
+        .div_busy          (div_busy),
+        .mul_busy          (mul_busy)
     );
 
     // ─── EX/MEM register ─────────────────────────────────────────────

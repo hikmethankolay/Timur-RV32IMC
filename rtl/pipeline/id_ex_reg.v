@@ -5,6 +5,8 @@ module id_ex_reg (
     input         flush,
     // datapath
     input  [31:0] pc_in,
+    input  [31:0] pc_plus4_in,
+    input  [31:0] branch_target_in,
     input  [31:0] rs1_data_in,
     input  [31:0] rs2_data_in,
     input  [31:0] imm_in,
@@ -30,6 +32,8 @@ module id_ex_reg (
     input         IsMRET_in,
     // outputs
     output reg [31:0] pc_out,
+    output reg [31:0] pc_plus4_out,
+    output reg [31:0] branch_target_out,
     output reg [31:0] rs1_data_out,
     output reg [31:0] rs2_data_out,
     output reg [31:0] imm_out,
@@ -55,6 +59,8 @@ module id_ex_reg (
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             pc_out       <= 32'b0;
+            pc_plus4_out <= 32'b0;
+            branch_target_out <= 32'b0;
             rs1_data_out <= 32'b0;
             rs2_data_out <= 32'b0;
             imm_out      <= 32'b0;
@@ -78,6 +84,8 @@ module id_ex_reg (
             IsMRET_out   <= 1'b0;
         end else if (flush) begin
             pc_out       <= 32'b0;
+            pc_plus4_out <= 32'b0;
+            branch_target_out <= 32'b0;
             rs1_data_out <= 32'b0;
             rs2_data_out <= 32'b0;
             imm_out      <= 32'b0;
@@ -101,6 +109,8 @@ module id_ex_reg (
             IsMRET_out   <= 1'b0;
         end else if (enable) begin
             pc_out       <= pc_in;
+            pc_plus4_out <= pc_plus4_in;
+            branch_target_out <= branch_target_in;
             rs1_data_out <= rs1_data_in;
             rs2_data_out <= rs2_data_in;
             imm_out      <= imm_in;

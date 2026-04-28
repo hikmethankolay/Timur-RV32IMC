@@ -2,12 +2,13 @@
 //
 // alu_tb — vector-driven regression for the ALU (logic, add/sub, shifts, M-extension mul*, div/rem).
 // Combinational ops: apply inputs, wait #10, check result/zero/cout/overflow.
+// Mul ops (ALUControl 16-19): pulse mul_start, wait for mul_done, check result/zero only.
 // Div/rem ops (ALUControl 20-23): pulse div_start, wait for div_done, check result/zero only
-// (cout/overflow reflect the internal adder and are not meaningful for div results).
+// (cout/overflow reflect the internal adder and are not meaningful for mul/div results).
 //
 module alu_tb;
 
-    reg         clk, rst_n, div_start;
+    reg         clk, rst_n, div_start, mul_start;
     reg  [31:0] a, b;
     reg  [4:0]  ALUControl;
     wire [31:0] result;
@@ -16,6 +17,8 @@ module alu_tb;
     wire        overflow;
     wire        div_busy;
     wire        div_done;
+    wire        mul_busy;
+    wire        mul_done;
 
     alu dut (
         .clk       (clk),
@@ -24,12 +27,15 @@ module alu_tb;
         .b         (b),
         .ALUControl(ALUControl),
         .div_start (div_start),
+        .mul_start (mul_start),
         .result    (result),
         .zero      (zero),
         .cout      (cout),
         .overflow  (overflow),
         .div_busy  (div_busy),
-        .div_done  (div_done)
+        .div_done  (div_done),
+        .mul_busy  (mul_busy),
+        .mul_done  (mul_done)
     );
 
     always #5 clk = ~clk;
@@ -44,11 +50,13 @@ module alu_tb;
     integer          total    = 0;
     integer          test_num = 0;
     reg              is_div_op;
+    reg              is_mul_op;
 
     initial begin
         clk        = 0;
         rst_n      = 0;
         div_start  = 0;
+        mul_start  = 0;
         a          = 32'h0;
         b          = 32'h0;
         ALUControl = 5'h0;
@@ -71,24 +79,31 @@ module alu_tb;
                                 exp_zero, exp_cout, exp_ovf);
                     if (r == 7) begin
                         is_div_op = (ALUControl >= 5'd20 && ALUControl <= 5'd23);
+                        is_mul_op = (ALUControl >= 5'd16 && ALUControl <= 5'd19);
                         test_num = test_num + 1;
                         total    = total    + 1;
 
                         if (is_div_op) begin
                             // Pulse div_start for one cycle, wait for done.
-                            // done fires in the same cycle as start is sampled for
-                            // div-by-zero / signed-overflow, so check before blocking.
                             @(posedge clk); #1;
                             div_start = 1;
                             @(posedge clk); #1;
                             div_start = 0;
                             if (!div_done) @(posedge div_done);
                             #1;
+                        end else if (is_mul_op) begin
+                            // Pulse mul_start for one cycle, wait for done.
+                            @(posedge clk); #1;
+                            mul_start = 1;
+                            @(posedge clk); #1;
+                            mul_start = 0;
+                            if (!mul_done) @(posedge mul_done);
+                            #1;
                         end else begin
                             #10;
                         end
 
-                        if (is_div_op) begin
+                        if (is_div_op || is_mul_op) begin
                             if (result !== exp_res || zero !== exp_zero) begin
                                 $display("FAIL test %0d: a=%h b=%h ctrl=%0d | got res=%h z=%b | exp res=%h z=%b",
                                           test_num, a, b, ALUControl,

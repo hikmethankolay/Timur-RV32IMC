@@ -5,6 +5,7 @@ module hazard_detection_unit (
     input [4:0] if_id_rs2,
     input hready,
     input div_busy,
+    input mul_busy,
     output stall,
     output bubble_stall,
     output freeze_stall
@@ -23,11 +24,11 @@ module hazard_detection_unit (
     //   bubble_stall: ID/EX must be replaced with NOP (load-use, bus-wait).
     //                 The stalling instruction has already advanced; we need
     //                 to keep the consumer in IF/ID and inject a bubble.
-    //   freeze_stall: ID/EX must be held (multi-cycle execute, e.g. DIV).
+    //   freeze_stall: ID/EX must be held (multi-cycle execute, e.g. DIV/MUL).
     //                 The instruction is still computing in EX and must not
     //                 leave ID/EX until its result is valid.
     assign bubble_stall = load_use | bus_wait;
-    assign freeze_stall = div_busy;
+    assign freeze_stall = div_busy | mul_busy;
 
     // Aggregate stall — used by PC and IF/ID, both of which always freeze
     // on any stall regardless of class.

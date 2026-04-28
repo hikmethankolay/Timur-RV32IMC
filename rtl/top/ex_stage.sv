@@ -8,6 +8,10 @@ module ex_stage(
     input  [31:0] imm,
     input  [31:0] pc_current,
 
+    // Pre-computed values from ID stage (threaded through ID/EX)
+    input  [31:0] pc_plus4_in,
+    input  [31:0] branch_target_in,
+
     // Decoded fields
     input  [6:0]  opcode,
     input  [2:0]  funct3,
@@ -27,18 +31,13 @@ module ex_stage(
     output [31:0] jump_target_out,
     output [31:0] branch_target_out,
     output        BranchTaken_out,
-    output        div_busy
+    output        div_busy,
+    output        mul_busy
 );
 
-    // ─── pc_plus4 (for JAL/JALR link, propagated through EX/MEM/WB) ─
-    adder_32bit pc_plus4_adder(
-        .a       (pc_current),
-        .b       (32'h00000004),
-        .sub     (1'b0),
-        .result  (pc_plus4),
-        .cout    (),
-        .overflow()
-    );
+    // ─── pc_plus4 & branch_target are now pre-computed in ID ─────
+    // Simply pass through the registered values from ID/EX.
+    assign pc_plus4 = pc_plus4_in;
 
     // ─── opcode constants & predicates ─────────────────────────────
     localparam [6:0] OPC_LUI   = 7'b0110111;
@@ -106,30 +105,41 @@ module ex_stage(
     //   latches the correct writeback value for JAL/JALR.
     wire [31:0] alu_raw;
     wire        zero, cout, overflow;
-    wire        div_done;
+    wire        div_done, mul_done;
 
-    // Divide ops: ALUControl[4:2] == 3'b101 covers DIV/DIVU/REM/REMU.
+    // ── Divide ops ────────────────────────────────────────────────
+    // ALUControl[4:2] == 3'b101 covers DIV/DIVU/REM/REMU.
     // div_inflight prevents the divider from being restarted while the
-    // same DIV instruction sits in EX during the stall. It rises when
-    // start fires and falls one cycle after the divider asserts done,
-    // by which point the pipeline has advanced and is_div_op is no
-    // longer asserted (or refers to a fresh DIV instruction).
+    // same DIV instruction sits in EX during the stall.
     wire is_div_op = (ALUControl[4:2] == 3'b101);
     wire div_busy_raw;
     reg  div_inflight;
     wire div_start = is_div_op & ~div_busy_raw & ~div_inflight;
 
-    // Extend div_busy to include the start cycle. The divider's busy
-    // register goes high one cycle after start fires (non-blocking
-    // assignment in IDLE→RUNNING transition). Without this OR, the
-    // hazard detection unit sees div_busy=0 at the cycle DIV first
-    // enters EX, ID/EX advances away, and the DIV result is lost.
+    // Extend div_busy to include the start cycle.
     assign div_busy = div_busy_raw | div_start;
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n)             div_inflight <= 1'b0;
         else if (div_done)      div_inflight <= 1'b0;
         else if (div_start)     div_inflight <= 1'b1;
+    end
+
+    // ── Multiply ops ─────────────────────────────────────────────
+    // ALUControl[4:2] == 3'b100 covers MUL/MULH/MULHSU/MULHU.
+    // Same inflight pattern as divider to prevent re-start.
+    wire is_mul_op = (ALUControl[4:2] == 3'b100);
+    wire mul_busy_raw;
+    reg  mul_inflight;
+    wire mul_start = is_mul_op & ~mul_busy_raw & ~mul_inflight;
+
+    // Extend mul_busy to include the start cycle.
+    assign mul_busy = mul_busy_raw | mul_start;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)             mul_inflight <= 1'b0;
+        else if (mul_done)      mul_inflight <= 1'b0;
+        else if (mul_start)     mul_inflight <= 1'b1;
     end
 
     alu arithmetic_logic_unit(
@@ -139,12 +149,15 @@ module ex_stage(
         .b         (alu_b),
         .ALUControl(ALUControl),
         .div_start (div_start),
+        .mul_start (mul_start),
         .result    (alu_raw),
         .zero      (zero),
         .cout      (cout),
         .overflow  (overflow),
         .div_busy  (div_busy_raw),
-        .div_done  (div_done)
+        .div_done  (div_done),
+        .mul_busy  (mul_busy_raw),
+        .mul_done  (mul_done)
     );
 
     // ─── Branch evaluation ─────────────────────────────────────────
@@ -160,24 +173,15 @@ module ex_stage(
     );
 
     // ─── Branch / jump target computation ──────────────────────────
-    //   branch_target = pc + imm           (B-type and JAL)
-    //   jalr_target   = (rs1+imm) & ~1     (JALR; uses raw ALU output)
-    //   jump_target   = JALR ? jalr_target : branch_target
-    wire [31:0] branch_target;
+    //   branch_target = pc + imm   → pre-computed in ID, arrives via
+    //                                branch_target_in from ID/EX reg.
+    //   jalr_target   = (rs1+imm) & ~1  (JALR; uses raw ALU output)
+    //   jump_target   = JALR ? jalr_target : branch_target_in
     wire [31:0] jalr_target = {alu_raw[31:1], 1'b0};
     wire [31:0] jump_target;
 
-    adder_32bit branch_adder(
-        .a       (pc_current),
-        .b       (imm),
-        .sub     (1'b0),
-        .result  (branch_target),
-        .cout    (),
-        .overflow()
-    );
-
     mux2 #(.WIDTH(32)) jalr_target_mux(
-        .in0(branch_target),
+        .in0(branch_target_in),
         .in1(jalr_target),
         .sel(is_jalr),
         .out(jump_target)

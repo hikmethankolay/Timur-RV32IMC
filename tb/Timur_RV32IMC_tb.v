@@ -58,8 +58,8 @@ module Timur_RV32IMC_tb;
         //   - 1x load-use stall          (~1 cycle)
         //   - 4x branch/jump flush      (~8 cycles)
         //   - AHB pipeline latencies
-        // 300 cycles is comfortable.
-        repeat (300) begin
+        // 320 cycles is comfortable (MUL is now 2-cycle pipelined).
+        repeat (320) begin
             @(posedge clk);
             cycle = cycle + 1;
         end

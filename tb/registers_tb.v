@@ -57,7 +57,7 @@ module registers_tb;
                     if (wait_type == 1'b0) begin
                         #3;
                     end else begin
-                        @(posedge clk); #1;
+                        @(negedge clk); #1;
                     end
 
                     if (rs1_data !== exp_rs1 || rs2_data !== exp_rs2) begin

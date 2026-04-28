@@ -19,30 +19,14 @@ module registers (
         end
     end
 
-    always @(posedge clk) begin
+    always @(negedge clk) begin
         if (reg_write && rd_addr != 5'b00000) begin
             regs[rd_addr] <= rd_data;
         end
     end
 
-    wire rs1_bypass = reg_write && (rd_addr == rs1_addr) && (rs1_addr != 5'b00000);
-    wire rs2_bypass = reg_write && (rd_addr == rs2_addr) && (rs2_addr != 5'b00000);
+    // Combinational read — x0 is hardwired to zero
+    assign rs1_data = (rs1_addr == 5'b00000) ? 32'b0 : regs[rs1_addr];
+    assign rs2_data = (rs2_addr == 5'b00000) ? 32'b0 : regs[rs2_addr];
 
-    wire [31:0] rs1_value = rs1_bypass ? rd_data : regs[rs1_addr];
-    wire [31:0] rs2_value = rs2_bypass ? rd_data : regs[rs2_addr];
-
-    mux2 #(.WIDTH(32)) rs1_mux (
-        .in0 (rs1_value),
-        .in1 (32'b0),
-        .sel (rs1_addr == 5'b00000),
-        .out (rs1_data)
-    );
-
-    mux2 #(.WIDTH(32)) rs2_mux (
-        .in0 (rs2_value),
-        .in1 (32'b0),
-        .sel (rs2_addr == 5'b00000),
-        .out (rs2_data)
-    );
-    
 endmodule
