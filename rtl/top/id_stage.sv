@@ -1,17 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// id_stage
-// ─────────────────────────────────────────────────────────────────────────────
-// Full Instruction-Decode stage. Owns:
-//   - instr_parser   : slice the 32-bit instruction into fields
-//   - imm_gen        : sign-extend the 5 RISC-V immediate formats
-//   - registers      : 32x32-bit register file (rs1/rs2 read, rd write from WB)
-//   - main_control_unit : opcode -> primary control bits
-//   - alu_decoder    : opcode + funct3 + funct7 + ALUOp -> 5-bit ALUControl
-//
-// All decoded fields, immediates, register data, control bits, and the
-// CSR address are bundled into one id_decoded_t output. Datapath unpacks
-// individual fields at the ID/EX register's per-signal port list.
-// ─────────────────────────────────────────────────────────────────────────────
 import pipeline_pkg::*;
 
 module id_stage(
@@ -93,10 +79,6 @@ module id_stage(
         .IsMRET   (IsMRET)
     );
 
-    // alu_decoder takes opcode now to honour RISC-V ISA: funct7[5] is
-    // only meaningful for R-type (and the I-arith shift forms). For
-    // ADDI/XORI/etc the funct7 bits are part of imm[11:5] and must be
-    // ignored. (Bug #1)
     wire [4:0] ALUControl;
 
     alu_decoder alu_dec(

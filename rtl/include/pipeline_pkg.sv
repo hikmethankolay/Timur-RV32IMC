@@ -36,8 +36,8 @@ package pipeline_pkg;
         logic        MemToReg;
         logic        RegWrite;
 
-        // CSR / privileged (reserved from Phase 6 onward)
-        logic [11:0] csr_addr;     // = instruction[31:20]
+        // CSR / privileged
+        logic [11:0] csr_addr;
         logic        CSRWrite;
         logic [1:0]  CSROp;
         logic        IsECALL;

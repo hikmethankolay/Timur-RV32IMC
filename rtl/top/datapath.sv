@@ -1,15 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// datapath
-// ─────────────────────────────────────────────────────────────────────────────
-// Top-level CPU datapath. Five-stage pipeline: IF → ID → EX → MEM → WB.
-// Stage-internal logic lives in if_stage / id_stage / ex_stage / mem_stage /
-// wb_stage. This module is mostly:
-//   - stage instances
-//   - the four pipeline registers
-//   - hazard / forwarding glue that crosses stage boundaries
-// Branch redirect logic (PC mux, branch_flush_d, if_id_flush) is owned by
-// if_stage. ID-stage outputs are bundled into pipeline_pkg::id_decoded_t.
-// ─────────────────────────────────────────────────────────────────────────────
 import pipeline_pkg::*;
 
 module datapath(
@@ -42,7 +30,7 @@ module datapath(
     wire [11:0] ex_csr_addr;
 
     // ─── EX stage wires ──────────────────────────────────────────────
-    wire [31:0] ex_alu_result, ex_pc_plus4, ex_branch_target, ex_jump_target;
+    wire [31:0] ex_alu_result, ex_pc_plus4, ex_branch_target;
     wire        ex_BranchTaken;
     wire [1:0]  fwd_a, fwd_b;
 
@@ -75,12 +63,6 @@ module datapath(
     wire hready_combined = hready_rom & hready_ram;
 
     // ─── Branch resolution (2-cycle, evaluated in MEM) ───────────────
-    // branch_taken is the 1-cycle "redirect" pulse: it is HIGH during the
-    // cycle the branch sits in MEM. Drives:
-    //   - if_stage's pc_next mux + pc_instr_reg flush + if_id_flush
-    //     extension (handled internally in if_stage)
-    //   - flush rail of ID/EX (kill the speculative slot)
-    //   - flush rail of EX/MEM (kill the branch's own EX-shadow, Bug #2)
     wire branch_taken = mem_Branch & mem_BranchTaken;
 
     // ─── IF stage ────────────────────────────────────────────────────
@@ -119,8 +101,6 @@ module datapath(
     );
 
     // ─── Pre-compute PC+4 and branch target in ID ───────────────────
-    // These adders used to sit in the EX stage; moving them here
-    // shortens the EX critical path by ~2–3 ns on MAX 10.
     adder_32bit id_pc_plus4_adder(
         .a       (id_pc),
         .b       (32'h00000004),
@@ -140,12 +120,6 @@ module datapath(
     );
 
     // ─── ID/EX register ──────────────────────────────────────────────
-    // Split-stall semantics:
-    //   - freeze_stall (DIV in flight): hold ID/EX so the multi-cycle
-    //     EX-stage operation finishes against frozen operands.
-    //   - bubble_stall (load-use, bus-wait): inject a NOP into EX so the
-    //     stalling instruction stays in IF/ID and the consumer waits.
-    //   - branch_taken: take precedence to flush the speculative slot.
     id_ex_reg id_ex_pipe(
         .clk          (clk),
         .rst_n        (rst_n),
@@ -236,13 +210,11 @@ module datapath(
         .funct3            (ex_funct3),
         .ALUControl        (ex_ALUControl),
         .ALUSrc            (ex_ALUSrc),
-        .Branch            (ex_Branch),
         .pc_current        (ex_pc),
         .pc_plus4_in       (ex_pc_plus4_pre),
         .branch_target_in  (ex_branch_target_pre),
         .alu_result        (ex_alu_result),
         .pc_plus4          (ex_pc_plus4),
-        .jump_target_out   (ex_jump_target),
         .branch_target_out (ex_branch_target),
         .BranchTaken_out   (ex_BranchTaken),
         .forwardA          (fwd_a),

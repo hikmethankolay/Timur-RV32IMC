@@ -17,9 +17,8 @@ module ex_stage(
     input  [2:0]  funct3,
     input  [4:0]  ALUControl,
     input         ALUSrc,
-    input         Branch,
 
-    // Forwarding inputs (from forwarding_unit + later pipeline stages)
+    // Forwarding inputs
     input  [1:0]  forwardA,
     input  [1:0]  forwardB,
     input  [31:0] mem_alu_result_fwd,    // EX/MEM stage producer value
@@ -28,27 +27,27 @@ module ex_stage(
     // Outputs
     output [31:0] alu_result,
     output [31:0] pc_plus4,
-    output [31:0] jump_target_out,
     output [31:0] branch_target_out,
     output        BranchTaken_out,
     output        div_busy,
     output        mul_busy
 );
 
-    // ─── pc_plus4 & branch_target are now pre-computed in ID ─────
-    // Simply pass through the registered values from ID/EX.
     assign pc_plus4 = pc_plus4_in;
 
     // ─── opcode constants & predicates ─────────────────────────────
-    localparam [6:0] OPC_LUI   = 7'b0110111;
-    localparam [6:0] OPC_AUIPC = 7'b0010111;
-    localparam [6:0] OPC_JAL   = 7'b1101111;
-    localparam [6:0] OPC_JALR  = 7'b1100111;
+    localparam [6:0] OPC_LUI     = 7'b0110111;
+    localparam [6:0] OPC_AUIPC   = 7'b0010111;
+    localparam [6:0] OPC_BRANCH  = 7'b1100011;
+    localparam [6:0] OPC_JAL     = 7'b1101111;
+    localparam [6:0] OPC_JALR    = 7'b1100111;
 
-    wire is_lui   = (opcode == OPC_LUI);
-    wire is_auipc = (opcode == OPC_AUIPC);
-    wire is_jal   = (opcode == OPC_JAL);
-    wire is_jalr  = (opcode == OPC_JALR);
+    wire is_lui          = (opcode == OPC_LUI);
+    wire is_auipc        = (opcode == OPC_AUIPC);
+    wire is_cond_branch  = (opcode == OPC_BRANCH);
+    wire is_jal         = (opcode == OPC_JAL);
+    wire is_jalr        = (opcode == OPC_JALR);
+    wire is_uncond_jump = is_jal | is_jalr;
 
     // ─── Stage 1: forwarding muxes ─────────────────────────────────
     // forwardA/B encoding:
@@ -74,22 +73,14 @@ module ex_stage(
     );
 
     // ─── Stage 2: ALU operand source select ────────────────────────
-    //   alu_a:  rs1_forwarded (default) / pc_current (AUIPC) / 0 (LUI)
+    //   alu_a:  rs1 (default) / pc (AUIPC) / 0 (LUI — instr[19:15] is imm, not rs1)
     //   alu_b:  rs2_forwarded (default) / imm (ALUSrc=1)
-    wire [1:0] alu_a_sel = is_auipc ? 2'b01 :
-                           is_lui   ? 2'b10 :
-                                      2'b00;
 
     wire [31:0] alu_a, alu_b;
 
-    mux4 #(.WIDTH(32)) ALUA_SrcMux(
-        .in0(rs1_forwarded),
-        .in1(pc_current),
-        .in2(32'b0),
-        .in3(32'b0),
-        .sel(alu_a_sel),
-        .out(alu_a)
-    );
+    assign alu_a = is_auipc ? pc_current
+                 : is_lui   ? 32'b0
+                            : rs1_forwarded;
 
     mux2 #(.WIDTH(32)) ALUB_SrcMux(
         .in0(rs2_forwarded),
@@ -160,8 +151,10 @@ module ex_stage(
         .mul_done  (mul_done)
     );
 
-    // ─── Branch evaluation ─────────────────────────────────────────
-    wire BranchTaken;
+    // ─── Conditional branches (B-type only) ────────────────────────
+    // branch_condition_evaluator encodings match opcode BRANCH. JAL
+    // reuses [14:12] for immediate bits; mask with is_cond_branch.
+    wire cond_branch_taken;
 
     branch_condition_evaluator bce(
         .zero          (zero),
@@ -169,33 +162,18 @@ module ex_stage(
         .overflow      (overflow),
         .cout          (cout),
         .BranchType    (funct3),
-        .BranchTaken   (BranchTaken)
+        .BranchTaken   (cond_branch_taken)
     );
 
-    // ─── Branch / jump target computation ──────────────────────────
-    //   branch_target = pc + imm   → pre-computed in ID, arrives via
-    //                                branch_target_in from ID/EX reg.
-    //   jalr_target   = (rs1+imm) & ~1  (JALR; uses raw ALU output)
-    //   jump_target   = JALR ? jalr_target : branch_target_in
-    wire [31:0] jalr_target = {alu_raw[31:1], 1'b0};
-    wire [31:0] jump_target;
-
-    mux2 #(.WIDTH(32)) jalr_target_mux(
-        .in0(branch_target_in),
-        .in1(jalr_target),
-        .sel(is_jalr),
-        .out(jump_target)
-    );
+    // ─── PC redirect: B & JAL = PC+imm (ID); JALR = (rs1+imm)&~1 ───
+    wire [31:0] redirect_pc = is_jalr ? {alu_raw[31:1], 1'b0}
+                                       : branch_target_in;
 
     // ─── Outputs ───────────────────────────────────────────────────
-    // JAL/JALR ride the same EX/MEM-resolved redirect path as B-type:
-    //   - branch_target_out carries the JALR-corrected jump target
-    //     (mux already selects jalr_target when is_jalr).
-    //   - BranchTaken_out is forced 1 so the EX/MEM flush rail fires
-    //     unconditionally for JAL/JALR.
-    assign alu_result        = (is_jal | is_jalr) ? pc_plus4 : alu_raw;
-    assign jump_target_out   = jump_target;
-    assign branch_target_out = jump_target;
-    assign BranchTaken_out   = BranchTaken | is_jal | is_jalr;
+    // MEM uses Branch & BranchTaken for redirect; JAL/JALR force taken.
+    assign alu_result        = is_uncond_jump ? pc_plus4 : alu_raw;
+    assign branch_target_out = redirect_pc;
+    assign BranchTaken_out   = (is_cond_branch & cond_branch_taken)
+                              | is_uncond_jump;
 
 endmodule
