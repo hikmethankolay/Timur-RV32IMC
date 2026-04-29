@@ -61,7 +61,7 @@ module datapath (
 
     // --- Hazard / global stalls ---
     wire        ram_rdy_w, stall_all_w, stall_bubble_w, stall_freeze_ex_w;
-    wire        div_busy_w, mul_busy_w;
+    wire        div_busy_w;
     wire        mem_rdy_w = rom_rdy_w & ram_rdy_w;     // Both slaves ready → fetch can retire
     wire        br_exec_w   = br_jmp_m_w & br_taken_m_w; // Redirect when branch/jump “taken” resolved in MEM
 
@@ -186,14 +186,13 @@ module datapath (
         .forwardB       (fwd_rs2_sel_w)
     );
 
-    hazard_detection_unit u_hdu ( // Load-use, AHB wait, mul/div multicycle
+    hazard_detection_unit u_hdu ( // Load-use, AHB wait, DIV multicycle (MUL is single-cycle)
         .id_ex_memread(mem_rd_x_w),
         .id_ex_rd     (rd_adr_x_w),
         .if_id_rs1    (instr_d_w[19:15]),
         .if_id_rs2    (instr_d_w[24:20]),
         .hready       (mem_rdy_w),
         .div_busy     (div_busy_w),
-        .mul_busy     (mul_busy_w),
         .stall        (stall_all_w),
         .bubble_stall (stall_bubble_w),
         .freeze_stall (stall_freeze_ex_w)
@@ -221,8 +220,7 @@ module datapath (
         .pc_plus4_x_o     (pc_plus4_x_w),
         .jmp_pc_x_o       (jmp_pc_x_w),
         .br_taken_x_o     (br_taken_x_w),
-        .div_busy_o       (div_busy_w),
-        .mul_busy_o       (mul_busy_w)
+        .div_busy_o       (div_busy_w)
     );
 
     // Kill EX shadow on taken branch; freeze with backend on DIV busy.

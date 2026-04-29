@@ -1,31 +1,19 @@
 `timescale 1ns/1ps
 //
-// multiplier_tb — vector-driven regression for MUL / MULH / MULHSU / MULHU.
-// Updated for the 2-cycle pipelined multiplier interface.
+// multiplier_tb — vector-driven regression for MUL / MULH / MULHSU / MULHU (combinational).
 //
 module multiplier_tb;
 
-    reg         clk, rst_n;
-    reg         start;
     reg  [31:0] a, b;
     reg  [1:0]  mul_op;
     wire [31:0] result;
-    wire        busy, done;
 
     multiplier dut (
-        .clk    (clk),
-        .rst_n  (rst_n),
-        .start  (start),
-        .a      (a),
-        .b      (b),
-        .mul_op (mul_op),
-        .result (result),
-        .busy   (busy),
-        .done   (done)
+        .a     (a),
+        .b     (b),
+        .mul_op(mul_op),
+        .result(result)
     );
-
-    // 10 ns clock period
-    always #5 clk = ~clk;
 
     integer          file, r, slen;
     reg [8*256-1:0]  line;
@@ -35,17 +23,9 @@ module multiplier_tb;
     integer          test_num = 0;
 
     initial begin
-        clk    = 0;
-        rst_n  = 0;
-        start  = 0;
         a      = 32'h0;
         b      = 32'h0;
         mul_op = 2'h0;
-
-        // Reset
-        #20;
-        rst_n = 1;
-        #10;
 
         file = $fopen("tb/vectors/multiplier_vectors.txt", "r");
         if (file == 0) begin
@@ -58,16 +38,7 @@ module multiplier_tb;
                 if (slen > 0) begin
                     r = $sscanf(line, "%h %h %d %h", a, b, mul_op, exp_res);
                     if (r == 4) begin
-                        // Drive inputs and pulse start
-                        @(posedge clk);
-                        start = 1;
-                        @(posedge clk);
-                        start = 0;
-
-                        // Wait for done
-                        @(posedge done);
-                        @(posedge clk); // let result settle
-
+                        #1;
                         test_num = test_num + 1;
                         total    = total    + 1;
                         if (result !== exp_res) begin

@@ -16,7 +16,6 @@ module hazard_detection_unit_tb;
     reg  [4:0] if_id_rs2;
     reg        hready;
     reg        div_busy;
-    reg        mul_busy;
     wire       stall;
 
     hazard_detection_unit dut (
@@ -26,7 +25,6 @@ module hazard_detection_unit_tb;
         .if_id_rs2    (if_id_rs2),
         .hready       (hready),
         .div_busy     (div_busy),
-        .mul_busy     (mul_busy),
         .stall        (stall)
     );
 
@@ -96,7 +94,6 @@ module hazard_detection_unit_tb;
         if_id_rs2     = 5'b0;
         hready        = 1'b1;
         div_busy      = 1'b0;
-        mul_busy      = 1'b0;
 
         run_vectors("tb/vectors/hazard_detection_unit_vectors.txt");
 

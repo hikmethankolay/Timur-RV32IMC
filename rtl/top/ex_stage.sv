@@ -20,8 +20,7 @@ module ex_stage (
     output [31:0] pc_plus4_x_o,     // Pass-through for MEM/WB / link
     output [31:0] jmp_pc_x_o,       // Next PC if redirect
     output        br_taken_x_o,     // Combined with br_jmp in MEM for final redirect
-    output        div_busy_o,
-    output        mul_busy_o
+    output        div_busy_o
 );
     assign pc_plus4_x_o = pc_plus4_x_i;
 
@@ -68,7 +67,7 @@ module ex_stage (
 
     wire [31:0] alu_raw_w;
     wire        zero_w, cout_w, ovf_w;
-    wire        div_done_w, mul_done_w;
+    wire        div_done_w;
 
     wire is_div_w    = (alu_ctl_x_i[4:2] == 3'b101);
     wire div_busy_raw_w;
@@ -82,18 +81,6 @@ module ex_stage (
         else if (div_start_w) div_inflight_q <= 1'b1;
     end
 
-    wire is_mul_w    = (alu_ctl_x_i[4:2] == 3'b100);
-    wire mul_busy_raw_w;
-    reg  mul_inflight_q;
-    wire mul_start_w = is_mul_w & ~mul_busy_raw_w & ~mul_inflight_q;
-    assign mul_busy_o = mul_busy_raw_w | mul_start_w;
-
-    always @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i)         mul_inflight_q <= 1'b0;
-        else if (mul_done_w)  mul_inflight_q <= 1'b0;
-        else if (mul_start_w) mul_inflight_q <= 1'b1;
-    end
-
     alu u_alu (
         .clk       (clk_i),
         .rst_n     (rst_n_i),
@@ -101,15 +88,12 @@ module ex_stage (
         .b         (alu_b_w),
         .ALUControl(alu_ctl_x_i),
         .div_start (div_start_w),
-        .mul_start (mul_start_w),
         .result    (alu_raw_w),
         .zero      (zero_w),
         .cout      (cout_w),
         .overflow  (ovf_w),
         .div_busy  (div_busy_raw_w),
-        .div_done  (div_done_w),
-        .mul_busy  (mul_busy_raw_w),
-        .mul_done  (mul_done_w)
+        .div_done  (div_done_w)
     );
 
     // funct3 is branch condition only for OPC_BRANCH; JAL reuses [14:12] as immediate.
