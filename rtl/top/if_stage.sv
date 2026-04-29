@@ -1,74 +1,73 @@
-module if_stage(
-    input         clk,
-    input         rst_n,
-    input         pc_en,
-    input         branch_taken,
-    input  [31:0] branch_target,
-    output [31:0] instruction,
-    output [31:0] pc_current,
-    output [31:0] pc_instr,
-    output        HREADY_ROM,
-    output        if_id_flush
+// Instruction fetch: PC mux, 1-cycle AHB ROM, PC tag delayed to match HRDATA, extended IF/ID flush after branch.
+module if_stage (
+    input         clk_i,
+    input         rst_n_i,
+    input         fetch_run_i,    // 0 = hold PC (global stall)
+    input         br_taken_i,     // Pulse from MEM: redirect PC
+    input  [31:0] jmp_pc_i,       // Target from MEM (resolved JALR / B / JAL)
+    output [31:0] instr_f_o,      // Opcode word (1-cycle ROM latency)
+    output [31:0] pc_fetch_o,     // Address presented to ROM this cycle
+    output [31:0] pc_tag_delay_o, // PC that pairs with instr_f_o (lags fetch addr)
+    output        rom_ready_o,
+    output        flush_if_id_o   // Also high cycle after br_taken to drop stale ROM data
 );
-    wire [31:0] pc_next, pc_plus4;
-    wire        HRESP;
-    wire        HSEL_ROM = (pc_current[31:16] == 16'h0000);
+    wire [31:0] pc_next_w, pc_plus4_w;
+    wire        hresp_w;
+    wire        sel_rom_w = (pc_fetch_o[31:16] == 16'h0000); // Code in low 64 KiB
+    wire [1:0]  htrans_w = fetch_run_i ? 2'b10 : 2'b00;
 
-    // ─── PC redirect mux ─────────────────────────────────────────────
-    mux2 #(.WIDTH(32)) pc_next_mux(
-        .in0(pc_plus4),
-        .in1(branch_target),
-        .sel(branch_taken),
-        .out(pc_next)
+    mux2 #(.WIDTH(32)) u_pc_mux (
+        .in0(pc_plus4_w),
+        .in1(jmp_pc_i),
+        .sel(br_taken_i),
+        .out(pc_next_w)
     );
 
-    pc program_counter(
-        .clk    (clk),
-        .rst_n  (rst_n),
-        .en     (pc_en),
-        .pc_next(pc_next),
-        .pc     (pc_current)
+    pc u_pc (
+        .clk    (clk_i),
+        .rst_n  (rst_n_i),
+        .en     (fetch_run_i),
+        .pc_next(pc_next_w),
+        .pc     (pc_fetch_o)
     );
 
-    wire [1:0] htrans_rom = pc_en ? 2'b10 : 2'b00;
-
-    rom_ahb program_memory(
-        .HCLK    (clk),
-        .HRESETn (rst_n),
-        .HSEL    (HSEL_ROM),
-        .HADDR   (pc_current),
-        .HTRANS  (htrans_rom),
+    rom_ahb u_imem (
+        .HCLK    (clk_i),
+        .HRESETn (rst_n_i),
+        .HSEL    (sel_rom_w),
+        .HADDR   (pc_fetch_o),
+        .HTRANS  (htrans_w),
         .HWRITE  (1'b0),
         .HSIZE   (3'b010),
         .HWDATA  (32'b0),
-        .HRDATA  (instruction),
-        .HREADY  (HREADY_ROM),
-        .HRESP   (HRESP)
+        .HRDATA  (instr_f_o),
+        .HREADY  (rom_ready_o),
+        .HRESP   (hresp_w)
     );
 
-    reg [31:0] pc_instr_reg;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)            pc_instr_reg <= 32'b0;
-        else if (branch_taken) pc_instr_reg <= 32'b0;
-        else if (pc_en)        pc_instr_reg <= pc_current;
+    // Register PC when fetch runs so IF/ID can latch PC+instr as a matched pair.
+    reg [31:0] pc_tag_q;
+    always @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i)            pc_tag_q <= 32'b0;
+        else if (br_taken_i)    pc_tag_q <= 32'b0;
+        else if (fetch_run_i)   pc_tag_q <= pc_fetch_o;
     end
-    assign pc_instr = pc_instr_reg;
+    assign pc_tag_delay_o = pc_tag_q;
 
-    adder_32bit pc_plus4_adder(
-        .a       (pc_current),
-        .b       (32'h00000004),
+    adder_32bit u_pc_plus4 (
+        .a       (pc_fetch_o),
+        .b       (32'h4),
         .sub     (1'b0),
-        .result  (pc_plus4),
+        .result  (pc_plus4_w),
         .cout    (),
         .overflow()
     );
 
-    // ─── IF/ID flush extension ───────────────────────────────────────
-    reg branch_flush_d;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) branch_flush_d <= 1'b0;
-        else        branch_flush_d <= branch_taken;
+    // Stretch flush one cycle: wrong-path instruction still on HRDATA after redirect.
+    reg br_taken_dly_q;
+    always @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i) br_taken_dly_q <= 1'b0;
+        else          br_taken_dly_q <= br_taken_i;
     end
-    assign if_id_flush = branch_taken | branch_flush_d;
-
+    assign flush_if_id_o = br_taken_i | br_taken_dly_q;
 endmodule

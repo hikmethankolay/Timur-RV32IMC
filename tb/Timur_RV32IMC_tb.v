@@ -6,9 +6,9 @@ module Timur_RV32IMC_tb;
     wire [31:0] pc_out;
 
     Timur_RV32IMC dut (
-        .clk    (clk),
-        .rst_n  (rst_n),
-        .pc_out (pc_out)
+        .clk_i   (clk),
+        .rst_n_i (rst_n),
+        .pc_dbg_o(pc_out)
     );
 
     // 50 MHz board clock — 20 ns period
@@ -16,8 +16,8 @@ module Timur_RV32IMC_tb;
 
     // Bypass Altera PLL black-box: drive cpu clock = board clock, locked = 1.
     initial begin
-        force dut.pll_locked = 1'b1;
-        force dut.clk_cpu    = clk;
+        force dut.pll_ok_w  = 1'b1;
+        force dut.clk_cpu_w = clk;
     end
 
     integer failed;
@@ -70,42 +70,42 @@ module Timur_RV32IMC_tb;
         $display("=========================================");
 
         // ---- Register file ----
-        check("x1  ADDI 5",            dut.cpu.decode.register_file.regs[1],  32'h00000005);
-        check("x2  ADDI -3",           dut.cpu.decode.register_file.regs[2],  32'hFFFFFFFD);
-        check("x3  ADD  (fwd)",        dut.cpu.decode.register_file.regs[3],  32'h00000002);
-        check("x4  SUB",               dut.cpu.decode.register_file.regs[4],  32'h00000008);
-        check("x5  AND  (fwd)",        dut.cpu.decode.register_file.regs[5],  32'h00000000);
-        check("x6  OR",                dut.cpu.decode.register_file.regs[6],  32'hFFFFFFFD);
-        check("x7  XOR",               dut.cpu.decode.register_file.regs[7],  32'hFFFFFFF8);
-        check("x8  SLLI",              dut.cpu.decode.register_file.regs[8],  32'h00000050);
-        check("x9  SRAI",              dut.cpu.decode.register_file.regs[9],  32'hFFFFFFFE);
-        check("x10 SLT",               dut.cpu.decode.register_file.regs[10], 32'h00000001);
-        check("x11 SLTU",              dut.cpu.decode.register_file.regs[11], 32'h00000000);
-        check("x12 LW",                dut.cpu.decode.register_file.regs[12], 32'h00000005);
-        check("x13 ADDI (load-use)",   dut.cpu.decode.register_file.regs[13], 32'h0000000C);
-        check("x14 MUL",               dut.cpu.decode.register_file.regs[14], 32'h00000019);
-        check("x15 DIV  (8/5)",        dut.cpu.decode.register_file.regs[15], 32'h00000001);
-        check("x16 REM  (8%5)",        dut.cpu.decode.register_file.regs[16], 32'h00000003);
-        check("x17 DIVU (5/0)",        dut.cpu.decode.register_file.regs[17], 32'hFFFFFFFF);
-        check("x18 BEQ not-taken",     dut.cpu.decode.register_file.regs[18], 32'h00000063);
-        check("x19 BEQ taken target",  dut.cpu.decode.register_file.regs[19], 32'h00000007);
-        check("x20 JAL link",          dut.cpu.decode.register_file.regs[20], 32'h00000068);
-        check("x21 JAL target",        dut.cpu.decode.register_file.regs[21], 32'h0000000B);
-        check("x22 AUIPC + ADDI",      dut.cpu.decode.register_file.regs[22], 32'h0000008C);
-        check("x23 JALR link",         dut.cpu.decode.register_file.regs[23], 32'h00000080);
-        check("x26 return point",      dut.cpu.decode.register_file.regs[26], 32'h00000016);
-        check("x27 function body",     dut.cpu.decode.register_file.regs[27], 32'h0000000D);
+        check("x1  ADDI 5",            dut.cpu.u_dec.u_rf.regs[1],  32'h00000005);
+        check("x2  ADDI -3",           dut.cpu.u_dec.u_rf.regs[2],  32'hFFFFFFFD);
+        check("x3  ADD  (fwd)",        dut.cpu.u_dec.u_rf.regs[3],  32'h00000002);
+        check("x4  SUB",               dut.cpu.u_dec.u_rf.regs[4],  32'h00000008);
+        check("x5  AND  (fwd)",        dut.cpu.u_dec.u_rf.regs[5],  32'h00000000);
+        check("x6  OR",                dut.cpu.u_dec.u_rf.regs[6],  32'hFFFFFFFD);
+        check("x7  XOR",               dut.cpu.u_dec.u_rf.regs[7],  32'hFFFFFFF8);
+        check("x8  SLLI",              dut.cpu.u_dec.u_rf.regs[8],  32'h00000050);
+        check("x9  SRAI",              dut.cpu.u_dec.u_rf.regs[9],  32'hFFFFFFFE);
+        check("x10 SLT",               dut.cpu.u_dec.u_rf.regs[10], 32'h00000001);
+        check("x11 SLTU",              dut.cpu.u_dec.u_rf.regs[11], 32'h00000000);
+        check("x12 LW",                dut.cpu.u_dec.u_rf.regs[12], 32'h00000005);
+        check("x13 ADDI (load-use)",   dut.cpu.u_dec.u_rf.regs[13], 32'h0000000C);
+        check("x14 MUL",               dut.cpu.u_dec.u_rf.regs[14], 32'h00000019);
+        check("x15 DIV  (8/5)",        dut.cpu.u_dec.u_rf.regs[15], 32'h00000001);
+        check("x16 REM  (8%5)",        dut.cpu.u_dec.u_rf.regs[16], 32'h00000003);
+        check("x17 DIVU (5/0)",        dut.cpu.u_dec.u_rf.regs[17], 32'hFFFFFFFF);
+        check("x18 BEQ not-taken",     dut.cpu.u_dec.u_rf.regs[18], 32'h00000063);
+        check("x19 BEQ taken target",  dut.cpu.u_dec.u_rf.regs[19], 32'h00000007);
+        check("x20 JAL link",          dut.cpu.u_dec.u_rf.regs[20], 32'h00000068);
+        check("x21 JAL target",        dut.cpu.u_dec.u_rf.regs[21], 32'h0000000B);
+        check("x22 AUIPC + ADDI",      dut.cpu.u_dec.u_rf.regs[22], 32'h0000008C);
+        check("x23 JALR link",         dut.cpu.u_dec.u_rf.regs[23], 32'h00000080);
+        check("x26 return point",      dut.cpu.u_dec.u_rf.regs[26], 32'h00000016);
+        check("x27 function body",     dut.cpu.u_dec.u_rf.regs[27], 32'h0000000D);
 
         // ---- Sentinel: x31 must remain 0 ----
-        check("x31 sentinel",          dut.cpu.decode.register_file.regs[31], 32'h00000000);
+        check("x31 sentinel",          dut.cpu.u_dec.u_rf.regs[31], 32'h00000000);
 
         // ---- Data RAM: SW x1 stored 5 at byte address 0x20000000 ----
         // RAM is 4 byte arrays; word at index 0 is the concatenation of mem3..mem0[0]
         check("MEM[0x20000000]",
-              {dut.cpu.memory.data_memory.mem3[0],
-               dut.cpu.memory.data_memory.mem2[0],
-               dut.cpu.memory.data_memory.mem1[0],
-               dut.cpu.memory.data_memory.mem0[0]},
+              {dut.cpu.u_mem.u_dmem.mem3[0],
+               dut.cpu.u_mem.u_dmem.mem2[0],
+               dut.cpu.u_mem.u_dmem.mem1[0],
+               dut.cpu.u_mem.u_dmem.mem0[0]},
               32'h00000005);
 
         // ---- PC must be inside the halt loop's 4-cycle phase ----
@@ -114,11 +114,11 @@ module Timur_RV32IMC_tb;
         // We assert the PC is in this range; outside it means the CPU
         // escaped into invalid memory.
         total = total + 1;
-        if (dut.cpu.if_pc_current >= 32'h00000080 &&
-            dut.cpu.if_pc_current <= 32'h00000094) begin
-            $display("PASS  PC inside halt loop: 0x%08h", dut.cpu.if_pc_current);
+        if (dut.cpu.pc_fetch_w >= 32'h00000080 &&
+            dut.cpu.pc_fetch_w <= 32'h00000094) begin
+            $display("PASS  PC inside halt loop: 0x%08h", dut.cpu.pc_fetch_w);
         end else begin
-            $display("FAIL  PC outside halt loop: 0x%08h", dut.cpu.if_pc_current);
+            $display("FAIL  PC outside halt loop: 0x%08h", dut.cpu.pc_fetch_w);
             failed = failed + 1;
         end
 

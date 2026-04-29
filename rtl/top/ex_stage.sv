@@ -1,179 +1,131 @@
-module ex_stage(
-    input         clk,
-    input         rst_n,
-
-    // Operands (from ID/EX register)
-    input  [31:0] rs1_data,
-    input  [31:0] rs2_data,
-    input  [31:0] imm,
-    input  [31:0] pc_current,
-
-    // Pre-computed values from ID stage (threaded through ID/EX)
-    input  [31:0] pc_plus4_in,
-    input  [31:0] branch_target_in,
-
-    // Decoded fields
-    input  [6:0]  opcode,
-    input  [2:0]  funct3,
-    input  [4:0]  ALUControl,
-    input         ALUSrc,
-
-    // Forwarding inputs
-    input  [1:0]  forwardA,
-    input  [1:0]  forwardB,
-    input  [31:0] mem_alu_result_fwd,    // EX/MEM stage producer value
-    input  [31:0] wb_value_fwd,          // MEM/WB writeback bus
-
-    // Outputs
-    output [31:0] alu_result,
-    output [31:0] pc_plus4,
-    output [31:0] branch_target_out,
-    output        BranchTaken_out,
-    output        div_busy,
-    output        mul_busy
+// Execute: operand forwarding, ALU (+ mul/div), branch test, PC redirect target for MEM.
+module ex_stage (
+    input         clk_i,
+    input         rst_n_i,
+    input  [31:0] rs1_val_x_i,
+    input  [31:0] rs2_val_x_i,
+    input  [31:0] imm32_x_i,
+    input  [31:0] pc_x_i,           // Instruction’s architectural PC
+    input  [31:0] pc_plus4_x_i,     // Link value for JAL/JALR
+    input  [31:0] btarget_pc_x_i,   // PC+imm for B-type and JAL (from ID)
+    input  [6:0]  opc7_x_i,
+    input  [2:0]  funct3_x_i,
+    input  [4:0]  alu_ctl_x_i,
+    input         alu_imm_b_x_i,
+    input  [1:0]  fwd_rs1_sel_i,    // 00 reg, 01 WB, 10 EX/MEM ALU
+    input  [1:0]  fwd_rs2_sel_i,
+    input  [31:0] alu_res_m_fwd_i,
+    input  [31:0] rf_wdata_w_fwd_i,
+    output [31:0] alu_res_x_o,      // To EX/MEM (or PC+4 for J/JR)
+    output [31:0] pc_plus4_x_o,     // Pass-through for MEM/WB / link
+    output [31:0] jmp_pc_x_o,       // Next PC if redirect
+    output        br_taken_x_o,     // Combined with br_jmp in MEM for final redirect
+    output        div_busy_o,
+    output        mul_busy_o
 );
+    assign pc_plus4_x_o = pc_plus4_x_i;
 
-    assign pc_plus4 = pc_plus4_in;
+    localparam [6:0] OPC_LUI    = 7'b0110111;
+    localparam [6:0] OPC_AUIPC  = 7'b0010111;
+    localparam [6:0] OPC_BRANCH = 7'b1100011;
+    localparam [6:0] OPC_JAL    = 7'b1101111;
+    localparam [6:0] OPC_JALR   = 7'b1100111;
 
-    // ─── opcode constants & predicates ─────────────────────────────
-    localparam [6:0] OPC_LUI     = 7'b0110111;
-    localparam [6:0] OPC_AUIPC   = 7'b0010111;
-    localparam [6:0] OPC_BRANCH  = 7'b1100011;
-    localparam [6:0] OPC_JAL     = 7'b1101111;
-    localparam [6:0] OPC_JALR    = 7'b1100111;
+    wire is_lui_w         = (opc7_x_i == OPC_LUI);
+    wire is_auipc_w       = (opc7_x_i == OPC_AUIPC);
+    wire is_bcond_w       = (opc7_x_i == OPC_BRANCH);
+    wire is_jal_w         = (opc7_x_i == OPC_JAL);
+    wire is_jalr_w        = (opc7_x_i == OPC_JALR);
+    wire is_j_w           = is_jal_w | is_jalr_w;
 
-    wire is_lui          = (opcode == OPC_LUI);
-    wire is_auipc        = (opcode == OPC_AUIPC);
-    wire is_cond_branch  = (opcode == OPC_BRANCH);
-    wire is_jal         = (opcode == OPC_JAL);
-    wire is_jalr        = (opcode == OPC_JALR);
-    wire is_uncond_jump = is_jal | is_jalr;
-
-    // ─── Stage 1: forwarding muxes ─────────────────────────────────
-    // forwardA/B encoding:
-    //   00 = regfile,  01 = MEM/WB bus,  10 = EX/MEM alu_result,  11 = unused
-    wire [31:0] rs1_forwarded, rs2_forwarded;
-
-    mux4 #(.WIDTH(32)) FwdA_Mux(
-        .in0(rs1_data),
-        .in1(wb_value_fwd),
-        .in2(mem_alu_result_fwd),
+    wire [31:0] rs1_fwd_w, rs2_fwd_w;
+    mux4 #(.WIDTH(32)) u_fwd_rs1 (
+        .in0(rs1_val_x_i),
+        .in1(rf_wdata_w_fwd_i),
+        .in2(alu_res_m_fwd_i),
         .in3(32'b0),
-        .sel(forwardA),
-        .out(rs1_forwarded)
+        .sel(fwd_rs1_sel_i),
+        .out(rs1_fwd_w)
     );
-
-    mux4 #(.WIDTH(32)) FwdB_Mux(
-        .in0(rs2_data),
-        .in1(wb_value_fwd),
-        .in2(mem_alu_result_fwd),
+    mux4 #(.WIDTH(32)) u_fwd_rs2 (
+        .in0(rs2_val_x_i),
+        .in1(rf_wdata_w_fwd_i),
+        .in2(alu_res_m_fwd_i),
         .in3(32'b0),
-        .sel(forwardB),
-        .out(rs2_forwarded)
+        .sel(fwd_rs2_sel_i),
+        .out(rs2_fwd_w)
     );
 
-    // ─── Stage 2: ALU operand source select ────────────────────────
-    //   alu_a:  rs1 (default) / pc (AUIPC) / 0 (LUI — instr[19:15] is imm, not rs1)
-    //   alu_b:  rs2_forwarded (default) / imm (ALUSrc=1)
-
-    wire [31:0] alu_a, alu_b;
-
-    assign alu_a = is_auipc ? pc_current
-                 : is_lui   ? 32'b0
-                            : rs1_forwarded;
-
-    mux2 #(.WIDTH(32)) ALUB_SrcMux(
-        .in0(rs2_forwarded),
-        .in1(imm),
-        .sel(ALUSrc),
-        .out(alu_b)
+    // LUI: force A=0 (instr rs1 field is imm bits). AUIPC: A=PC.
+    wire [31:0] alu_a_w = is_auipc_w ? pc_x_i : is_lui_w ? 32'b0 : rs1_fwd_w;
+    wire [31:0] alu_b_w;
+    mux2 #(.WIDTH(32)) u_alu_b (
+        .in0(rs2_fwd_w),
+        .in1(imm32_x_i),
+        .sel(alu_imm_b_x_i),
+        .out(alu_b_w)
     );
 
-    // ─── ALU + flags ───────────────────────────────────────────────
-    //   alu_raw is the unmodified ALU output. It feeds the branch
-    //   evaluator (needs flags) and the JALR target computation.
-    //   The exposed alu_result OUTPUT is muxed below so EX/MEM
-    //   latches the correct writeback value for JAL/JALR.
-    wire [31:0] alu_raw;
-    wire        zero, cout, overflow;
-    wire        div_done, mul_done;
+    wire [31:0] alu_raw_w;
+    wire        zero_w, cout_w, ovf_w;
+    wire        div_done_w, mul_done_w;
 
-    // ── Divide ops ────────────────────────────────────────────────
-    // ALUControl[4:2] == 3'b101 covers DIV/DIVU/REM/REMU.
-    // div_inflight prevents the divider from being restarted while the
-    // same DIV instruction sits in EX during the stall.
-    wire is_div_op = (ALUControl[4:2] == 3'b101);
-    wire div_busy_raw;
-    reg  div_inflight;
-    wire div_start = is_div_op & ~div_busy_raw & ~div_inflight;
+    wire is_div_w    = (alu_ctl_x_i[4:2] == 3'b101);
+    wire div_busy_raw_w;
+    reg  div_inflight_q;
+    wire div_start_w = is_div_w & ~div_busy_raw_w & ~div_inflight_q;
+    assign div_busy_o = div_busy_raw_w | div_start_w;
 
-    // Extend div_busy to include the start cycle.
-    assign div_busy = div_busy_raw | div_start;
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)             div_inflight <= 1'b0;
-        else if (div_done)      div_inflight <= 1'b0;
-        else if (div_start)     div_inflight <= 1'b1;
+    always @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i)         div_inflight_q <= 1'b0;
+        else if (div_done_w)  div_inflight_q <= 1'b0;
+        else if (div_start_w) div_inflight_q <= 1'b1;
     end
 
-    // ── Multiply ops ─────────────────────────────────────────────
-    // ALUControl[4:2] == 3'b100 covers MUL/MULH/MULHSU/MULHU.
-    // Same inflight pattern as divider to prevent re-start.
-    wire is_mul_op = (ALUControl[4:2] == 3'b100);
-    wire mul_busy_raw;
-    reg  mul_inflight;
-    wire mul_start = is_mul_op & ~mul_busy_raw & ~mul_inflight;
+    wire is_mul_w    = (alu_ctl_x_i[4:2] == 3'b100);
+    wire mul_busy_raw_w;
+    reg  mul_inflight_q;
+    wire mul_start_w = is_mul_w & ~mul_busy_raw_w & ~mul_inflight_q;
+    assign mul_busy_o = mul_busy_raw_w | mul_start_w;
 
-    // Extend mul_busy to include the start cycle.
-    assign mul_busy = mul_busy_raw | mul_start;
-
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)             mul_inflight <= 1'b0;
-        else if (mul_done)      mul_inflight <= 1'b0;
-        else if (mul_start)     mul_inflight <= 1'b1;
+    always @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i)         mul_inflight_q <= 1'b0;
+        else if (mul_done_w)  mul_inflight_q <= 1'b0;
+        else if (mul_start_w) mul_inflight_q <= 1'b1;
     end
 
-    alu arithmetic_logic_unit(
-        .clk       (clk),
-        .rst_n     (rst_n),
-        .a         (alu_a),
-        .b         (alu_b),
-        .ALUControl(ALUControl),
-        .div_start (div_start),
-        .mul_start (mul_start),
-        .result    (alu_raw),
-        .zero      (zero),
-        .cout      (cout),
-        .overflow  (overflow),
-        .div_busy  (div_busy_raw),
-        .div_done  (div_done),
-        .mul_busy  (mul_busy_raw),
-        .mul_done  (mul_done)
+    alu u_alu (
+        .clk       (clk_i),
+        .rst_n     (rst_n_i),
+        .a         (alu_a_w),
+        .b         (alu_b_w),
+        .ALUControl(alu_ctl_x_i),
+        .div_start (div_start_w),
+        .mul_start (mul_start_w),
+        .result    (alu_raw_w),
+        .zero      (zero_w),
+        .cout      (cout_w),
+        .overflow  (ovf_w),
+        .div_busy  (div_busy_raw_w),
+        .div_done  (div_done_w),
+        .mul_busy  (mul_busy_raw_w),
+        .mul_done  (mul_done_w)
     );
 
-    // ─── Conditional branches (B-type only) ────────────────────────
-    // branch_condition_evaluator encodings match opcode BRANCH. JAL
-    // reuses [14:12] for immediate bits; mask with is_cond_branch.
-    wire cond_branch_taken;
-
-    branch_condition_evaluator bce(
-        .zero          (zero),
-        .alu_result_msb(alu_raw[31]),
-        .overflow      (overflow),
-        .cout          (cout),
-        .BranchType    (funct3),
-        .BranchTaken   (cond_branch_taken)
+    // funct3 is branch condition only for OPC_BRANCH; JAL reuses [14:12] as immediate.
+    wire br_cond_taken_w;
+    branch_condition_evaluator u_bcond (
+        .zero          (zero_w),
+        .alu_result_msb(alu_raw_w[31]),
+        .overflow      (ovf_w),
+        .cout          (cout_w),
+        .BranchType    (funct3_x_i),
+        .BranchTaken   (br_cond_taken_w)
     );
 
-    // ─── PC redirect: B & JAL = PC+imm (ID); JALR = (rs1+imm)&~1 ───
-    wire [31:0] redirect_pc = is_jalr ? {alu_raw[31:1], 1'b0}
-                                       : branch_target_in;
+    wire [31:0] jmp_pc_w = is_jalr_w ? {alu_raw_w[31:1], 1'b0} : btarget_pc_x_i;
 
-    // ─── Outputs ───────────────────────────────────────────────────
-    // MEM uses Branch & BranchTaken for redirect; JAL/JALR force taken.
-    assign alu_result        = is_uncond_jump ? pc_plus4 : alu_raw;
-    assign branch_target_out = redirect_pc;
-    assign BranchTaken_out   = (is_cond_branch & cond_branch_taken)
-                              | is_uncond_jump;
-
+    assign alu_res_x_o   = is_j_w ? pc_plus4_x_i : alu_raw_w;
+    assign jmp_pc_x_o   = jmp_pc_w;
+    assign br_taken_x_o = (is_bcond_w & br_cond_taken_w) | is_j_w;
 endmodule

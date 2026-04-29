@@ -1,16 +1,14 @@
-module wb_stage(
-    input  [31:0] alu_result,
-    input  [31:0] mem_read_data,
-    input  [31:0] pc_plus4,
-    input         MemToReg,
-    input  [6:0]  opcode,
-    output [31:0] reg_write_data
+// Writeback mux: non-load instructions use latched ALU result; loads use aligned memory data.
+module wb_stage (
+    input  [31:0] alu_res_w_i,
+    input  [31:0] ld_data_w_i,
+    input         wb_from_ld_w_i, // 1 = LW/LH/LB path
+    output [31:0] rf_wdata_w_o
 );
-
-    mux2 #(.WIDTH(32)) memory_to_reg_mux(
-        .in0(alu_result),
-        .in1(mem_read_data),
-        .sel(MemToReg),
-        .out(reg_write_data)
+    mux2 #(.WIDTH(32)) u_wb_mux (
+        .in0(alu_res_w_i),
+        .in1(ld_data_w_i),
+        .sel(wb_from_ld_w_i),
+        .out(rf_wdata_w_o)
     );
 endmodule

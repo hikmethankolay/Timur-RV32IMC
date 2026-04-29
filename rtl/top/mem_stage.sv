@@ -1,90 +1,78 @@
-module mem_stage(
-    input         clk,
-    input         rst_n,
-    input  [31:0] alu_result,
-    input  [31:0] rs2_data,
-    input         MemRead,
-    input         MemWrite,
-    input  [2:0]  funct3,
-    output [31:0] mem_read_data,
-    output HREADY_RAM
+// Data memory stage: AHB RAM @ 0x2000_…. Store data registered for AHB data phase; loads formatted for WB.
+module mem_stage (
+    input         clk_i,
+    input         rst_n_i,
+    input  [31:0] addr_m_i,      // Byte address from EX ALU
+    input  [31:0] rs2_store_m_i, // Store value (byte lane handling in RAM)
+    input         mem_rd_m_i,
+    input         mem_we_m_i,
+    input  [2:0]  funct3_m_i,   // Encodes LB/LW/... and AHB HSIZE
+    output [31:0] ld_data_wb_o, // Sign/zero-extended load for register write
+    output        ram_ready_o
 );
-    // AHB data-phase register: holds rs2_data so HWDATA is valid one cycle
-    // after the address phase (as required by AHB-Lite for write transfers).
-    reg  [31:0] hwdata_d;
-    wire [31:0] HWDATA;
-    wire [1:0]  htrans_ram;
-    wire        HRESP;
-    wire        HSEL_RAM = (alu_result[31:16] == 16'h2000);
-    wire [31:0] mem_read_word;
+    // HWDATA valid in data phase — one cycle after address phase seen by ram_ahb.
+    reg [31:0] hwdata_q;
+    always @(posedge clk_i) hwdata_q <= rs2_store_m_i;
 
-    reg [1:0] load_addr_lsb_d;
-    reg [2:0] load_funct3_d;
+    wire [1:0]  htrans_w;
+    wire        hresp_w;
+    wire        sel_ram_w = (addr_m_i[31:16] == 16'h2000);
+    wire [31:0] rd_word_w;
 
-    reg [7:0]  load_byte;
-    reg [15:0] load_half;
-    reg [31:0] load_data_fmt;
-
-    always @(posedge clk) hwdata_d <= rs2_data;
-    assign HWDATA = hwdata_d;
-
-    // Capture load decode and byte-lane info in address phase so it aligns
-    // with HRDATA returned in the following data phase.
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            load_addr_lsb_d <= 2'b00;
-            load_funct3_d   <= 3'b010;
-        end else if (MemRead) begin
-            load_addr_lsb_d <= alu_result[1:0];
-            load_funct3_d   <= funct3;
+    // Remember decode for load when read data returns next edge.
+    reg [1:0] ld_addr_lsb_q;
+    reg [2:0] ld_funct3_q;
+    always @(posedge clk_i or negedge rst_n_i) begin
+        if (!rst_n_i) begin
+            ld_addr_lsb_q <= 2'b00;
+            ld_funct3_q   <= 3'b010;
+        end else if (mem_rd_m_i) begin
+            ld_addr_lsb_q <= addr_m_i[1:0];
+            ld_funct3_q   <= funct3_m_i;
         end
     end
 
-    mux2 #(.WIDTH(2)) htrans_mux(
+    mux2 #(.WIDTH(2)) u_htrans (
         .in0(2'b00),
         .in1(2'b10),
-        .sel(MemRead | MemWrite),
-        .out(htrans_ram)
+        .sel(mem_rd_m_i | mem_we_m_i),
+        .out(htrans_w)
     );
 
-    ram_ahb data_memory(
-        .HCLK    (clk),
-        .HRESETn (rst_n),
-        .HSEL    (HSEL_RAM),
-        .HADDR   (alu_result),
-        .HTRANS  (htrans_ram),
-        .HWRITE  (MemWrite),
-        .HSIZE   (funct3),
-        .HWDATA  (HWDATA),
-        .HRDATA  (mem_read_word),
-        .HREADY  (HREADY_RAM),
-        .HRESP   (HRESP)
+    ram_ahb u_dmem (
+        .HCLK    (clk_i),
+        .HRESETn (rst_n_i),
+        .HSEL    (sel_ram_w),
+        .HADDR   (addr_m_i),
+        .HTRANS  (htrans_w),
+        .HWRITE  (mem_we_m_i),
+        .HSIZE   (funct3_m_i),
+        .HWDATA  (hwdata_q),
+        .HRDATA  (rd_word_w),
+        .HREADY  (ram_ready_o),
+        .HRESP   (hresp_w)
     );
 
-    // LSU read-side formatting now lives in the CPU:
-    // memory returns aligned 32-bit words, then funct3/addr[1:0] select the
-    // correct byte/halfword and perform sign/zero extension for register writeback.
+    reg [7:0]  byte_w;
+    reg [15:0] half_w;
+    reg [31:0] ld_fmt_w;
     always @(*) begin
-        case (load_addr_lsb_d)
-            2'b00: load_byte = mem_read_word[7:0];
-            2'b01: load_byte = mem_read_word[15:8];
-            2'b10: load_byte = mem_read_word[23:16];
-            default: load_byte = mem_read_word[31:24];
+        case (ld_addr_lsb_q)
+            2'b00: byte_w = rd_word_w[7:0];
+            2'b01: byte_w = rd_word_w[15:8];
+            2'b10: byte_w = rd_word_w[23:16];
+            default: byte_w = rd_word_w[31:24];
         endcase
-
-        if (load_addr_lsb_d[1] == 1'b0)
-            load_half = mem_read_word[15:0];
-        else
-            load_half = mem_read_word[31:16];
-
-        case (load_funct3_d)
-            3'b000:  load_data_fmt = {{24{load_byte[7]}}, load_byte}; // LB
-            3'b100:  load_data_fmt = {24'b0, load_byte};              // LBU
-            3'b001:  load_data_fmt = {{16{load_half[15]}}, load_half}; // LH
-            3'b101:  load_data_fmt = {16'b0, load_half};               // LHU
-            default: load_data_fmt = mem_read_word;                    // LW/other
+        if (ld_addr_lsb_q[1] == 1'b0) half_w = rd_word_w[15:0];
+        else half_w = rd_word_w[31:16];
+        case (ld_funct3_q)
+            3'b000: ld_fmt_w = {{24{byte_w[7]}}, byte_w};
+            3'b100: ld_fmt_w = {24'b0, byte_w};
+            3'b001: ld_fmt_w = {{16{half_w[15]}}, half_w};
+            3'b101: ld_fmt_w = {16'b0, half_w};
+            default: ld_fmt_w = rd_word_w;
         endcase
     end
 
-    assign mem_read_data = load_data_fmt;
+    assign ld_data_wb_o = ld_fmt_w;
 endmodule

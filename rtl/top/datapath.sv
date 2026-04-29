@@ -1,339 +1,320 @@
 import pipeline_pkg::*;
 
-module datapath(
-    input  clk,
-    input  rst_n,
-    output [31:0] pc_out
+// RV32IMC five-stage core: IF→ID→EX→MEM→WB with four pipeline registers.
+// Hazard unit stalls or bubbles the front; forwarding feeds EX from M/W stages.
+module datapath (
+    input  clk_i,
+    input  rst_n_i,
+    output [31:0] pc_dbg_o   // Live fetch PC (for debug); instr PC in ID is pc_d_w
 );
-    // ─── IF stage wires ──────────────────────────────────────────────
-    wire [31:0] if_pc_current, if_pc_instr, if_instruction;
-    wire        if_id_flush;
+    // --- Fetch (IF) ---
+    wire [31:0] instr_f_w, pc_fetch_w, pc_tag_f_w;
+    wire        flush_fd_w, rom_rdy_w; // flush: branch + shadow ROM cycle; rom_rdy: AHB ready
 
-    // ─── IF/ID register wires ────────────────────────────────────────
-    wire [31:0] id_pc, id_instruction;
+    // --- Decode (ID): after IF/ID register ---
+    wire [31:0] pc_d_w, instr_d_w;
+    dec_bus_t   dec_bus_w;
+    wire [31:0] pc_plus4_d_w, btarget_pc_d_w; // pc+4 and pc+imm for branches/jal (ID adders)
 
-    // ─── ID stage bundle ─────────────────────────────────────────────
-    id_decoded_t id_decoded;
-    wire [31:0] id_pc_plus4;       // PC+4 computed in ID
-    wire [31:0] id_branch_target;  // PC+imm computed in ID
+    // --- After ID/EX register (EX stage inputs) ---
+    wire [31:0] pc_x_w, pc_plus4_idex_w, btarget_pc_x_w;
+    wire [31:0] rs1_val_x_w, rs2_val_x_w, imm32_x_w;
+    wire [4:0]  rs1_adr_x_w, rs2_adr_x_w, rd_adr_x_w;
+    wire [6:0]  opc7_x_w;
+    wire [4:0]  alu_ctl_x_w;
+    wire        alu_imm_b_x_w, br_jmp_x_w;
+    wire        mem_rd_x_w, mem_we_x_w, wb_ld_x_w, rf_we_x_w;
+    wire [2:0]  funct3_x_w;
+    wire        csr_we_x_w;
+    wire [1:0]  csr_op_x_w;
+    wire [11:0] csr_adr_x_w;
+    wire        trap_ecall_x_w, trap_ebreak_x_w, trap_mret_x_w;
 
-    // ─── ID/EX register wires ────────────────────────────────────────
-    wire [31:0] ex_pc, ex_pc_plus4_pre, ex_branch_target_pre;
-    wire [31:0] ex_rs1_data, ex_rs2_data, ex_imm;
-    wire [4:0]  ex_rs1_addr, ex_rs2_addr, ex_rd_addr;
-    wire [6:0]  ex_opcode;
-    wire [4:0]  ex_ALUControl;
-    wire        ex_ALUSrc, ex_Branch, ex_MemRead, ex_MemWrite, ex_MemToReg, ex_RegWrite;
-    wire [2:0]  ex_funct3;
-    wire        ex_CSRWrite, ex_IsECALL, ex_IsEBREAK, ex_IsMRET;
-    wire [1:0]  ex_CSROp;
-    wire [11:0] ex_csr_addr;
+    wire [31:0] alu_res_x_w, pc_plus4_x_w, jmp_pc_x_w;
+    wire        br_taken_x_w;
+    wire [1:0]  fwd_rs1_sel_w, fwd_rs2_sel_w; // 00 RF, 01 WB bus, 10 EX/MEM ALU (see forwarding_unit)
 
-    // ─── EX stage wires ──────────────────────────────────────────────
-    wire [31:0] ex_alu_result, ex_pc_plus4, ex_branch_target;
-    wire        ex_BranchTaken;
-    wire [1:0]  fwd_a, fwd_b;
+    // --- After EX/MEM register (MEM stage inputs) ---
+    wire [31:0] alu_res_m_w, rs2_store_m_w, pc_plus4_m_w, jmp_pc_m_w;
+    wire [4:0]  rd_adr_m_w;
+    wire [6:0]  opc7_m_w;
+    wire        br_taken_m_w, mem_rd_m_w, mem_we_m_w, wb_ld_m_w, rf_we_m_w;
+    wire [2:0]  funct3_m_w;
+    wire        br_jmp_m_w;
+    wire [31:0] csr_wdata_m_w;
+    wire [11:0] csr_adr_m_w;
+    wire        csr_we_m_w;
+    wire [1:0]  csr_op_m_w;
+    wire        trap_ecall_m_w, trap_ebreak_m_w, trap_mret_m_w;
 
-    // ─── EX/MEM register wires ───────────────────────────────────────
-    wire [31:0] mem_alu_result, mem_rs2_data, mem_branch_target, mem_pc_plus4;
-    wire [4:0]  mem_rd_addr;
-    wire [6:0]  mem_opcode;
-    wire        mem_BranchTaken, mem_MemRead, mem_MemWrite, mem_MemToReg, mem_RegWrite;
-    wire [2:0]  mem_funct3;
-    wire        mem_Branch;
-    wire [31:0] mem_csr_wdata;
-    wire [11:0] mem_csr_addr;
-    wire        mem_CSRWrite;
-    wire [1:0]  mem_CSROp;
-    wire        mem_IsECALL, mem_IsEBREAK, mem_IsMRET;
+    wire [31:0] ld_data_raw_w; // Load data from MEM formatters; aligns in time with MEM/WB controls
 
-    // ─── MEM stage / MEM/WB wires ────────────────────────────────────
-    wire [31:0] mem_read_data;
-    wire [31:0] wb_alu_result, wb_pc_plus4, wb_csr_rdata;
-    wire [4:0]  wb_rd_addr;
-    wire [6:0]  wb_opcode;
-    wire        wb_MemToReg, wb_RegWrite, wb_CSRToReg;
+    // --- After MEM/WB register (WB stage inputs) ---
+    wire [31:0] alu_res_w_w, pc_plus4_w_w;
+    wire [4:0]  rd_adr_w_w;
+    wire [6:0]  opc7_w_w;
+    wire        wb_ld_w_w, rf_we_w_w;
+    wire [31:0] csr_rdata_w_w;
+    wire        csr_to_rf_w_w;
 
-    // ─── WB output ───────────────────────────────────────────────────
-    wire [31:0] reg_write_data;
+    wire [31:0] rf_wdata_w_w; // Data written to rd in register file (from WB)
 
-    // ─── Hazard / handshake wires ────────────────────────────────────
-    wire hready_rom, hready_ram;
-    wire stall, bubble_stall, freeze_stall, div_busy, mul_busy;
-    wire hready_combined = hready_rom & hready_ram;
+    // --- Hazard / global stalls ---
+    wire        ram_rdy_w, stall_all_w, stall_bubble_w, stall_freeze_ex_w;
+    wire        div_busy_w, mul_busy_w;
+    wire        mem_rdy_w = rom_rdy_w & ram_rdy_w;     // Both slaves ready → fetch can retire
+    wire        br_exec_w   = br_jmp_m_w & br_taken_m_w; // Redirect when branch/jump “taken” resolved in MEM
 
-    // ─── Branch resolution (2-cycle, evaluated in MEM) ───────────────
-    wire branch_taken = mem_Branch & mem_BranchTaken;
-
-    // ─── IF stage ────────────────────────────────────────────────────
-    if_stage fetch(
-        .clk          (clk),
-        .rst_n        (rst_n),
-        .pc_en        (~stall),
-        .branch_taken (branch_taken),
-        .branch_target(mem_branch_target),
-        .instruction  (if_instruction),
-        .pc_current   (if_pc_current),
-        .pc_instr     (if_pc_instr),
-        .HREADY_ROM   (hready_rom),
-        .if_id_flush  (if_id_flush)
+    // Instruction ROM + PC; branch redirect from MEM-stage resolution.
+    if_stage u_fetch (
+        .clk_i           (clk_i),
+        .rst_n_i         (rst_n_i),
+        .fetch_run_i     (~stall_all_w),
+        .br_taken_i      (br_exec_w),
+        .jmp_pc_i        (jmp_pc_m_w),
+        .instr_f_o       (instr_f_w),
+        .pc_fetch_o      (pc_fetch_w),
+        .pc_tag_delay_o  (pc_tag_f_w),
+        .rom_ready_o     (rom_rdy_w),
+        .flush_if_id_o   (flush_fd_w)
     );
 
-    if_id_reg if_id_pipe(
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .enable   (~stall),
-        .flush    (if_id_flush),
-        .pc_in    (if_pc_instr),
-        .instr_in (if_instruction),
-        .pc_out   (id_pc),
-        .instr_out(id_instruction)
+    // Latch instruction + PC tag into ID; hold on stall; NOP on flush (wrong path).
+    if_id_reg u_fd (
+        .clk_i    (clk_i),
+        .rst_n_i  (rst_n_i),
+        .gate_i   (~stall_all_w),
+        .flush_i  (flush_fd_w),
+        .pc_in    (pc_tag_f_w),
+        .instr_in (instr_f_w),
+        .pc_out   (pc_d_w),
+        .instr_out(instr_d_w)
     );
 
-    // ─── ID stage ────────────────────────────────────────────────────
-    id_stage decode(
-        .clk        (clk),
-        .instruction(id_instruction),
-        .rd_addr_wb (wb_rd_addr),
-        .rd_data    (reg_write_data),
-        .RegWrite   (wb_RegWrite),
-        .id_decoded (id_decoded)
+    // Decode instruction word; writeback ports close the regfile timing loop from WB.
+    id_stage u_dec (
+        .clk_i      (clk_i),
+        .instr_d_i  (instr_d_w),
+        .rd_adr_w_i (rd_adr_w_w),
+        .rf_wdata_w_i(rf_wdata_w_w),
+        .rf_we_w_i  (rf_we_w_w),
+        .dec_bus_o  (dec_bus_w)
     );
 
-    // ─── Pre-compute PC+4 and branch target in ID ───────────────────
-    adder_32bit id_pc_plus4_adder(
-        .a       (id_pc),
-        .b       (32'h00000004),
+    adder_32bit u_pc4 ( // Link / sequential PC+4 for current instr in ID
+        .a       (pc_d_w),
+        .b       (32'h4),
         .sub     (1'b0),
-        .result  (id_pc_plus4),
+        .result  (pc_plus4_d_w),
         .cout    (),
         .overflow()
     );
 
-    adder_32bit id_branch_target_adder(
-        .a       (id_pc),
-        .b       (id_decoded.imm),
+    adder_32bit u_btarget ( // PC-relative target: PC + imm for B and JAL
+        .a       (pc_d_w),
+        .b       (dec_bus_w.imm32),
         .sub     (1'b0),
-        .result  (id_branch_target),
+        .result  (btarget_pc_d_w),
         .cout    (),
         .overflow()
     );
 
-    // ─── ID/EX register ──────────────────────────────────────────────
-    id_ex_reg id_ex_pipe(
-        .clk          (clk),
-        .rst_n        (rst_n),
-        .enable       (~freeze_stall),
-        .flush        (branch_taken | bubble_stall),
-        .pc_in        (id_pc),
-        .pc_plus4_in  (id_pc_plus4),
-        .branch_target_in(id_branch_target),
-        .rs1_data_in  (id_decoded.rs1_data),
-        .rs2_data_in  (id_decoded.rs2_data),
-        .imm_in       (id_decoded.imm),
-        .rs1_addr_in  (id_decoded.rs1_addr),
-        .rs2_addr_in  (id_decoded.rs2_addr),
-        .rd_addr_in   (id_decoded.rd),
-        .opcode_in    (id_decoded.opcode),
-        .ALUControl_in(id_decoded.ALUControl),
-        .ALUSrc_in    (id_decoded.ALUSrc),
-        .Branch_in    (id_decoded.Branch),
-        .MemRead_in   (id_decoded.MemRead),
-        .MemWrite_in  (id_decoded.MemWrite),
-        .MemToReg_in  (id_decoded.MemToReg),
-        .RegWrite_in  (id_decoded.RegWrite),
-        .funct3_in    (id_decoded.funct3),
-        .CSRWrite_in  (id_decoded.CSRWrite),
-        .CSROp_in     (id_decoded.CSROp),
-        .csr_addr_in  (id_decoded.csr_addr),
-        .IsECALL_in   (id_decoded.IsECALL),
-        .IsEBREAK_in  (id_decoded.IsEBREAK),
-        .IsMRET_in    (id_decoded.IsMRET),
-        .pc_out        (ex_pc),
-        .pc_plus4_out  (ex_pc_plus4_pre),
-        .branch_target_out(ex_branch_target_pre),
-        .rs1_data_out  (ex_rs1_data),
-        .rs2_data_out  (ex_rs2_data),
-        .imm_out       (ex_imm),
-        .rs1_addr_out  (ex_rs1_addr),
-        .rs2_addr_out  (ex_rs2_addr),
-        .rd_addr_out   (ex_rd_addr),
-        .opcode_out    (ex_opcode),
-        .ALUControl_out(ex_ALUControl),
-        .ALUSrc_out    (ex_ALUSrc),
-        .Branch_out    (ex_Branch),
-        .MemRead_out   (ex_MemRead),
-        .MemWrite_out  (ex_MemWrite),
-        .MemToReg_out  (ex_MemToReg),
-        .RegWrite_out  (ex_RegWrite),
-        .funct3_out    (ex_funct3),
-        .CSRWrite_out  (ex_CSRWrite),
-        .CSROp_out     (ex_CSROp),
-        .csr_addr_out  (ex_csr_addr),
-        .IsECALL_out   (ex_IsECALL),
-        .IsEBREAK_out  (ex_IsEBREAK),
-        .IsMRET_out    (ex_IsMRET)
+    // Slip bubble into EX on load-use or bus wait; hold during DIV; flush on taken branch.
+    id_ex_reg u_dx (
+        .clk_i             (clk_i),
+        .rst_n_i           (rst_n_i),
+        .gate_i            (~stall_freeze_ex_w),
+        .flush_i           (br_exec_w | stall_bubble_w),
+        .pc_d_in           (pc_d_w),
+        .pc_plus4_d_in     (pc_plus4_d_w),
+        .btarget_pc_d_in   (btarget_pc_d_w),
+        .rs1_val_d_in      (dec_bus_w.rs1_rdata),
+        .rs2_val_d_in      (dec_bus_w.rs2_rdata),
+        .imm32_d_in        (dec_bus_w.imm32),
+        .rs1_adr_d_in      (dec_bus_w.rs1_idx),
+        .rs2_adr_d_in      (dec_bus_w.rs2_idx),
+        .rd_adr_d_in       (dec_bus_w.rd_idx),
+        .opc7_d_in         (dec_bus_w.opc7),
+        .alu_ctl_d_in      (dec_bus_w.alu_ctrl5),
+        .alu_imm_b_d_in    (dec_bus_w.alu_use_imm),
+        .br_jmp_d_in       (dec_bus_w.ctl_br_jmp),
+        .mem_rd_d_in       (dec_bus_w.ctl_mem_rd),
+        .mem_we_d_in       (dec_bus_w.ctl_mem_we),
+        .wb_from_ld_d_in   (dec_bus_w.ctl_wb_from_ld),
+        .rf_we_d_in        (dec_bus_w.ctl_rf_we),
+        .funct3_d_in       (dec_bus_w.funct3),
+        .csr_we_d_in       (dec_bus_w.csr_we),
+        .csr_op_d_in       (dec_bus_w.csr_op2),
+        .csr_adr_d_in      (dec_bus_w.csr_adr12),
+        .trap_ecall_d_in   (dec_bus_w.trap_ecall),
+        .trap_ebreak_d_in  (dec_bus_w.trap_ebreak),
+        .trap_mret_d_in    (dec_bus_w.trap_mret),
+        .pc_x_out          (pc_x_w),
+        .pc_plus4_x_out    (pc_plus4_idex_w),
+        .btarget_pc_x_out  (btarget_pc_x_w),
+        .rs1_val_x_out     (rs1_val_x_w),
+        .rs2_val_x_out     (rs2_val_x_w),
+        .imm32_x_out       (imm32_x_w),
+        .rs1_adr_x_out     (rs1_adr_x_w),
+        .rs2_adr_x_out     (rs2_adr_x_w),
+        .rd_adr_x_out      (rd_adr_x_w),
+        .opc7_x_out        (opc7_x_w),
+        .alu_ctl_x_out     (alu_ctl_x_w),
+        .alu_imm_b_x_out   (alu_imm_b_x_w),
+        .br_jmp_x_out      (br_jmp_x_w),
+        .mem_rd_x_out      (mem_rd_x_w),
+        .mem_we_x_out      (mem_we_x_w),
+        .wb_from_ld_x_out  (wb_ld_x_w),
+        .rf_we_x_out       (rf_we_x_w),
+        .funct3_x_out      (funct3_x_w),
+        .csr_we_x_out      (csr_we_x_w),
+        .csr_op_x_out      (csr_op_x_w),
+        .csr_adr_x_out     (csr_adr_x_w),
+        .trap_ecall_x_out  (trap_ecall_x_w),
+        .trap_ebreak_x_out (trap_ebreak_x_w),
+        .trap_mret_x_out   (trap_mret_x_w)
     );
 
-    forwarding_unit forward(
-        .id_ex_rs1      (ex_rs1_addr),
-        .id_ex_rs2      (ex_rs2_addr),
-        .ex_mem_rd      (mem_rd_addr),
-        .ex_mem_regwrite(mem_RegWrite),
-        .mem_wb_rd      (wb_rd_addr),
-        .mem_wb_regwrite(wb_RegWrite),
-        .forwardA       (fwd_a),
-        .forwardB       (fwd_b)
+    forwarding_unit u_fwd ( // Resolve RS1/RS2 vs pending writes in M and W stages
+        .id_ex_rs1      (rs1_adr_x_w),
+        .id_ex_rs2      (rs2_adr_x_w),
+        .ex_mem_rd      (rd_adr_m_w),
+        .ex_mem_regwrite(rf_we_m_w),
+        .mem_wb_rd      (rd_adr_w_w),
+        .mem_wb_regwrite(rf_we_w_w),
+        .forwardA       (fwd_rs1_sel_w),
+        .forwardB       (fwd_rs2_sel_w)
     );
 
-    hazard_detection_unit hdu(
-        .id_ex_memread(ex_MemRead),
-        .id_ex_rd     (ex_rd_addr),
-        .if_id_rs1    (id_instruction[19:15]),
-        .if_id_rs2    (id_instruction[24:20]),
-        .hready       (hready_combined),
-        .div_busy     (div_busy),
-        .mul_busy     (mul_busy),
-        .stall        (stall),
-        .bubble_stall (bubble_stall),
-        .freeze_stall (freeze_stall)
+    hazard_detection_unit u_hdu ( // Load-use, AHB wait, mul/div multicycle
+        .id_ex_memread(mem_rd_x_w),
+        .id_ex_rd     (rd_adr_x_w),
+        .if_id_rs1    (instr_d_w[19:15]),
+        .if_id_rs2    (instr_d_w[24:20]),
+        .hready       (mem_rdy_w),
+        .div_busy     (div_busy_w),
+        .mul_busy     (mul_busy_w),
+        .stall        (stall_all_w),
+        .bubble_stall (stall_bubble_w),
+        .freeze_stall (stall_freeze_ex_w)
     );
 
-    // ─── EX stage ────────────────────────────────────────────────────
-    ex_stage execute(
-        .clk               (clk),
-        .rst_n             (rst_n),
-        .rs1_data          (ex_rs1_data),
-        .rs2_data          (ex_rs2_data),
-        .imm               (ex_imm),
-        .opcode            (ex_opcode),
-        .funct3            (ex_funct3),
-        .ALUControl        (ex_ALUControl),
-        .ALUSrc            (ex_ALUSrc),
-        .pc_current        (ex_pc),
-        .pc_plus4_in       (ex_pc_plus4_pre),
-        .branch_target_in  (ex_branch_target_pre),
-        .alu_result        (ex_alu_result),
-        .pc_plus4          (ex_pc_plus4),
-        .branch_target_out (ex_branch_target),
-        .BranchTaken_out   (ex_BranchTaken),
-        .forwardA          (fwd_a),
-        .forwardB          (fwd_b),
-        .mem_alu_result_fwd(mem_alu_result),
-        .wb_value_fwd      (reg_write_data),
-        .div_busy          (div_busy),
-        .mul_busy          (mul_busy)
+    // ALU, compare, JAL/JALR target; forwarding muxes before ALU.
+    ex_stage u_exec (
+        .clk_i            (clk_i),
+        .rst_n_i          (rst_n_i),
+        .rs1_val_x_i      (rs1_val_x_w),
+        .rs2_val_x_i      (rs2_val_x_w),
+        .imm32_x_i        (imm32_x_w),
+        .pc_x_i           (pc_x_w),
+        .pc_plus4_x_i     (pc_plus4_idex_w),
+        .btarget_pc_x_i   (btarget_pc_x_w),
+        .opc7_x_i         (opc7_x_w),
+        .funct3_x_i       (funct3_x_w),
+        .alu_ctl_x_i      (alu_ctl_x_w),
+        .alu_imm_b_x_i    (alu_imm_b_x_w),
+        .fwd_rs1_sel_i    (fwd_rs1_sel_w),
+        .fwd_rs2_sel_i    (fwd_rs2_sel_w),
+        .alu_res_m_fwd_i  (alu_res_m_w),
+        .rf_wdata_w_fwd_i (rf_wdata_w_w),
+        .alu_res_x_o      (alu_res_x_w),
+        .pc_plus4_x_o     (pc_plus4_x_w),
+        .jmp_pc_x_o       (jmp_pc_x_w),
+        .br_taken_x_o     (br_taken_x_w),
+        .div_busy_o       (div_busy_w),
+        .mul_busy_o       (mul_busy_w)
     );
 
-    // ─── EX/MEM register ─────────────────────────────────────────────
-    // - flush=branch_taken so the speculative instruction in EX is
-    //   killed when the branch redirect fires (Bug #2).
-    // - enable=~freeze_stall so the whole back end of the pipeline
-    //   freezes during a multi-cycle DIV in EX (Bug #4).
-    ex_mem_reg ex_mem_pipe(
-        .clk              (clk),
-        .rst_n            (rst_n),
-        .flush            (branch_taken),
-        .enable           (~freeze_stall),
-        .alu_result_in    (ex_alu_result),
-        .rs2_data_in      (ex_rs2_data),
-        .rd_addr_in       (ex_rd_addr),
-        .pc_plus4_in      (ex_pc_plus4),
-        .opcode_in        (ex_opcode),
-        .branch_target_in (ex_branch_target),
-        .BranchTaken_in   (ex_BranchTaken),
-        .MemRead_in       (ex_MemRead),
-        .MemWrite_in      (ex_MemWrite),
-        .MemToReg_in      (ex_MemToReg),
-        .RegWrite_in      (ex_RegWrite),
-        .funct3_in        (ex_funct3),
-        .Branch_in        (ex_Branch),
-        .csr_wdata_in     (ex_rs1_data),
-        .csr_addr_in      (ex_csr_addr),
-        .CSRWrite_in      (ex_CSRWrite),
-        .CSROp_in         (ex_CSROp),
-        .IsECALL_in       (ex_IsECALL),
-        .IsEBREAK_in      (ex_IsEBREAK),
-        .IsMRET_in        (ex_IsMRET),
-        .alu_result_out   (mem_alu_result),
-        .rs2_data_out     (mem_rs2_data),
-        .rd_addr_out      (mem_rd_addr),
-        .pc_plus4_out     (mem_pc_plus4),
-        .opcode_out       (mem_opcode),
-        .branch_target_out(mem_branch_target),
-        .BranchTaken_out  (mem_BranchTaken),
-        .MemRead_out      (mem_MemRead),
-        .MemWrite_out     (mem_MemWrite),
-        .MemToReg_out     (mem_MemToReg),
-        .RegWrite_out     (mem_RegWrite),
-        .funct3_out       (mem_funct3),
-        .Branch_out       (mem_Branch),
-        .csr_wdata_out    (mem_csr_wdata),
-        .csr_addr_out     (mem_csr_addr),
-        .CSRWrite_out     (mem_CSRWrite),
-        .CSROp_out        (mem_CSROp),
-        .IsECALL_out      (mem_IsECALL),
-        .IsEBREAK_out     (mem_IsEBREAK),
-        .IsMRET_out       (mem_IsMRET)
+    // Kill EX shadow on taken branch; freeze with backend on DIV busy.
+    ex_mem_reg u_xm (
+        .clk_i            (clk_i),
+        .rst_n_i          (rst_n_i),
+        .flush_i          (br_exec_w),
+        .gate_i           (~stall_freeze_ex_w),
+        .alu_res_x_in     (alu_res_x_w),
+        .rs2_store_x_in   (rs2_val_x_w),
+        .rd_adr_x_in      (rd_adr_x_w),
+        .pc_plus4_x_in    (pc_plus4_x_w),
+        .opc7_x_in        (opc7_x_w),
+        .jmp_pc_x_in      (jmp_pc_x_w),
+        .br_taken_x_in    (br_taken_x_w),
+        .mem_rd_x_in      (mem_rd_x_w),
+        .mem_we_x_in      (mem_we_x_w),
+        .wb_from_ld_x_in (wb_ld_x_w),
+        .rf_we_x_in       (rf_we_x_w),
+        .funct3_x_in      (funct3_x_w),
+        .br_jmp_x_in      (br_jmp_x_w),
+        .csr_wdata_x_in   (rs1_val_x_w),
+        .csr_adr_x_in     (csr_adr_x_w),
+        .csr_we_x_in      (csr_we_x_w),
+        .csr_op_x_in      (csr_op_x_w),
+        .trap_ecall_x_in  (trap_ecall_x_w),
+        .trap_ebreak_x_in (trap_ebreak_x_w),
+        .trap_mret_x_in   (trap_mret_x_w),
+        .alu_res_m_out    (alu_res_m_w),
+        .rs2_store_m_out  (rs2_store_m_w),
+        .rd_adr_m_out     (rd_adr_m_w),
+        .pc_plus4_m_out   (pc_plus4_m_w),
+        .opc7_m_out       (opc7_m_w),
+        .jmp_pc_m_out     (jmp_pc_m_w),
+        .br_taken_m_out   (br_taken_m_w),
+        .mem_rd_m_out     (mem_rd_m_w),
+        .mem_we_m_out     (mem_we_m_w),
+        .wb_from_ld_m_out (wb_ld_m_w),
+        .rf_we_m_out      (rf_we_m_w),
+        .funct3_m_out     (funct3_m_w),
+        .br_jmp_m_out     (br_jmp_m_w),
+        .csr_wdata_m_out  (csr_wdata_m_w),
+        .csr_adr_m_out    (csr_adr_m_w),
+        .csr_we_m_out     (csr_we_m_w),
+        .csr_op_m_out     (csr_op_m_w),
+        .trap_ecall_m_out (trap_ecall_m_w),
+        .trap_ebreak_m_out(trap_ebreak_m_w),
+        .trap_mret_m_out  (trap_mret_m_w)
     );
 
-    // ─── MEM stage ───────────────────────────────────────────────────
-    mem_stage memory(
-        .clk          (clk),
-        .rst_n        (rst_n),
-        .alu_result   (mem_alu_result),
-        .rs2_data     (mem_rs2_data),
-        .MemRead      (mem_MemRead),
-        .MemWrite     (mem_MemWrite),
-        .funct3       (mem_funct3),
-        .mem_read_data(mem_read_data),
-        .HREADY_RAM   (hready_ram)
+    mem_stage u_mem ( // Data RAM at 0x2000_xxxx; addr = EX/MEM ALU result
+        .clk_i         (clk_i),
+        .rst_n_i       (rst_n_i),
+        .addr_m_i      (alu_res_m_w),
+        .rs2_store_m_i (rs2_store_m_w),
+        .mem_rd_m_i    (mem_rd_m_w),
+        .mem_we_m_i    (mem_we_m_w),
+        .funct3_m_i    (funct3_m_w),
+        .ld_data_wb_o  (ld_data_raw_w),
+        .ram_ready_o   (ram_rdy_w)
     );
 
-    // ─── MEM/WB register ─────────────────────────────────────────────
-    // enable=~freeze_stall to keep the whole back end frozen during DIV.
-    // Load data is *not* threaded through this register — see the comment
-    // at the top of mem_wb_reg.v for why. The RAM slave's own read_data
-    // flop is the MEM/WB boundary for that path, and mem_read_data feeds
-    // the WB stage directly.
-    mem_wb_reg mem_wb_pipe(
-        .clk              (clk),
-        .rst_n            (rst_n),
-        .flush            (1'b0),
-        .enable           (~freeze_stall),
-        .alu_result_in    (mem_alu_result),
-        .rd_addr_in       (mem_rd_addr),
-        .pc_plus4_in      (mem_pc_plus4),
-        .opcode_in        (mem_opcode),
-        .MemToReg_in      (mem_MemToReg),
-        .RegWrite_in      (mem_RegWrite),
-        .csr_rdata_in     (32'b0),
-        .CSRToReg_in      (1'b0),
-        .alu_result_out   (wb_alu_result),
-        .rd_addr_out      (wb_rd_addr),
-        .pc_plus4_out     (wb_pc_plus4),
-        .opcode_out       (wb_opcode),
-        .MemToReg_out     (wb_MemToReg),
-        .RegWrite_out     (wb_RegWrite),
-        .csr_rdata_out    (wb_csr_rdata),
-        .CSRToReg_out     (wb_CSRToReg)
+    // CSR read path tied off for now; load value meets WB mux off this register’s clock edge.
+    mem_wb_reg u_mw (
+        .clk_i             (clk_i),
+        .rst_n_i           (rst_n_i),
+        .flush_i           (1'b0),
+        .gate_i            (~stall_freeze_ex_w),
+        .alu_res_m_in      (alu_res_m_w),
+        .rd_adr_m_in       (rd_adr_m_w),
+        .pc_plus4_m_in     (pc_plus4_m_w),
+        .opc7_m_in         (opc7_m_w),
+        .wb_from_ld_m_in   (wb_ld_m_w),
+        .rf_we_m_in        (rf_we_m_w),
+        .csr_rdata_m_in    (32'b0),
+        .csr_to_rf_m_in    (1'b0),
+        .alu_res_w_out     (alu_res_w_w),
+        .rd_adr_w_out      (rd_adr_w_w),
+        .pc_plus4_w_out    (pc_plus4_w_w),
+        .opc7_w_out        (opc7_w_w),
+        .wb_from_ld_w_out  (wb_ld_w_w),
+        .rf_we_w_out       (rf_we_w_w),
+        .csr_rdata_w_out   (csr_rdata_w_w),
+        .csr_to_rf_w_out   (csr_to_rf_w_w)
     );
 
-    // ─── WB stage ────────────────────────────────────────────────────
-    // mem_read_data sources from ram_ahb's synchronous read_data flop
-    // (via the byte/half formatter in mem_stage). That flop clocks on
-    // the same edge as mem_wb_pipe, so on the LW's WB cycle the load
-    // value, the formatter's registered load_addr_lsb_d / load_funct3_d,
-    // and the MemToReg / rd / RegWrite controls from mem_wb_pipe are
-    // all valid simultaneously.
-    wb_stage writeback(
-        .alu_result    (wb_alu_result),
-        .mem_read_data (mem_read_data),
-        .pc_plus4      (wb_pc_plus4),
-        .MemToReg      (wb_MemToReg),
-        .opcode        (wb_opcode),
-        .reg_write_data(reg_write_data)
+    wb_stage u_wb ( // rd <= ALU/logical result or sign-extended load
+        .alu_res_w_i    (alu_res_w_w),
+        .ld_data_w_i    (ld_data_raw_w),
+        .wb_from_ld_w_i (wb_ld_w_w),
+        .rf_wdata_w_o   (rf_wdata_w_w)
     );
 
-    assign pc_out = if_pc_current;
+    assign pc_dbg_o = pc_fetch_w; // Current instruction fetch address
 endmodule

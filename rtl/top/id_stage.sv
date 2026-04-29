@@ -1,116 +1,104 @@
 import pipeline_pkg::*;
 
-module id_stage(
-    input  logic        clk,
-    input  logic [31:0] instruction,
-
-    // Writeback feedback
-    input  logic [4:0]  rd_addr_wb,
-    input  logic [31:0] rd_data,
-    input  logic        RegWrite,
-
-    // Single bundled output for the rest of the pipeline
-    output id_decoded_t id_decoded
+// Decode one instruction: split fields, immediates, regfile read, main decode -> dec_bus for ID/EX.
+module id_stage (
+    input  logic         clk_i,
+    input  logic [31:0]  instr_d_i,   // From IF/ID
+    input  logic [4:0]   rd_adr_w_i,  // WB destination
+    input  logic [31:0]  rf_wdata_w_i,
+    input  logic         rf_we_w_i,
+    output dec_bus_t     dec_bus_o
 );
+    wire [6:0] opc7_w;
+    wire [4:0] rd_idx_w;
+    wire [2:0] funct3_w;
+    wire [4:0] rs1_idx_w;
+    wire [4:0] rs2_idx_w;
+    wire [6:0] funct7_w;
 
-    // ─── Parsed fields ───────────────────────────────────────────────
-    wire [6:0] opcode;
-    wire [4:0] rd;
-    wire [2:0] funct3;
-    wire [4:0] rs1_addr;
-    wire [4:0] rs2_addr;
-    wire [6:0] funct7;
-
-    instr_parser instruction_parser(
-        .instruction(instruction),
-        .opcode     (opcode),
-        .rd         (rd),
-        .funct3     (funct3),
-        .rs1        (rs1_addr),
-        .rs2        (rs2_addr),
-        .funct7     (funct7)
+    instr_parser u_parse (
+        .instruction(instr_d_i),
+        .opcode     (opc7_w),
+        .rd         (rd_idx_w),
+        .funct3     (funct3_w),
+        .rs1        (rs1_idx_w),
+        .rs2        (rs2_idx_w),
+        .funct7     (funct7_w)
     );
 
-    // ─── Immediate generator ─────────────────────────────────────────
-    wire [31:0] imm;
-
-    imm_gen immediate_generator(
-        .instruction(instruction),
-        .opcode     (opcode),
-        .imm        (imm)
+    wire [31:0] imm32_w;
+    imm_gen u_imm (
+        .instruction(instr_d_i),
+        .opcode     (opc7_w),
+        .imm        (imm32_w)
     );
 
-    // ─── Register file ───────────────────────────────────────────────
-    wire [31:0] rs1_data;
-    wire [31:0] rs2_data;
-
-    registers register_file(
-        .clk      (clk),
-        .rs1_addr (rs1_addr),
-        .rs2_addr (rs2_addr),
-        .rd_addr  (rd_addr_wb),
-        .rd_data  (rd_data),
-        .reg_write(RegWrite),
-        .rs1_data (rs1_data),
-        .rs2_data (rs2_data)
+    wire [31:0] rs1_rdata_w;
+    wire [31:0] rs2_rdata_w;
+    registers u_rf (
+        .clk      (clk_i),
+        .rs1_addr (rs1_idx_w),
+        .rs2_addr (rs2_idx_w),
+        .rd_addr  (rd_adr_w_i),
+        .rd_data  (rf_wdata_w_i),
+        .reg_write(rf_we_w_i),
+        .rs1_data (rs1_rdata_w),
+        .rs2_data (rs2_rdata_w)
     );
 
-    // ─── Main control unit ───────────────────────────────────────────
-    wire        Branch, MemRead, MemToReg, MemWrite, ALUSrc, RegWrite_id;
-    wire        CSRWrite, IsECALL, IsEBREAK, IsMRET;
-    wire [1:0]  ALUOp, CSROp;
+    wire br_jmp_c, mem_rd_c, wb_ld_c, mem_we_c, alu_imm_c, rf_we_c;
+    wire [1:0] csr_op_c;
+    wire [1:0] alu_opc2_c;
+    wire csr_we_c, trap_ecall_c, trap_ebreak_c, trap_mret_c;
 
-    main_control_unit control(
-        .opcode   (opcode),
-        .funct3   (funct3),
-        .funct7   (funct7),
-        .rs2_addr (rs2_addr),
-        .Branch   (Branch),
-        .MemRead  (MemRead),
-        .MemToReg (MemToReg),
-        .ALUOp    (ALUOp),
-        .MemWrite (MemWrite),
-        .ALUSrc   (ALUSrc),
-        .RegWrite (RegWrite_id),
-        .CSRWrite (CSRWrite),
-        .CSROp    (CSROp),
-        .IsECALL  (IsECALL),
-        .IsEBREAK (IsEBREAK),
-        .IsMRET   (IsMRET)
+    main_control_unit u_ctrl (
+        .opcode   (opc7_w),
+        .funct3   (funct3_w),
+        .funct7   (funct7_w),
+        .rs2_addr (rs2_idx_w),
+        .Branch   (br_jmp_c),
+        .MemRead  (mem_rd_c),
+        .MemToReg (wb_ld_c),
+        .ALUOp    (alu_opc2_c),
+        .MemWrite (mem_we_c),
+        .ALUSrc   (alu_imm_c),
+        .RegWrite (rf_we_c),
+        .CSRWrite (csr_we_c),
+        .CSROp    (csr_op_c),
+        .IsECALL  (trap_ecall_c),
+        .IsEBREAK (trap_ebreak_c),
+        .IsMRET   (trap_mret_c)
     );
 
-    wire [4:0] ALUControl;
-
-    alu_decoder alu_dec(
-        .opcode    (opcode),
-        .ALUOp     (ALUOp),
-        .funct3    (funct3),
-        .funct7    (funct7),
-        .ALUControl(ALUControl)
+    wire [4:0] alu_ctl_w;
+    alu_decoder u_alu_dec (
+        .opcode    (opc7_w),
+        .ALUOp     (alu_opc2_c),
+        .funct3    (funct3_w),
+        .funct7    (funct7_w),
+        .ALUControl(alu_ctl_w)
     );
 
-    // ─── Pack the ID-stage bundle ────────────────────────────────────
-    assign id_decoded.opcode     = opcode;
-    assign id_decoded.rd         = rd;
-    assign id_decoded.funct3     = funct3;
-    assign id_decoded.rs1_addr   = rs1_addr;
-    assign id_decoded.rs2_addr   = rs2_addr;
-    assign id_decoded.funct7     = funct7;
-    assign id_decoded.imm        = imm;
-    assign id_decoded.rs1_data   = rs1_data;
-    assign id_decoded.rs2_data   = rs2_data;
-    assign id_decoded.ALUControl = ALUControl;
-    assign id_decoded.ALUSrc     = ALUSrc;
-    assign id_decoded.Branch     = Branch;
-    assign id_decoded.MemRead    = MemRead;
-    assign id_decoded.MemWrite   = MemWrite;
-    assign id_decoded.MemToReg   = MemToReg;
-    assign id_decoded.RegWrite   = RegWrite_id;
-    assign id_decoded.csr_addr   = instruction[31:20];
-    assign id_decoded.CSRWrite   = CSRWrite;
-    assign id_decoded.CSROp      = CSROp;
-    assign id_decoded.IsECALL    = IsECALL;
-    assign id_decoded.IsEBREAK   = IsEBREAK;
-    assign id_decoded.IsMRET     = IsMRET;
-
+    assign dec_bus_o.opc7           = opc7_w;
+    assign dec_bus_o.rd_idx         = rd_idx_w;
+    assign dec_bus_o.funct3         = funct3_w;
+    assign dec_bus_o.rs1_idx        = rs1_idx_w;
+    assign dec_bus_o.rs2_idx        = rs2_idx_w;
+    assign dec_bus_o.funct7         = funct7_w;
+    assign dec_bus_o.imm32          = imm32_w;
+    assign dec_bus_o.rs1_rdata      = rs1_rdata_w;
+    assign dec_bus_o.rs2_rdata      = rs2_rdata_w;
+    assign dec_bus_o.alu_ctrl5      = alu_ctl_w;
+    assign dec_bus_o.alu_use_imm    = alu_imm_c;
+    assign dec_bus_o.ctl_br_jmp     = br_jmp_c;
+    assign dec_bus_o.ctl_mem_rd     = mem_rd_c;
+    assign dec_bus_o.ctl_mem_we     = mem_we_c;
+    assign dec_bus_o.ctl_wb_from_ld = wb_ld_c;
+    assign dec_bus_o.ctl_rf_we      = rf_we_c;
+    assign dec_bus_o.csr_adr12      = instr_d_i[31:20];
+    assign dec_bus_o.csr_we         = csr_we_c;
+    assign dec_bus_o.csr_op2        = csr_op_c;
+    assign dec_bus_o.trap_ecall     = trap_ecall_c;
+    assign dec_bus_o.trap_ebreak    = trap_ebreak_c;
+    assign dec_bus_o.trap_mret      = trap_mret_c;
 endmodule
