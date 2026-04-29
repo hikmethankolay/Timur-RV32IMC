@@ -18,7 +18,7 @@ module alu (
 
     wire do_sub = (ALUControl == 5'b00110) ||  // SUB
                   (ALUControl == 5'b00111) ||  // SLT
-                  (ALUControl == 5'b01100);    // SLTU — needs subtraction for unsigned compare
+                  (ALUControl == 5'b01100);    // SLTU
 
     wire [31:0] adder_result;
     wire        adder_cout;

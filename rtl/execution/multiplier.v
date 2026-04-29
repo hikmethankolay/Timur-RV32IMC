@@ -1,14 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// multiplier — 2-cycle pipelined 33×33 signed/unsigned multiplier
-// ─────────────────────────────────────────────────────────────────────────────
-// Cycle 1 (start): operands sign-extended and registered into DSP input flops.
-// Cycle 2:         product available from registered inputs; result selected
-//                  and latched, done pulsed, busy cleared.
-//
-// By registering the DSP inputs, Quartus can absorb them into the embedded
-// multiplier's input pipeline registers, removing the 33×33 multiply from
-// the combinational critical path in the EX stage.
-// ─────────────────────────────────────────────────────────────────────────────
 module multiplier (
     input         clk,
     input         rst_n,
