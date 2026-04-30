@@ -5,12 +5,15 @@ module alu (
     input  [31:0] b,
     input  [4:0]  ALUControl,
     input         div_start,
+    input         mul_start,
     output reg    [31:0] result,
     output        zero,
     output        cout,
     output        overflow,
     output        div_busy,
-    output        div_done
+    output        div_done,
+    output        mul_busy,
+    output        mul_done
 );
 
     wire do_sub = (ALUControl == 5'b00110) ||  // SUB
@@ -49,14 +52,20 @@ module alu (
         .out        (shift_result)
     );
 
-    // ── Multiplier (single-cycle, combinational) ──────────────────────
+    // ── Pipelined multiplier (2-cycle) ────────────────────────────────
     wire [31:0] mul_result;
+    wire        mul_start_gated = mul_start & ~mul_busy;
 
     multiplier mul_inst (
+        .clk    (clk),
+        .rst_n  (rst_n),
+        .start  (mul_start_gated),
         .a      (a),
         .b      (b),
         .mul_op (ALUControl[1:0]),
-        .result (mul_result)
+        .result (mul_result),
+        .busy   (mul_busy),
+        .done   (mul_done)
     );
 
     // ── Divider (multi-cycle) ─────────────────────────────────────────

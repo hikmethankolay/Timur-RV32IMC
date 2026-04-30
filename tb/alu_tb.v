@@ -2,13 +2,13 @@
 //
 // alu_tb — vector-driven regression for the ALU (logic, add/sub, shifts, M-extension mul*, div/rem).
 // Combinational ops: apply inputs, wait #10, check result/zero/cout/overflow.
-// Mul ops (ALUControl 16-19): single-cycle combinational — same delay as other ops.
+// Mul ops (ALUControl 16-19): pulse mul_start, wait for mul_done, check result/zero only.
 // Div/rem ops (ALUControl 20-23): pulse div_start, wait for div_done, check result/zero only
 // (cout/overflow reflect the internal adder and are not meaningful for mul/div results).
 //
 module alu_tb;
 
-    reg         clk, rst_n, div_start;
+    reg         clk, rst_n, div_start, mul_start;
     reg  [31:0] a, b;
     reg  [4:0]  ALUControl;
     wire [31:0] result;
@@ -17,6 +17,8 @@ module alu_tb;
     wire        overflow;
     wire        div_busy;
     wire        div_done;
+    wire        mul_busy;
+    wire        mul_done;
 
     alu dut (
         .clk       (clk),
@@ -25,12 +27,15 @@ module alu_tb;
         .b         (b),
         .ALUControl(ALUControl),
         .div_start (div_start),
+        .mul_start (mul_start),
         .result    (result),
         .zero      (zero),
         .cout      (cout),
         .overflow  (overflow),
         .div_busy  (div_busy),
-        .div_done  (div_done)
+        .div_done  (div_done),
+        .mul_busy  (mul_busy),
+        .mul_done  (mul_done)
     );
 
     always #5 clk = ~clk;
@@ -51,6 +56,7 @@ module alu_tb;
         clk        = 0;
         rst_n      = 0;
         div_start  = 0;
+        mul_start  = 0;
         a          = 32'h0;
         b          = 32'h0;
         ALUControl = 5'h0;
@@ -78,6 +84,7 @@ module alu_tb;
                         total    = total    + 1;
 
                         if (is_div_op) begin
+                            // Pulse div_start for one cycle, wait for done.
                             @(posedge clk); #1;
                             div_start = 1;
                             @(posedge clk); #1;
@@ -85,6 +92,12 @@ module alu_tb;
                             if (!div_done) @(posedge div_done);
                             #1;
                         end else if (is_mul_op) begin
+                            // Pulse mul_start for one cycle, wait for done.
+                            @(posedge clk); #1;
+                            mul_start = 1;
+                            @(posedge clk); #1;
+                            mul_start = 0;
+                            if (!mul_done) @(posedge mul_done);
                             #1;
                         end else begin
                             #10;
