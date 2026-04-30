@@ -105,7 +105,7 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 ## Current Status
 
-**Phase 6 complete — 5-stage pipeline registers integrated and verified.**
+**Phase 7 complete — hazard resolution (forwarding, stalls, branch flush) integrated and verified.**
 
 | Phase | Description | Status |
 | ----- | ----------- | ------ |
@@ -115,8 +115,8 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 | 4 | Instruction decode & control — ImmGen, Parser, ALU Decoder, Main Control | ✅ Complete |
 | 5 | Single-cycle integration (HREADY=1 assumed) | ✅ Complete |
 | 6 | 5-stage pipelining with pipeline registers | ✅ Complete |
-| 7 | Hazard resolution — forwarding, load-use, HREADY, div_busy, branch flush | 🔜 Next |
-| 8 | APB peripherals — GPIO, UART, DMAC control registers, AHB-to-APB bridge | 🔜 |
+| 7 | Hazard resolution — forwarding, load-use, HREADY, div/mul multicycle, branch flush | ✅ Complete |
+| 8 | APB peripherals — GPIO, UART, DMAC control registers, AHB-to-APB bridge | 🔜 Next |
 | 9 | Full AHB bus fabric — arbiter, CPU master, DMAC master, top-level | 🔜 |
 | 10 | CSR register file, trap mechanism, MRET | 🔜 |
 | 11 | C extension — 16-bit compressed instruction decompressor | 🔜 |
@@ -180,7 +180,7 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 ### Phase 7 — Hazard Resolution
 
 - **`forwarding_unit.v`** — Forwarding Unit. Compares EX-stage source register addresses against MEM-stage and WB-stage destination addresses to generate 2-bit `forwardA`/`forwardB` selects for the Mux4 inputs to the ALU. EX/MEM result has priority over MEM/WB. No forwarding occurs when `rd == x0`.
-- **`hazard_detection_unit.v`** — Hazard Detection Unit. Combines three independent stall sources into a single `stall` output: load-use hazard (LW in EX whose `rd` matches `rs1`/`rs2` of the instruction in ID), AHB bus wait (`!HREADY` from the address decoder), and divider busy (`div_busy` from the ALU). All three sources produce identical behaviour: PC frozen, IF/ID frozen, NOP bubble injected into ID/EX. Branch flush (IF/ID and ID/EX cleared when `BranchTaken` is asserted from EX/MEM) is implemented in the top-level datapath.
+- **`hazard_detection_unit.v`** — Hazard Detection Unit. Detects load-use (LW in EX with `rd` matching `rs1`/`rs2` in IF/ID), AHB wait (`!HREADY`, combined instruction/data path ready), and multi-cycle ALU ops (`div_busy`, `mul_busy`). `stall` freezes PC and IF/ID for all cases. Load-use and bus wait assert `bubble_stall` so ID/EX is flushed to NOP while the consumer stays in IF/ID; divide/multiply assert `freeze_stall` so the op remains in EX until complete. Taken branch/jump redirect is evaluated in MEM (`br_jmp` ∧ `br_taken`); the top-level datapath flushes IF/ID and ID/EX and reloads the PC.
 
 ### Phase 8 — APB Peripherals
 
@@ -268,19 +268,22 @@ The CPU uses the classic 5-stage RISC pipeline. Each stage boundary is a registe
 
 ## Hazard Handling
 
-Three independent stall sources are combined in the Hazard Detection Unit:
+Stall sources are combined in the Hazard Detection Unit:
 
 ```text
-stall = load_use_hazard OR bus_wait OR div_busy
+stall        = bubble_stall | freeze_stall
+bubble_stall = load_use_hazard | bus_wait
+freeze_stall = div_busy | mul_busy
 ```
 
 | Source | Duration | Mechanism |
 | ------ | -------- | --------- |
-| Load-use hazard | Exactly 1 cycle | LW result not available until end of MEM; cannot be forwarded |
-| AHB bus wait (`!HREADY`) | N cycles | APB bridge holds `HREADY=0` during SETUP and ACCESS phases |
-| Divider busy | 32 cycles | DIV/REM sequential execution; MUL is 1-cycle (no stall) |
+| Load-use hazard | 1+ cycles | LW result not available until end of MEM; cannot be forwarded; bubble in ID/EX |
+| AHB bus wait (`!HREADY`) | N cycles | Combined ROM/RAM ready; future APB bridge holds `HREADY=0` during SETUP/ACCESS |
+| Divider busy | 32 cycles | DIV/REM; `freeze_stall` holds ID/EX and EX/MEM until `div_done` |
+| Multiplier busy | As implemented | MUL family; same `freeze_stall` until `mul_done` |
 
-All three stall sources produce identical pipeline behaviour: PC frozen, IF/ID frozen, NOP bubble injected into ID/EX.
+PC and IF/ID always freeze on any `stall`. Load-use and bus wait additionally replace ID/EX with a NOP; divide/multiply freeze ID/EX without bubbling so the multi-cycle instruction stays in EX.
 
 **Data forwarding** resolves RAW hazards without stalling for ALU-to-ALU and store-after-load sequences:
 
@@ -288,7 +291,7 @@ All three stall sources produce identical pipeline behaviour: PC frozen, IF/ID f
 - `forwardA/B = 2'b01` — Forward from MEM/WB (fallback)
 - `forwardA/B = 2'b00` — Register file value (no hazard)
 
-**Branch flush** is evaluated in EX. When `BranchTaken=1`, IF/ID and ID/EX are both flushed (NOP injected) and the PC loads the branch target — exactly 2 wrongly-fetched instructions are discarded.
+**Branch / jump redirect** is committed in MEM (`br_jmp` ∧ `br_taken`). When taken, IF/ID and ID/EX are flushed (NOP injected) and the PC loads the jump target from EX/MEM.
 
 ---
 
@@ -459,8 +462,8 @@ Phase 3  ✅  PC, Register File, ROM/RAM AHB slaves
 Phase 4  ✅  Decode stage (ImmGen, Parser, Control)
 Phase 5  ✅  Single-cycle CPU integration
 Phase 6  ✅  5-stage pipeline registers
-Phase 7  🔜  Hazard resolution (forwarding, stalls, flush)   ← Next
-Phase 8  🔜  APB peripherals (GPIO, UART, DMAC registers)
+Phase 7  ✅  Hazard resolution (forwarding, stalls, flush)
+Phase 8  🔜  APB peripherals (GPIO, UART, DMAC registers)   ← Next
 Phase 9  🔜  Full AHB bus fabric + system top-level
 Phase 10 🔜  CSR file, trap mechanism, M-mode
 Phase 11 🔜  C extension decompressor (RV32IMC)
