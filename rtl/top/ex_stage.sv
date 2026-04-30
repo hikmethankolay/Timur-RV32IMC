@@ -4,6 +4,8 @@ module ex_stage (
     input         rst_n_i,
     input  [31:0] rs1_val_x_i,
     input  [31:0] rs2_val_x_i,
+    input         alu_a_use_id_x_i, // LUI/AUIPC: ALU A from alu_a_id (precomputed in ID)
+    input  [31:0] alu_a_id_x_i,
     input  [31:0] imm32_x_i,
     input  [31:0] pc_x_i,           // Instruction’s architectural PC
     input  [31:0] pc_plus4_x_i,     // Link value for JAL/JALR
@@ -25,14 +27,10 @@ module ex_stage (
 );
     assign pc_plus4_x_o = pc_plus4_x_i;
 
-    localparam [6:0] OPC_LUI    = 7'b0110111;
-    localparam [6:0] OPC_AUIPC  = 7'b0010111;
     localparam [6:0] OPC_BRANCH = 7'b1100011;
     localparam [6:0] OPC_JAL    = 7'b1101111;
     localparam [6:0] OPC_JALR   = 7'b1100111;
 
-    wire is_lui_w         = (opc7_x_i == OPC_LUI);
-    wire is_auipc_w       = (opc7_x_i == OPC_AUIPC);
     wire is_bcond_w       = (opc7_x_i == OPC_BRANCH);
     wire is_jal_w         = (opc7_x_i == OPC_JAL);
     wire is_jalr_w        = (opc7_x_i == OPC_JALR);
@@ -56,8 +54,8 @@ module ex_stage (
         .out(rs2_fwd_w)
     );
 
-    // LUI: force A=0 (instr rs1 field is imm bits). AUIPC: A=PC.
-    wire [31:0] alu_a_w = is_auipc_w ? pc_x_i : is_lui_w ? 32'b0 : rs1_fwd_w;
+    // ALU A: LUI (0) / AUIPC (PC@ID) prepared in decode; else forwarded rs1.
+    wire [31:0] alu_a_eff_w = alu_a_use_id_x_i ? alu_a_id_x_i : rs1_fwd_w;
     wire [31:0] alu_b_w;
     mux2 #(.WIDTH(32)) u_alu_b (
         .in0(rs2_fwd_w),
@@ -65,6 +63,20 @@ module ex_stage (
         .sel(alu_imm_b_x_i),
         .out(alu_b_w)
     );
+
+    wire [31:0] jalr_sum_w;
+    wire        jalr_cout_unused;
+    wire        jalr_ovf_unused;
+
+    adder_32bit u_jalr_add (
+        .a       (rs1_fwd_w),
+        .b       (imm32_x_i),
+        .sub     (1'b0),
+        .result  (jalr_sum_w),
+        .cout    (jalr_cout_unused),
+        .overflow(jalr_ovf_unused)
+    );
+    wire [31:0] jalr_pc_w = {jalr_sum_w[31:1], 1'b0};
 
     wire [31:0] alu_raw_w;
     wire        zero_w, adder_zero_w, cout_w, ovf_w;
@@ -97,7 +109,7 @@ module ex_stage (
     alu u_alu (
         .clk       (clk_i),
         .rst_n     (rst_n_i),
-        .a         (alu_a_w),
+        .a         (alu_a_eff_w),
         .b         (alu_b_w),
         .ALUControl(alu_ctl_x_i),
         .div_start (div_start_w),
@@ -124,7 +136,7 @@ module ex_stage (
         .BranchTaken   (br_cond_taken_w)
     );
 
-    wire [31:0] jmp_pc_w = is_jalr_w ? {alu_raw_w[31:1], 1'b0} : btarget_pc_x_i;
+    wire [31:0] jmp_pc_w = is_jalr_w ? jalr_pc_w : btarget_pc_x_i;
 
     assign alu_res_x_o   = is_j_w ? pc_plus4_x_i : alu_raw_w;
     assign jmp_pc_x_o   = jmp_pc_w;
