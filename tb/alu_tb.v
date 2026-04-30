@@ -13,6 +13,7 @@ module alu_tb;
     reg  [4:0]  ALUControl;
     wire [31:0] result;
     wire        zero;
+    wire        adder_zero;
     wire        cout;
     wire        overflow;
     wire        div_busy;
@@ -30,6 +31,7 @@ module alu_tb;
         .mul_start (mul_start),
         .result    (result),
         .zero      (zero),
+        .adder_zero(adder_zero),
         .cout      (cout),
         .overflow  (overflow),
         .div_busy  (div_busy),

@@ -7,7 +7,8 @@ module alu (
     input         div_start,
     input         mul_start,
     output reg    [31:0] result,
-    output        zero,
+    output        zero,        // Full muxed ALU result == 0 (SLTU/SLT/vectors)
+    output        adder_zero,  // adder output == 0 (BEQ/BNE; avoids wide result mux)
     output        cout,
     output        overflow,
     output        div_busy,
@@ -116,8 +117,9 @@ module alu (
         endcase
     end
 
-    assign zero     = (result == 32'h00000000);
-    assign cout     = adder_cout;
+    assign zero       = (result == 32'h00000000);
+    assign adder_zero = (adder_result == 32'h00000000);
+    assign cout       = adder_cout;
     assign overflow = adder_overflow;
 
 endmodule

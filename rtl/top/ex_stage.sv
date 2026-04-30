@@ -67,7 +67,7 @@ module ex_stage (
     );
 
     wire [31:0] alu_raw_w;
-    wire        zero_w, cout_w, ovf_w;
+    wire        zero_w, adder_zero_w, cout_w, ovf_w;
     wire        div_done_w, mul_done_w;
 
     wire is_div_w    = (alu_ctl_x_i[4:2] == 3'b101);
@@ -102,9 +102,10 @@ module ex_stage (
         .ALUControl(alu_ctl_x_i),
         .div_start (div_start_w),
         .mul_start (mul_start_w),
-        .result    (alu_raw_w),
-        .zero      (zero_w),
-        .cout      (cout_w),
+        .result      (alu_raw_w),
+        .zero        (zero_w),
+        .adder_zero  (adder_zero_w),
+        .cout        (cout_w),
         .overflow  (ovf_w),
         .div_busy  (div_busy_raw_w),
         .div_done  (div_done_w),
@@ -115,7 +116,7 @@ module ex_stage (
     // funct3 is branch condition only for OPC_BRANCH; JAL reuses [14:12] as immediate.
     wire br_cond_taken_w;
     branch_condition_evaluator u_bcond (
-        .zero          (zero_w),
+        .zero          (adder_zero_w),
         .alu_result_msb(alu_raw_w[31]),
         .overflow      (ovf_w),
         .cout          (cout_w),
