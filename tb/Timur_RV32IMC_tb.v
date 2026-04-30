@@ -1,23 +1,27 @@
 `timescale 1ns/1ps
 module Timur_RV32IMC_tb;
 
-    reg         clk;
+    reg         clk_50;
+    reg         clk_10;
     reg         rst_n;
     wire [31:0] pc_out;
 
     Timur_RV32IMC dut (
-        .clk_i   (clk),
-        .rst_n_i (rst_n),
-        .pc_dbg_o(pc_out)
+        .ADC_CLK_10     (clk_10),
+        .MAX10_CLK1_50  (clk_50),
+        .MAX10_CLK2_50  (clk_50),
+        .rst_n_i        (rst_n),
+        .pc_dbg_o       (pc_out)
     );
 
-    // 50 MHz board clock — 20 ns period
-    always #10 clk = ~clk;
+    // Match board / SDC: 50 MHz (20 ns) and 10 MHz (100 ns)
+    always #10  clk_50 = ~clk_50;
+    always #50  clk_10 = ~clk_10;
 
-    // Bypass Altera PLL black-box: drive cpu clock = board clock, locked = 1.
+    // Bypass Altera PLL black-box: drive cpu clock = 50 MHz board clock, locked = 1.
     initial begin
         force dut.pll_ok_w  = 1'b1;
-        force dut.clk_cpu_w = clk;
+        force dut.clk_cpu_w = clk_50;
     end
 
     integer failed;
@@ -41,7 +45,8 @@ module Timur_RV32IMC_tb;
     endtask
 
     initial begin
-        clk    = 0;
+        clk_50 = 0;
+        clk_10 = 0;
         rst_n  = 0;
         failed = 0;
         total  = 0;
@@ -49,7 +54,7 @@ module Timur_RV32IMC_tb;
         cycle  = 0;
 
         // Hold reset for a few cycles
-        repeat (4) @(posedge clk);
+        repeat (4) @(posedge clk_50);
         rst_n = 1;
 
         // Run long enough to cover:
@@ -60,7 +65,7 @@ module Timur_RV32IMC_tb;
         //   - AHB pipeline latencies
         // 320 cycles is comfortable (MUL is now 2-cycle pipelined).
         repeat (320) begin
-            @(posedge clk);
+            @(posedge clk_50);
             cycle = cycle + 1;
         end
 

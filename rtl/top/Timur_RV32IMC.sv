@@ -1,7 +1,9 @@
-// FPGA top: generate core clock with PLL; hold core in reset until lock; export PC for debug/LEDs.
+// FPGA top: DE10-Lite clock port names (match QSF + Terasic SDC); PLL from MAX10_CLK1_50.
 module Timur_RV32IMC (
-    input  clk_i,
-    input  rst_n_i,
+    input         ADC_CLK_10,
+    input         MAX10_CLK1_50,
+    input         MAX10_CLK2_50,
+    input         rst_n_i,
     output [31:0] pc_dbg_o
 );
     wire clk_cpu_w;
@@ -10,7 +12,7 @@ module Timur_RV32IMC (
 
     cpu_pll pll (
         .areset (~rst_n_i),
-        .inclk0 (clk_i),
+        .inclk0 (MAX10_CLK1_50),
         .c0     (clk_cpu_w),
         .locked (pll_ok_w)
     );
