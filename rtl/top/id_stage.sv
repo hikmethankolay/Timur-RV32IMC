@@ -4,6 +4,7 @@ import pipeline_pkg::*;
 module id_stage (
     input  logic         clk_i,
     input  logic [31:0]  instr_d_i,   // From IF/ID
+    input  logic [31:0]  pc_d_i,      // Architectural PC in ID (AUIPC ALU-A operand)
     input  logic [4:0]   rd_adr_w_i,  // WB destination
     input  logic [31:0]  rf_wdata_w_i,
     input  logic         rf_we_w_i,
@@ -88,6 +89,8 @@ module id_stage (
     assign dec_bus_o.imm32          = imm32_w;
     assign dec_bus_o.rs1_rdata      = rs1_rdata_w;
     assign dec_bus_o.rs2_rdata      = rs2_rdata_w;
+    assign dec_bus_o.alu_a_use_id   = (opc7_w == 7'b0110111) || (opc7_w == 7'b0010111);
+    assign dec_bus_o.alu_a_id       = (opc7_w == 7'b0010111) ? pc_d_i : 32'b0;
     assign dec_bus_o.alu_ctrl5      = alu_ctl_w;
     assign dec_bus_o.alu_use_imm    = alu_imm_c;
     assign dec_bus_o.ctl_br_jmp     = br_jmp_c;

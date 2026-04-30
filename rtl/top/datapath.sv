@@ -22,6 +22,8 @@ module datapath (
     wire [4:0]  rs1_adr_x_w, rs2_adr_x_w, rd_adr_x_w;
     wire [6:0]  opc7_x_w;
     wire [4:0]  alu_ctl_x_w;
+    wire        alu_a_use_id_x_w;
+    wire [31:0] alu_a_id_x_w;
     wire        alu_imm_b_x_w, br_jmp_x_w;
     wire        mem_rd_x_w, mem_we_x_w, wb_ld_x_w, rf_we_x_w;
     wire [2:0]  funct3_x_w;
@@ -93,12 +95,13 @@ module datapath (
 
     // Decode instruction word; writeback ports close the regfile timing loop from WB.
     id_stage u_dec (
-        .clk_i      (clk_i),
-        .instr_d_i  (instr_d_w),
-        .rd_adr_w_i (rd_adr_w_w),
+        .clk_i       (clk_i),
+        .instr_d_i   (instr_d_w),
+        .pc_d_i      (pc_d_w),
+        .rd_adr_w_i  (rd_adr_w_w),
         .rf_wdata_w_i(rf_wdata_w_w),
-        .rf_we_w_i  (rf_we_w_w),
-        .dec_bus_o  (dec_bus_w)
+        .rf_we_w_i   (rf_we_w_w),
+        .dec_bus_o   (dec_bus_w)
     );
 
     adder_32bit u_pc4 ( // Link / sequential PC+4 for current instr in ID
@@ -136,6 +139,8 @@ module datapath (
         .rd_adr_d_in       (dec_bus_w.rd_idx),
         .opc7_d_in         (dec_bus_w.opc7),
         .alu_ctl_d_in      (dec_bus_w.alu_ctrl5),
+        .alu_a_use_id_d_in (dec_bus_w.alu_a_use_id),
+        .alu_a_id_d_in     (dec_bus_w.alu_a_id),
         .alu_imm_b_d_in    (dec_bus_w.alu_use_imm),
         .br_jmp_d_in       (dec_bus_w.ctl_br_jmp),
         .mem_rd_d_in       (dec_bus_w.ctl_mem_rd),
@@ -158,9 +163,11 @@ module datapath (
         .rs1_adr_x_out     (rs1_adr_x_w),
         .rs2_adr_x_out     (rs2_adr_x_w),
         .rd_adr_x_out      (rd_adr_x_w),
-        .opc7_x_out        (opc7_x_w),
-        .alu_ctl_x_out     (alu_ctl_x_w),
-        .alu_imm_b_x_out   (alu_imm_b_x_w),
+        .opc7_x_out         (opc7_x_w),
+        .alu_ctl_x_out      (alu_ctl_x_w),
+        .alu_a_use_id_x_out(alu_a_use_id_x_w),
+        .alu_a_id_x_out     (alu_a_id_x_w),
+        .alu_imm_b_x_out    (alu_imm_b_x_w),
         .br_jmp_x_out      (br_jmp_x_w),
         .mem_rd_x_out      (mem_rd_x_w),
         .mem_we_x_out      (mem_we_x_w),
@@ -205,9 +212,10 @@ module datapath (
         .rst_n_i          (rst_n_i),
         .rs1_val_x_i      (rs1_val_x_w),
         .rs2_val_x_i      (rs2_val_x_w),
-        .imm32_x_i        (imm32_x_w),
-        .pc_x_i           (pc_x_w),
-        .pc_plus4_x_i     (pc_plus4_idex_w),
+        .imm32_x_i         (imm32_x_w),
+        .alu_a_use_id_x_i  (alu_a_use_id_x_w),
+        .alu_a_id_x_i      (alu_a_id_x_w),
+        .pc_plus4_x_i      (pc_plus4_idex_w),
         .btarget_pc_x_i   (btarget_pc_x_w),
         .opc7_x_i         (opc7_x_w),
         .funct3_x_i       (funct3_x_w),

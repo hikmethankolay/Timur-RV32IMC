@@ -16,6 +16,8 @@ module id_ex_reg (
     input  [4:0]  rd_adr_d_in,
     input  [6:0]  opc7_d_in,
     input  [4:0]  alu_ctl_d_in,
+    input         alu_a_use_id_d_in,
+    input  [31:0] alu_a_id_d_in,
     input         alu_imm_b_d_in,
     input         br_jmp_d_in,
     input         mem_rd_d_in,
@@ -41,6 +43,8 @@ module id_ex_reg (
     output reg [4:0]  rd_adr_x_out,
     output reg [6:0]  opc7_x_out,
     output reg [4:0]  alu_ctl_x_out,
+    output reg        alu_a_use_id_x_out,
+    output reg [31:0] alu_a_id_x_out,
     output reg        alu_imm_b_x_out,
     output reg        br_jmp_x_out,
     output reg        mem_rd_x_out,
@@ -68,6 +72,8 @@ module id_ex_reg (
             rd_adr_x_out        <= 5'b0;
             opc7_x_out          <= 7'b0;
             alu_ctl_x_out       <= 5'b0;
+            alu_a_use_id_x_out  <= 1'b0;
+            alu_a_id_x_out      <= 32'b0;
             alu_imm_b_x_out     <= 1'b0;
             br_jmp_x_out        <= 1'b0;
             mem_rd_x_out        <= 1'b0;
@@ -93,6 +99,8 @@ module id_ex_reg (
             rd_adr_x_out        <= 5'b0;
             opc7_x_out          <= 7'b0;
             alu_ctl_x_out       <= 5'b0;
+            alu_a_use_id_x_out  <= 1'b0;
+            alu_a_id_x_out      <= 32'b0;
             alu_imm_b_x_out     <= 1'b0;
             br_jmp_x_out        <= 1'b0;
             mem_rd_x_out        <= 1'b0;
@@ -118,6 +126,8 @@ module id_ex_reg (
             rd_adr_x_out        <= rd_adr_d_in;
             opc7_x_out          <= opc7_d_in;
             alu_ctl_x_out       <= alu_ctl_d_in;
+            alu_a_use_id_x_out  <= alu_a_use_id_d_in;
+            alu_a_id_x_out      <= alu_a_id_d_in;
             alu_imm_b_x_out     <= alu_imm_b_d_in;
             br_jmp_x_out        <= br_jmp_d_in;
             mem_rd_x_out        <= mem_rd_d_in;

@@ -7,7 +7,6 @@ module ex_stage (
     input         alu_a_use_id_x_i, // LUI/AUIPC: ALU A from alu_a_id (precomputed in ID)
     input  [31:0] alu_a_id_x_i,
     input  [31:0] imm32_x_i,
-    input  [31:0] pc_x_i,           // Instruction’s architectural PC
     input  [31:0] pc_plus4_x_i,     // Link value for JAL/JALR
     input  [31:0] btarget_pc_x_i,   // PC+imm for B-type and JAL (from ID)
     input  [6:0]  opc7_x_i,

@@ -14,6 +14,8 @@ package pipeline_pkg;
         logic [31:0] rs2_rdata;
         // EX datapath control
         logic [4:0]  alu_ctrl5;     // ALU op select
+        logic        alu_a_use_id;  // 1: ALU A from alu_a_id (LUI/AUIPC); 0: forwarded rs1 in EX
+        logic [31:0] alu_a_id;      // LUI→0, AUIPC→PC @ ID (latches with same instr as pc_d)
         logic        alu_use_imm;   // 1: ALU port B from imm, 0: from rs2
         logic        ctl_br_jmp;   // Branch/jal/jalr (uses MEM redirect path)
         logic        ctl_mem_rd;   // Load
