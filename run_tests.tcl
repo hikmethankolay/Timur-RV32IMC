@@ -5,9 +5,12 @@
 # ============================================================
 
 # ── collect source files ──
-set rtl_v_files  [glob -nocomplain rtl/**/*.v]
-set rtl_sv_files [glob -nocomplain rtl/**/*.sv]
-set rtl_files    [concat $rtl_v_files $rtl_sv_files]
+# glob rtl/**/*.v is one level deep in Tcl; add a second pass for deeper dirs
+set rtl_v_files  [concat [glob -nocomplain rtl/**/*.v] \
+                          [glob -nocomplain rtl/**/**/*.v]]
+set rtl_sv_files [concat [glob -nocomplain rtl/**/*.sv] \
+                          [glob -nocomplain rtl/**/**/*.sv]]
+set rtl_files    [lsort -unique [concat $rtl_v_files $rtl_sv_files]]
 # Drop black-box stubs and the full PLL megafunction (cpu_pll.v instantiates
 # altpll which requires altera_mf — not available in plain ModelSim).
 # cpu_pll_bb.v is the simulation-safe stub; add it back explicitly.

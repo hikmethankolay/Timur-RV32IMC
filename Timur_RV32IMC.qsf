@@ -135,6 +135,11 @@ set_global_assignment -name VERILOG_FILE rtl/decode/main_control_unit.v
 set_global_assignment -name VERILOG_FILE rtl/decode/instr_parser.v
 set_global_assignment -name VERILOG_FILE rtl/decode/imm_gen.v
 set_global_assignment -name VERILOG_FILE rtl/decode/alu_decoder.v
+set_global_assignment -name VERILOG_FILE rtl/peripherals/uart/uart_baud_gen.v
+set_global_assignment -name VERILOG_FILE rtl/peripherals/uart/uart_tx.v
+set_global_assignment -name VERILOG_FILE rtl/peripherals/uart/uart_rx.v
+set_global_assignment -name VERILOG_FILE rtl/peripherals/uart/uart_apb_regs.v
+set_global_assignment -name VERILOG_FILE rtl/peripherals/uart/uart_apb.v
 
 #============================================================
 # Board pinout — Terasic DE10-Lite (System Builder)
