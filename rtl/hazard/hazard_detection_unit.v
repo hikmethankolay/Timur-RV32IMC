@@ -27,8 +27,8 @@ module hazard_detection_unit (
     //   freeze_stall: ID/EX must be held (multi-cycle execute, e.g. DIV/MUL).
     //                 The instruction is still computing in EX and must not
     //                 leave ID/EX until its result is valid.
-    assign bubble_stall = load_use | bus_wait;
-    assign freeze_stall = div_busy | mul_busy;
+    assign bubble_stall = load_use;
+    assign freeze_stall = bus_wait | div_busy | mul_busy;
 
     // Aggregate stall — used by PC and IF/ID, both of which always freeze
     // on any stall regardless of class.

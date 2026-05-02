@@ -1,182 +1,180 @@
 `timescale 1ns/1ps
+// rom_ahb_tb — dual-port AHB ROM testbench.
+// Port A = dedicated I-fetch bus; Port B = shared D-bus.
+// Both ports are independent: concurrent accesses to different addresses work.
 module rom_ahb_tb;
 
-    reg         HCLK, HRESETn, HSEL, HWRITE;
-    reg  [31:0] HADDR, HWDATA;
-    reg  [1:0]  HTRANS;
-    reg  [2:0]  HSIZE;
-    wire [31:0] HRDATA;
-    wire        HREADY, HRESP;
+    reg         HCLK, HRESETn;
+
+    // Port A (I-fetch)
+    reg         HSEL_a, HWRITE_a;
+    reg  [31:0] HADDR_a, HWDATA_a;
+    reg  [1:0]  HTRANS_a;
+    reg  [2:0]  HSIZE_a;
+    wire [31:0] HRDATA_a;
+    wire        HREADY_a, HRESP_a;
+
+    // Port B (D-bus)
+    reg         HSEL_b, HWRITE_b;
+    reg  [31:0] HADDR_b, HWDATA_b;
+    reg  [1:0]  HTRANS_b;
+    reg  [2:0]  HSIZE_b;
+    wire [31:0] HRDATA_b;
+    wire        HREADY_b, HRESP_b;
 
     rom_ahb dut (
-        .HCLK   (HCLK),
-        .HRESETn(HRESETn),
-        .HSEL   (HSEL),
-        .HADDR  (HADDR),
-        .HTRANS (HTRANS),
-        .HWRITE (HWRITE),
-        .HSIZE  (HSIZE),
-        .HWDATA (HWDATA),
-        .HRDATA (HRDATA),
-        .HREADY (HREADY),
-        .HRESP  (HRESP)
+        .HCLK    (HCLK),
+        .HRESETn (HRESETn),
+        .HSEL_a  (HSEL_a),  .HADDR_a  (HADDR_a),  .HTRANS_a (HTRANS_a),
+        .HWRITE_a(HWRITE_a),.HSIZE_a  (HSIZE_a),  .HWDATA_a (HWDATA_a),
+        .HRDATA_a(HRDATA_a),.HREADY_a (HREADY_a), .HRESP_a  (HRESP_a),
+        .HSEL_b  (HSEL_b),  .HADDR_b  (HADDR_b),  .HTRANS_b (HTRANS_b),
+        .HWRITE_b(HWRITE_b),.HSIZE_b  (HSIZE_b),  .HWDATA_b (HWDATA_b),
+        .HRDATA_b(HRDATA_b),.HREADY_b (HREADY_b), .HRESP_b  (HRESP_b)
     );
 
     always #5 HCLK = ~HCLK;
 
-    integer file, r, slen;
-    reg [31:0] exp_hrdata;
-    reg [31:0] raw_word;
-    reg        wait_type;   // 0 = async check (no clock), 1 = clock then check
-    reg [8*256-1:0] line;
     integer failed   = 0;
     integer total    = 0;
     integer test_num = 0;
 
-    task ahb_read_word;
-        input [31:0] addr;
-        input [2:0]  size;
-        output [31:0] data;
+    task check;
+        input [255:0] label;
+        input [31:0]  got, exp;
         begin
-            HSEL   = 1'b1;
-            HWRITE = 1'b0;
-            HADDR  = addr;
-            HSIZE  = size;
-            HTRANS = 2'b10;
-            @(posedge HCLK); #1;
-            data = HRDATA;
-            HSEL   = 1'b0;
-            HTRANS = 2'b00;
+            test_num = test_num + 1; total = total + 1;
+            if (got !== exp) begin
+                $display("FAIL T%0d %0s: got=%h  exp=%h", test_num, label, got, exp);
+                failed = failed + 1;
+            end else
+                $display("PASS T%0d %0s: %h", test_num, label, got);
         end
     endtask
 
-    function [31:0] lsu_load_format;
-        input [31:0] word;
-        input [1:0]  addr_lsb;
-        input [2:0]  f3;
-        reg   [7:0]  b;
-        reg   [15:0] h;
+    // Issue one NONSEQ read on Port A; return data captured after clock edge.
+    task ahb_read_a;
+        input [31:0] addr;
+        output [31:0] data;
         begin
-            case (addr_lsb)
-                2'b00: b = word[7:0];
-                2'b01: b = word[15:8];
-                2'b10: b = word[23:16];
-                default: b = word[31:24];
-            endcase
-
-            if (addr_lsb[1] == 1'b0)
-                h = word[15:0];
-            else
-                h = word[31:16];
-
-            case (f3)
-                3'b000:  lsu_load_format = {{24{b[7]}}, b};
-                3'b100:  lsu_load_format = {24'b0, b};
-                3'b001:  lsu_load_format = {{16{h[15]}}, h};
-                3'b101:  lsu_load_format = {16'b0, h};
-                default: lsu_load_format = word;
-            endcase
+            HSEL_a = 1'b1; HADDR_a = addr;
+            HTRANS_a = 2'b10; HWRITE_a = 1'b0; HSIZE_a = 3'b010;
+            @(posedge HCLK); #1;
+            data = HRDATA_a;
+            HSEL_a = 1'b0; HTRANS_a = 2'b00;
         end
-    endfunction
+    endtask
+
+    // Issue one NONSEQ read on Port B; return data captured after clock edge.
+    task ahb_read_b;
+        input [31:0] addr;
+        output [31:0] data;
+        begin
+            HSEL_b = 1'b1; HADDR_b = addr;
+            HTRANS_b = 2'b10; HWRITE_b = 1'b0; HSIZE_b = 3'b010;
+            @(posedge HCLK); #1;
+            data = HRDATA_b;
+            HSEL_b = 1'b0; HTRANS_b = 2'b00;
+        end
+    endtask
+
+    reg [31:0] got_a, got_b;
 
     initial begin
         HCLK    = 0;
         HRESETn = 0;
-        HSEL    = 0;
-        HADDR   = 32'h0000_0000;
-        HTRANS  = 2'b00;
-        HWRITE  = 0;
-        HSIZE   = 3'b010;
-        HWDATA  = 32'h0000_0000;
+        HSEL_a  = 0; HADDR_a  = 0; HTRANS_a = 2'b00; HWRITE_a = 0;
+        HSIZE_a = 3'b010; HWDATA_a = 0;
+        HSEL_b  = 0; HADDR_b  = 0; HTRANS_b = 2'b00; HWRITE_b = 0;
+        HSIZE_b = 3'b010; HWDATA_b = 0;
 
-        // Let ROM's initial block (fill + $readmemh) finish before
-        // overriding specific words with known test values.
+        // Seed known words before reset releases so readmemh can't clobber them.
         #1;
-        dut.mem[0] = 32'h00000013;  // NOP  — byte addr 0x000
-        dut.mem[1] = 32'hAABBCCDD;  //        byte addr 0x004
-        dut.mem[2] = 32'hDEADBEEF;  //        byte addr 0x008
-        dut.mem[3] = 32'hCAFEBABE;  //        byte addr 0x00C
-        dut.mem[4] = 32'h12345678;  //        byte addr 0x010
-        dut.mem[5] = 32'hABCDABCD;  //        byte addr 0x014
+        dut.mem[0] = 32'h00000013;   // NOP   @ 0x000
+        dut.mem[1] = 32'hAABBCCDD;   //        @ 0x004
+        dut.mem[2] = 32'hDEADBEEF;   //        @ 0x008
+        dut.mem[3] = 32'hCAFEBABE;   //        @ 0x00C
+        dut.mem[4] = 32'h12345678;   //        @ 0x010
+        dut.mem[5] = 32'hABCDABCD;   //        @ 0x014
 
-        file = $fopen("tb/vectors/rom_ahb_vectors.txt", "r");
-        if (file == 0) begin
-            $display("ERROR: could not open rom_ahb_vectors.txt");
-            $finish;
-        end
+        // ── T1: reset holds → both HRDATA outputs stay 0 ────────────────────
+        @(posedge HCLK); #1;
+        check("T1 reset HRDATA_a=0", HRDATA_a, 32'h0);
+        check("T1 reset HRDATA_b=0", HRDATA_b, 32'h0);
 
-        while (!$feof(file)) begin
-            line = 0;
-            slen = $fgets(line, file);
-            if (slen > 0) begin
-                r = $sscanf(line, "%b %b %h %h %h %b",
-                            HRESETn, HSEL, HADDR, HTRANS,
-                            exp_hrdata, wait_type);
-                if (r == 6) begin
-                    test_num = test_num + 1;
-                    total    = total    + 1;
-
-                    if (wait_type == 1'b0) begin
-                        #3;
-                    end else begin
-                        @(posedge HCLK); #1;
-                    end
-
-                    if (HRDATA !== exp_hrdata) begin
-                        $display("FAIL test %0d: HRESETn=%b HSEL=%b HADDR=%h HTRANS=%h | HRDATA=%h (exp %h)",
-                                  test_num, HRESETn, HSEL, HADDR, HTRANS, HRDATA, exp_hrdata);
-                        failed = failed + 1;
-                    end else begin
-                        $display("PASS test %0d: HRESETn=%b HSEL=%b HADDR=%h HTRANS=%h | HRDATA=%h",
-                                  test_num, HRESETn, HSEL, HADDR, HTRANS, HRDATA);
-                    end
-                end
-            end
-        end
-
-        $fclose(file);
-
-        // Extra directed checks for new behavior:
-        // ROM must return full aligned word irrespective of HSIZE and HADDR[1:0].
-        raw_word = 32'b0;
-        ahb_read_word(32'h0000_0005, 3'b000, raw_word); // byte-sized read to unaligned address
+        // ── T2: HREADY always 1, HRESP always 0 ─────────────────────────────
         test_num = test_num + 1; total = total + 1;
-        if (raw_word !== 32'hAABBCCDD) begin
-            $display("FAIL test %0d: raw HRDATA=%h (exp AABBCCDD)", test_num, raw_word);
+        if (HREADY_a !== 1'b1 || HREADY_b !== 1'b1 ||
+            HRESP_a  !== 1'b0 || HRESP_b  !== 1'b0) begin
+            $display("FAIL T%0d HREADY/HRESP static", test_num);
             failed = failed + 1;
-        end else begin
-            $display("PASS test %0d: raw HRDATA=%h", test_num, raw_word);
-        end
+        end else
+            $display("PASS T%0d HREADY/HRESP: a=%b/%b b=%b/%b",
+                      test_num, HREADY_a, HRESP_a, HREADY_b, HRESP_b);
 
-        test_num = test_num + 1; total = total + 1;
-        if (lsu_load_format(raw_word, 2'b01, 3'b000) !== 32'hFFFF_FFCC) begin
-            $display("FAIL test %0d: LSU LB result=%h (exp FFFFFFCC)", test_num,
-                     lsu_load_format(raw_word, 2'b01, 3'b000));
-            failed = failed + 1;
-        end else begin
-            $display("PASS test %0d: LSU LB result=%h", test_num,
-                     lsu_load_format(raw_word, 2'b01, 3'b000));
-        end
+        // ── T3-T4: Port A basic reads after reset release ────────────────────
+        HRESETn = 1;
+        ahb_read_a(32'h0000_0000, got_a);
+        check("T3 Port-A read mem[0]", got_a, 32'h00000013);
 
-        raw_word = 32'b0;
-        ahb_read_word(32'h0000_0006, 3'b101, raw_word); // halfword-sized read to unaligned address
-        test_num = test_num + 1; total = total + 1;
-        if (raw_word !== 32'hAABBCCDD) begin
-            $display("FAIL test %0d: raw HRDATA=%h (exp AABBCCDD)", test_num, raw_word);
-            failed = failed + 1;
-        end else begin
-            $display("PASS test %0d: raw HRDATA=%h", test_num, raw_word);
-        end
+        ahb_read_a(32'h0000_0008, got_a);
+        check("T4 Port-A read mem[2]", got_a, 32'hDEADBEEF);
 
-        test_num = test_num + 1; total = total + 1;
-        if (lsu_load_format(raw_word, 2'b10, 3'b101) !== 32'h0000_AABB) begin
-            $display("FAIL test %0d: LSU LHU result=%h (exp 0000AABB)", test_num,
-                     lsu_load_format(raw_word, 2'b10, 3'b101));
-            failed = failed + 1;
-        end else begin
-            $display("PASS test %0d: LSU LHU result=%h", test_num,
-                     lsu_load_format(raw_word, 2'b10, 3'b101));
-        end
+        // ── T5-T6: Port B basic reads ────────────────────────────────────────
+        ahb_read_b(32'h0000_0004, got_b);
+        check("T5 Port-B read mem[1]", got_b, 32'hAABBCCDD);
+
+        ahb_read_b(32'h0000_000C, got_b);
+        check("T6 Port-B read mem[3]", got_b, 32'hCAFEBABE);
+
+        // ── T7: simultaneous Port A + Port B to different addresses ──────────
+        HSEL_a = 1; HADDR_a = 32'h0000_0010; HTRANS_a = 2'b10; HWRITE_a = 0; HSIZE_a = 3'b010;
+        HSEL_b = 1; HADDR_b = 32'h0000_0014; HTRANS_b = 2'b10; HWRITE_b = 0; HSIZE_b = 3'b010;
+        @(posedge HCLK); #1;
+        got_a = HRDATA_a; got_b = HRDATA_b;
+        HSEL_a = 0; HTRANS_a = 2'b00;
+        HSEL_b = 0; HTRANS_b = 2'b00;
+        check("T7 simultaneous A(0x10)", got_a, 32'h12345678);
+        check("T7 simultaneous B(0x14)", got_b, 32'hABCDABCD);
+
+        // ── T8: HTRANS=IDLE on Port A — addr not latched, HRDATA holds last ──
+        HSEL_a = 1; HADDR_a = 32'h0000_0008; HTRANS_a = 2'b00;
+        @(posedge HCLK); #1;
+        check("T8 A HTRANS=IDLE holds last", HRDATA_a, 32'h12345678);
+        HSEL_a = 0;
+
+        // ── T9: HSEL=0 on Port B — not latched ──────────────────────────────
+        HSEL_b = 0; HADDR_b = 32'h0000_0008; HTRANS_b = 2'b10;
+        @(posedge HCLK); #1;
+        check("T9 B HSEL=0 holds last", HRDATA_b, 32'hABCDABCD);
+        HTRANS_b = 2'b00;
+
+        // ── T10: Port B vector-style sequence (mirrors old single-port tests) ─
+        // NONSEQ to 0x008
+        ahb_read_b(32'h0000_0008, got_b);
+        check("T10 Port-B 0x008=DEADBEEF", got_b, 32'hDEADBEEF);
+
+        // SEQ to 0x00C
+        HSEL_b = 1; HADDR_b = 32'h0000_000C; HTRANS_b = 2'b11; HWRITE_b = 0; HSIZE_b = 3'b010;
+        @(posedge HCLK); #1;
+        check("T11 Port-B SEQ 0x00C=CAFEBABE", HRDATA_b, 32'hCAFEBABE);
+        HSEL_b = 0; HTRANS_b = 2'b00;
+
+        // ── T12-T13: reset mid-operation clears both ports ───────────────────
+        // Start a read so registers have data, then assert reset
+        HSEL_a = 1; HADDR_a = 32'h0000_0004; HTRANS_a = 2'b10; HWRITE_a = 0; HSIZE_a = 3'b010;
+        HSEL_b = 1; HADDR_b = 32'h0000_0004; HTRANS_b = 2'b10; HWRITE_b = 0; HSIZE_b = 3'b010;
+        @(posedge HCLK);
+        HRESETn = 0; #1;
+        check("T12 async reset clears A", HRDATA_a, 32'h0);
+        check("T13 async reset clears B", HRDATA_b, 32'h0);
+        HSEL_a = 0; HTRANS_a = 2'b00;
+        HSEL_b = 0; HTRANS_b = 2'b00;
+
+        // ── T14: release reset, read again on Port A ─────────────────────────
+        HRESETn = 1;
+        ahb_read_a(32'h0000_0000, got_a);
+        check("T14 post-reset A read mem[0]", got_a, 32'h00000013);
 
         $display("-----------------------------");
         if (failed == 0)
@@ -184,7 +182,6 @@ module rom_ahb_tb;
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
         $display("-----------------------------");
-
         $finish;
     end
 

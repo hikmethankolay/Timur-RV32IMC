@@ -17,7 +17,7 @@
     - [Phase 2 — Execution Datapath](#phase-2--execution-datapath)
     - [Phase 3 — State and Memory](#phase-3--state-and-memory)
     - [Phase 4 — Instruction Decode and Control](#phase-4--instruction-decode-and-control)
-    - [Phase 5 — Single-Cycle Integration](#phase-5--single-cycle-integration)
+    - [Phase 5 — Core Integration](#phase-5--core-integration)
     - [Phase 6 — Pipeline Registers](#phase-6--pipeline-registers)
     - [Phase 7 — Hazard Resolution](#phase-7--hazard-resolution)
     - [Phase 8 — APB Peripherals](#phase-8--apb-peripherals)
@@ -63,26 +63,30 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 ## Architecture
 
 ```text
-┌───────────────────────────────────────────────────────┐
-│                  AHB Bus Fabric                       │
-│  ┌──────────┐  ┌──────────┐                           │
-│  │   CPU    │  │  DMAC    │  ← Two AHB Masters        │
-│  │(Master 0)│  │(Master 1)│                           │
-│  └────┬─────┘  └────┬─────┘                           │
-│  ┌────▼─────────────▼────┐                            │
-│  │       AHB Arbiter     │ Fixed priority (CPU > DMAC)│
-│  └──────────┬────────────┘                            │
-│    ┌────────┼────────┐                                │
-│  ┌─▼──┐  ┌──▼──┐  ┌──▼────────┐                       │
-│  │RAM │  │ ROM │  │AHB→APB    │                       │
-│  └────┘  └─────┘  │  Bridge   │                       │
-│                   └──┬────────┘                       │
-│              ┌───────┼──────┐                         │
-│           ┌──▼──┐ ┌──▼──┐ ┌─▼───┐                     │
-│           │UART │ │GPIO │ │DMAC │                     │
-│           │(APB)│ │(APB)│ │Regs │                     │
-│           └─────┘ └─────┘ └─────┘                     │
-└───────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         AHB Bus Fabric (registered HSEL)                │
+│  ┌──────────┐  ┌──────────┐                                              │
+│  │   CPU    │  │  DMAC    │  ← Two AHB Masters                         │
+│  │(Master 0)│  │(Master 1)│                                              │
+│  └────┬─────┘  └────┬─────┘                                              │
+│  ┌────▼─────────────▼────┐                                               │
+│  │       AHB Arbiter     │ Fixed priority (CPU > DMAC)                  │
+│  └──────────┬────────────┘                                               │
+│    ┌────────┼────────┐                                                   │
+│  ┌─▼──┐  ┌──▼──┐  ┌──▼────────┐                                          │
+│  │RAM │  │ ROM │  │AHB→APB    │                                          │
+│  │(HSEL registered)│ Bridge   │                                          │
+│  └────┘  └─────┘  │  (APB)    │                                          │
+│                   └──┬────────┘                                          │
+│              ┌───────┼──────┐                                              │
+│           ┌──▼──┐ ┌──▼──┐ ┌─▼───┐                                        │
+│           │UART │ │GPIO │ │DMAC │                                        │
+│           │(APB)│ │(APB)│ │Regs │                                        │
+│           └─────┘ └─────┘ └─────┘                                        │
+│                                                                          │
+│  Note: `ahb_decoder.v` registers the address-phase select (HSEL) so     │
+│  `HRDATA`/`HREADY` remain aligned to the data phase (one-cycle delay).  │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Pipeline stages:** IF → ID → EX → MEM → WB\
@@ -105,20 +109,20 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 ## Current Status
 
-**Phase 8 complete — APB peripherals (GPIO, UART, DMAC registers, AHB-to-APB bridge) implemented and verified.**
+**Phase 9 complete — full AHB bus fabric, system top-level, and APB peripherals implemented and verified.**
 
 | Phase | Description | Status |
 | ----- | ----------- | ------ |
 | 1 | Foundational primitives (Mux2, Mux4, DFF, ALTPLL) | ✅ Complete |
 | 2 | Execution datapath — ALU, Barrel Shifter, Multiplier, Divider, Branch Evaluator | ✅ Complete |
 | 3 | State & memory — PC, Register File, ROM AHB slave, RAM AHB slave | ✅ Complete |
-| 4 | Instruction decode & control — ImmGen, Parser, ALU Decoder, Main Control | ✅ Complete |
-| 5 | Single-cycle integration (HREADY=1 assumed) | ✅ Complete |
+| 4 | Instruction decode & control — ImmGen, InstrParser, ALU Decoder, Main Control Unit | ✅ Complete |
+| 5 | Core integration — pipelined CPU, MEM-stage bus interface, writeback | ✅ Complete |
 | 6 | 5-stage pipelining with pipeline registers | ✅ Complete |
 | 7 | Hazard resolution — forwarding, load-use, HREADY, div/mul multicycle, branch flush | ✅ Complete |
 | 8 | APB peripherals — GPIO, UART, DMAC control registers, AHB-to-APB bridge | ✅ Complete |
-| 9 | Full AHB bus fabric — arbiter, CPU master, DMAC master, top-level | 🔜 Next |
-| 10 | CSR register file, trap mechanism, MRET | 🔜 |
+| 9 | Full AHB bus fabric — arbiter, CPU/DMAC masters, decoder, top-level | ✅ Complete |
+| 10 | CSR register file, trap mechanism, MRET | 🔜 Next |
 | 11 | C extension — 16-bit compressed instruction decompressor | 🔜 |
 | 12 | C software layer — linker script, crt0.S, syscall stubs | 🔜 |
 
@@ -151,20 +155,21 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 ### Phase 4 — Instruction Decode and Control
 
-- **`parser.v`** — Instruction Parser. Purely combinational slicing of the 32-bit instruction word into `opcode`, `rd`, `funct3`, `rs1`, `rs2`, and `funct7` fields.
+- **`instr_parser.v`** — Instruction Parser. Purely combinational slicing of the 32-bit instruction word into `opcode`, `rd`, `funct3`, `rs1`, `rs2`, and `funct7` fields.
 - **`imm_gen.v`** — Immediate Generator. Sign-extends all five RISC-V immediate formats (I, S, B, U, J) to 32 bits. B-type and J-type `imm[0]` hardwired to 0 to enforce 2-byte alignment.
 - **`alu_decoder.v`** — ALU Decoder. Two-level control: maps 2-bit `ALUOp` + `funct3` + `funct7` to the 5-bit `ALUControl` for the ALU. Detects the M-extension by checking `funct7 == 7'b0000001`.
-- **`main_control.v`** — Main Control Unit. Combinational lookup from 7-bit `opcode` (plus `funct3`/`funct7` for disambiguation) to all primary control signals: `Branch`, `MemRead`, `MemToReg`, `ALUOp`, `MemWrite`, `ALUSrc`, `RegWrite`, `CSRWrite`, `CSROp`, `IsECALL`, `IsEBREAK`, `IsMRET`. FENCE decoded as NOP.
+- **`main_control_unit.v`** — Main Control Unit. Combinational lookup from 7-bit `opcode` (plus `funct3`/`funct7` for disambiguation) to all primary control signals: `Branch`, `MemRead`, `MemToReg`, `ALUOp`, `MemWrite`, `ALUSrc`, `RegWrite`, `CSRWrite`, `CSROp`, `IsECALL`, `IsEBREAK`, `IsMRET`. FENCE decoded as NOP.
 
-### Phase 5 — Single-Cycle Integration
+### Phase 5 — Core Integration
 
-- **`Timur_RV32IMC.v`** — Top-level single-cycle CPU integration. Wires all Phase 1–4 modules into a functioning single-cycle datapath. No new primitive modules are introduced; this phase is entirely about correct interconnect and verified end-to-end behaviour.
+- **`rv32imc_core.sv`** — Top-level pipelined CPU core integration. Wires the decode, execute, memory, hazard, and writeback stages into the 5-stage datapath. The MEM stage exports the shared AHB signals (`cpu_HADDR`, `cpu_HWRITE`, `cpu_HSIZE`, `cpu_HWDATA`, `cpu_HBUSREQ`) to `soc.v`.
+- **`Timur_RV32IMC.sv`** — Board-level wrapper. Connects the core and SoC to the FPGA clocking and external pins.
 
   Key implementation decisions:
   - **PC Next Logic:** Two adders run in parallel — one computes `PC+4` (sequential fetch), the other computes `PC+imm` (branch target). A mux controlled by `Branch AND BranchTaken` selects between them.
   - **ALU Source mux:** `ALUSrc` from Main Control selects between `rs2_data` (register operand) and the sign-extended immediate.
   - **Write-back mux:** `MemToReg` selects between `alu_result` and `ram_hrdata` for the register file write data.
-  - **AHB bus:** `HREADY` is tied to 1 — no wait states. The ROM and RAM AHB slaves already respond in a single cycle, so this simplification is exact for this phase.
+  - **AHB bus:** the core-only datapath assumes `HREADY=1`; the shared SoC bus in `soc.v` adds the arbiter, decoder, ROM, RAM, APB bridge, and DMAC master.
   - **LUI / AUIPC:** Handled by routing `pc` into the ALU B-input for AUIPC and setting `rs1=x0` for LUI so the adder computes `0 + imm`.
   - **JAL / JALR:** `rd` receives `PC+4` (the link address) via a dedicated mux; the PC loads the jump target computed by the ALU.
   - **Branch evaluation:** `BranchTaken` from `branch_condition_evaluator.v` is ANDed with the `Branch` control signal to gate spurious PC redirects on non-branch instructions.
@@ -186,15 +191,16 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 - **`gpio_apb.v`** — GPIO APB slave. Three 32-bit memory-mapped registers: `GPIO_OUT` (drives LED pins), `GPIO_IN` (reflects switch/button pins, read-only), `GPIO_DIR` (per-pin direction). `PREADY` hardwired to 1 — no wait states.
 - **`uart_apb.v`** — UART APB slave. Standard 8N1 UART with a baud rate generator (`counter_max = f_sys/baud - 1`). TX state machine: IDLE → START → DATA (8 bits) → STOP. `UART_STATUS` register exposes `tx_busy` (bit 0) and `rx_valid` (bit 1) flags. `PREADY` hardwired to 1.
-- **`dmac_apb.v`** — DMAC APB control registers. Five registers: `DMAC_SRC`, `DMAC_DST`, `DMAC_LEN`, `DMAC_CTRL` (bit 0 starts transfer), `DMAC_STATUS` (bit 0 busy, bit 1 done). CPU writes these to program a DMA transfer; the AHB master engine (Phase 9) executes it autonomously.
+- **`dmac_apb.v`** — DMAC APB control registers. Five registers: `DMAC_SRC`, `DMAC_DST`, `DMAC_LEN`, `DMAC_CTRL` (bit 0 starts transfer), `DMAC_STATUS` (bit 0 busy, bit 1 done). CPU writes these to program a DMA transfer; the AHB master engine in `dmac_ahb_master.v` executes it autonomously.
 - **`ahb2apb_bridge.v`** — AHB-to-APB bridge. Acts as AHB slave and APB master simultaneously. Four-state FSM: IDLE → SETUP (`HREADY=0`, `PSEL=1`) → ACCESS (`HREADY=0`, `PENABLE=1`) → COMPLETE (`HREADY=1`, drives `HRDATA=PRDATA`). Holds `HREADY=0` for 2 cycles on every peripheral access, which the Hazard Detection Unit sees as a bus-wait stall.
 
 ### Phase 9 — AHB Bus Fabric
 
 - **`ahb_arbiter.v`** — 2-master fixed-priority AHB arbiter. CPU (master 0) has higher priority than DMAC (master 1). Master switches only when the current slave asserts `HREADY=1` to prevent mid-transaction corruption.
-- **`cpu_ahb_master.v`** — CPU AHB master interface. Translates internal CPU signals (`pc`, `alu_result`, `rs2_data`, `MemRead`, `MemWrite`, `funct3`) into AHB bus signals (`HADDR`, `HTRANS`, `HWRITE`, `HSIZE`, `HWDATA`, `HBUSREQ`). Feeds `bus_stall = !HREADY` back to the Hazard Detection Unit.
-- **`ahb_decoder.v`** — AHB address decoder. Combinational logic that asserts exactly one `HSEL` based on `HADDR[31:16]`: ROM (`0x0000`), RAM (`0x2000`), APB bridge (`0x4000`). Muxes `HRDATA` and `HREADY` from the selected slave back to the active master. If no slave is selected: `HRDATA=0`, `HREADY=1`.
+- **`rv32imc_core.sv`** — CPU-side AHB master logic. Exports `cpu_HADDR`, `cpu_HWRITE`, `cpu_HSIZE`, `cpu_HWDATA`, and `cpu_HBUSREQ` from the MEM stage so `soc.v` can place the core on the shared bus.
+- **`ahb_decoder.v`** — AHB address decoder. Combinational address decode asserts exactly one `HSEL` from `HADDR[31:16]`: ROM (`0x0000`), RAM (`0x2000`), APB bridge (`0x4000`). The address-phase select is registered internally so `HRDATA` and `HREADY` stay aligned with the following data phase instead of dropping immediately on the next address change. If no slave is selected: `HRDATA=0`, `HREADY=1`.
 - **`dmac_ahb_master.v`** — DMAC AHB master engine. Executes DMA transfers autonomously once `dmac_enable` is asserted by the APB control registers. Six-state FSM (IDLE → REQUEST → `READ_ADDR` → `READ_DATA` → `WRITE_ADDR` → `WRITE_DATA` → DONE). Primary use: copy the `.data` section from ROM to RAM at boot, mirroring what `crt0.S` does in software.
+- **`soc.v`** — System integration top-level. Instantiates the arbiter, decoder, ROM, RAM, APB bridge, CPU core, and DMAC master, then wires the shared bus signals into a single SoC fabric.
 
 ### Phase 10 — CSR Register File and Privileged Architecture
 
@@ -464,8 +470,8 @@ Phase 5  ✅  Single-cycle CPU integration
 Phase 6  ✅  5-stage pipeline registers
 Phase 7  ✅  Hazard resolution (forwarding, stalls, flush)
 Phase 8  ✅  APB peripherals (GPIO, UART, DMAC registers, AHB→APB bridge)
-Phase 9  🔜  Full AHB bus fabric + system top-level   ← Next
-Phase 10 🔜  CSR file, trap mechanism, M-mode
+Phase 9  ✅  Full AHB bus fabric + system top-level
+Phase 10 🔜  CSR file, trap mechanism, M-mode   ← Next
 Phase 11 🔜  C extension decompressor (RV32IMC)
 Phase 12 🔜  C software layer (linker, crt0, syscalls)
 ```
@@ -482,13 +488,13 @@ Timur-RV32IMC/
 │   ├── primitives/       # Phase 1: Mux2, Mux4, DFF, PLL wrapper
 │   ├── execution/        # Phase 2: ALU, Adder, Shifter, Multiplier, Divider, BranchEval
 │   ├── memory/           # Phase 3: PC, RegisterFile, ROM_AHB, RAM_AHB
-│   ├── decode/           # Phase 4: Parser, ImmGen, ALUDecoder, MainControl
+│   ├── decode/           # Phase 4: InstrParser, ImmGen, ALUDecoder, MainControlUnit
 │   ├── pipeline/         # Phase 6: IF/ID, ID/EX, EX/MEM, MEM/WB registers
 │   ├── hazard/           # Phase 7: ForwardingUnit, HazardDetectionUnit
 │   ├── peripherals/      # Phase 8: GPIO, UART, DMAC_APB, AHB2APB bridge
 │   ├── bus/              # Phase 9: AHB arbiter, address decoder, DMAC master
 │   ├── csr/              # Phase 10: CSR register file, trap logic
-│   └── top/              # Top-level integration
+│   └── top/              # rv32imc_core, soc, board-level wrapper
 ├── tb/                   # Testbenches and test vectors
 ├── sw/                   # C software layer (Phase 12)
 │   ├── crt0.S

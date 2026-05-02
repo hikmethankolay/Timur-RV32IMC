@@ -1,11 +1,28 @@
 import pipeline_pkg::*;
 
-// RV32IMC five-stage core: IF→ID→EX→MEM→WB with four pipeline registers.
-// Hazard unit stalls or bubbles the front; forwarding feeds EX from M/W stages.
-module datapath (
+module rv32imc_core (
     input  clk_i,
     input  rst_n_i,
-    output [31:0] pc_dbg_o   // Live fetch PC (for debug); instr PC in ID is pc_d_w
+    output [31:0] pc_dbg_o,  // Live fetch PC (for debug); instr PC in ID is pc_d_w
+
+    // I-fetch AHB master (→ ROM Port A, dedicated bus)
+    output [31:0] HADDR_if_o,
+    output [1:0]  HTRANS_if_o,
+    output        HWRITE_if_o,
+    output [2:0]  HSIZE_if_o,
+    output [31:0] HWDATA_if_o,
+    input  [31:0] HRDATA_if_i,
+    input         HREADY_if_i,
+
+    // D-access AHB master (→ shared data bus, arbitrated with DMAC)
+    output [31:0] HADDR_dm_o,
+    output [1:0]  HTRANS_dm_o,
+    output        HWRITE_dm_o,
+    output [2:0]  HSIZE_dm_o,
+    output [31:0] HWDATA_dm_o,
+    input  [31:0] HRDATA_dm_i,
+    input         HREADY_dm_i,
+    output        HBUSREQ_dm_o
 );
     // --- Fetch (IF) ---
     wire [31:0] instr_f_w, pc_fetch_w, pc_tag_f_w;
@@ -78,7 +95,14 @@ module datapath (
         .pc_fetch_o      (pc_fetch_w),
         .pc_tag_delay_o  (pc_tag_f_w),
         .rom_ready_o     (rom_rdy_w),
-        .flush_if_id_o   (flush_fd_w)
+        .flush_if_id_o   (flush_fd_w),
+        .HADDR_o         (HADDR_if_o),
+        .HTRANS_o        (HTRANS_if_o),
+        .HWRITE_o        (HWRITE_if_o),
+        .HSIZE_o         (HSIZE_if_o),
+        .HWDATA_o        (HWDATA_if_o),
+        .HRDATA_i        (HRDATA_if_i),
+        .HREADY_i        (HREADY_if_i)
     );
 
     // Latch instruction + PC tag into ID; hold on stall; NOP on flush (wrong path).
@@ -281,7 +305,7 @@ module datapath (
         .trap_mret_m_out  (trap_mret_m_w)
     );
 
-    mem_stage u_mem ( // Data RAM at 0x2000_xxxx; addr = EX/MEM ALU result
+    mem_stage u_mem ( // Data bus @ 0x2000_xxxx (RAM) / 0x4000_xxxx (APB); addr = EX/MEM ALU result
         .clk_i         (clk_i),
         .rst_n_i       (rst_n_i),
         .addr_m_i      (alu_res_m_w),
@@ -290,7 +314,14 @@ module datapath (
         .mem_we_m_i    (mem_we_m_w),
         .funct3_m_i    (funct3_m_w),
         .ld_data_wb_o  (ld_data_raw_w),
-        .ram_ready_o   (ram_rdy_w)
+        .ram_ready_o   (ram_rdy_w),
+        .HADDR_o       (HADDR_dm_o),
+        .HTRANS_o      (HTRANS_dm_o),
+        .HWRITE_o      (HWRITE_dm_o),
+        .HSIZE_o       (HSIZE_dm_o),
+        .HWDATA_o      (HWDATA_dm_o),
+        .HRDATA_i      (HRDATA_dm_i),
+        .HREADY_i      (HREADY_dm_i)
     );
 
     // CSR read path tied off for now; load value meets WB mux off this register’s clock edge.
@@ -324,5 +355,6 @@ module datapath (
         .rf_wdata_w_o   (rf_wdata_w_w)
     );
 
-    assign pc_dbg_o = pc_fetch_w; // Current instruction fetch address
+    assign pc_dbg_o      = pc_fetch_w;
+    assign HBUSREQ_dm_o  = mem_rd_m_w | mem_we_m_w;
 endmodule

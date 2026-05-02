@@ -9,11 +9,18 @@ module if_stage (
     output [31:0] pc_fetch_o,     // Address presented to ROM this cycle
     output [31:0] pc_tag_delay_o, // PC that pairs with instr_f_o (lags fetch addr)
     output        rom_ready_o,
-    output        flush_if_id_o   // Also high cycle after br_taken to drop stale ROM data
+    output        flush_if_id_o,  // Also high cycle after br_taken to drop stale ROM data
+    
+    // AHB I-fetch master (→ ROM Port A at SoC level)
+    output [31:0] HADDR_o,
+    output [1:0]  HTRANS_o,
+    output        HWRITE_o,
+    output [2:0]  HSIZE_o,
+    output [31:0] HWDATA_o,
+    input  [31:0] HRDATA_i,
+    input         HREADY_i
 );
     wire [31:0] pc_next_w, pc_plus4_w;
-    wire        hresp_w;
-    wire        sel_rom_w = (pc_fetch_o[31:16] == 16'h0000); // Code in low 64 KiB
     wire [1:0]  htrans_w = fetch_run_i ? 2'b10 : 2'b00;
 
     mux2 #(.WIDTH(32)) u_pc_mux (
@@ -31,26 +38,20 @@ module if_stage (
         .pc     (pc_fetch_o)
     );
 
-    rom_ahb u_imem (
-        .HCLK    (clk_i),
-        .HRESETn (rst_n_i),
-        .HSEL    (sel_rom_w),
-        .HADDR   (pc_fetch_o),
-        .HTRANS  (htrans_w),
-        .HWRITE  (1'b0),
-        .HSIZE   (3'b010),
-        .HWDATA  (32'b0),
-        .HRDATA  (instr_f_o),
-        .HREADY  (rom_ready_o),
-        .HRESP   (hresp_w)
-    );
+    assign HADDR_o     = pc_fetch_o;
+    assign HTRANS_o    = htrans_w;
+    assign HWRITE_o    = 1'b0;
+    assign HSIZE_o     = 3'b010;
+    assign HWDATA_o    = 32'b0;
+    assign instr_f_o   = HRDATA_i;
+    assign rom_ready_o = HREADY_i;
 
     // Register PC when fetch runs so IF/ID can latch PC+instr as a matched pair.
     reg [31:0] pc_tag_q;
     always @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i)            pc_tag_q <= 32'b0;
-        else if (br_taken_i)    pc_tag_q <= 32'b0;
-        else if (fetch_run_i)   pc_tag_q <= pc_fetch_o;
+        if (!rst_n_i)          pc_tag_q <= 32'b0;
+        else if (br_taken_i)   pc_tag_q <= 32'b0;
+        else if (fetch_run_i)  pc_tag_q <= pc_fetch_o;
     end
     assign pc_tag_delay_o = pc_tag_q;
 

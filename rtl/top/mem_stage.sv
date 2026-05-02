@@ -1,4 +1,4 @@
-// Data memory stage: AHB RAM @ 0x2000_…. Store data registered for AHB data phase; loads formatted for WB.
+// Data memory stage: AHB data bus @ 0x2000_.... Store data registered for AHB data phase; loads formatted for WB.
 module mem_stage (
     input         clk_i,
     input         rst_n_i,
@@ -8,16 +8,21 @@ module mem_stage (
     input         mem_we_m_i,
     input  [2:0]  funct3_m_i,   // Encodes LB/LW/... and AHB HSIZE
     output [31:0] ld_data_wb_o, // Sign/zero-extended load for register write
-    output        ram_ready_o
+    output        ram_ready_o,
+    // AHB D-access master (→ shared data bus at SoC level)
+    output [31:0] HADDR_o,
+    output [1:0]  HTRANS_o,
+    output        HWRITE_o,
+    output [2:0]  HSIZE_o,
+    output [31:0] HWDATA_o,
+    input  [31:0] HRDATA_i,
+    input         HREADY_i
 );
-    // HWDATA valid in data phase — one cycle after address phase seen by ram_ahb.
+    // HWDATA valid in data phase — one cycle after address phase seen by slave.
     reg [31:0] hwdata_q;
     always @(posedge clk_i) hwdata_q <= rs2_store_m_i;
 
-    wire [1:0]  htrans_w;
-    wire        hresp_w;
-    wire        sel_ram_w = (addr_m_i[31:16] == 16'h2000);
-    wire [31:0] rd_word_w;
+    wire [1:0] htrans_w;
 
     // Remember decode for load when read data returns next edge.
     reg [1:0] ld_addr_lsb_q;
@@ -39,19 +44,14 @@ module mem_stage (
         .out(htrans_w)
     );
 
-    ram_ahb u_dmem (
-        .HCLK    (clk_i),
-        .HRESETn (rst_n_i),
-        .HSEL    (sel_ram_w),
-        .HADDR   (addr_m_i),
-        .HTRANS  (htrans_w),
-        .HWRITE  (mem_we_m_i),
-        .HSIZE   (funct3_m_i),
-        .HWDATA  (hwdata_q),
-        .HRDATA  (rd_word_w),
-        .HREADY  (ram_ready_o),
-        .HRESP   (hresp_w)
-    );
+    assign HADDR_o     = addr_m_i;
+    assign HTRANS_o    = htrans_w;
+    assign HWRITE_o    = mem_we_m_i;
+    assign HSIZE_o     = funct3_m_i;
+    assign HWDATA_o    = hwdata_q;
+    assign ram_ready_o = HREADY_i;
+
+    wire [31:0] rd_word_w = HRDATA_i;
 
     reg [7:0]  byte_w;
     reg [15:0] half_w;
