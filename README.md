@@ -62,32 +62,7 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 ## Architecture
 
-```text
-┌──────────────────────────────────────────────────────────────────────────┐
-│                         AHB Bus Fabric (registered HSEL)                │
-│  ┌──────────┐  ┌──────────┐                                              │
-│  │   CPU    │  │  DMAC    │  ← Two AHB Masters                         │
-│  │(Master 0)│  │(Master 1)│                                              │
-│  └────┬─────┘  └────┬─────┘                                              │
-│  ┌────▼─────────────▼────┐                                               │
-│  │       AHB Arbiter     │ Fixed priority (CPU > DMAC)                  │
-│  └──────────┬────────────┘                                               │
-│    ┌────────┼────────┐                                                   │
-│  ┌─▼──┐  ┌──▼──┐  ┌──▼────────┐                                          │
-│  │RAM │  │ ROM │  │AHB→APB    │                                          │
-│  │(HSEL registered)│ Bridge   │                                          │
-│  └────┘  └─────┘  │  (APB)    │                                          │
-│                   └──┬────────┘                                          │
-│              ┌───────┼──────┐                                              │
-│           ┌──▼──┐ ┌──▼──┐ ┌─▼───┐                                        │
-│           │UART │ │GPIO │ │DMAC │                                        │
-│           │(APB)│ │(APB)│ │Regs │                                        │
-│           └─────┘ └─────┘ └─────┘                                        │
-│                                                                          │
-│  Note: `ahb_decoder.v` registers the address-phase select (HSEL) so     │
-│  `HRDATA`/`HREADY` remain aligned to the data phase (one-cycle delay).  │
-└──────────────────────────────────────────────────────────────────────────┘
-```
+[![Architecture](https://mermaid.ink/img/pako:eNqVVG1vmzAQ_iuWpX5LI16SNUXaJAdIglQvyGk_dGOqCDiAVkxkYGnX9r_vbJoITVPK-IDte3ueO9_5BSdVyrGDd4_VIclj2aAbFolIXFygz__-tM4N75C7Zv55w7rdZjLe58r8e4TlL9sqyuQhqSSP8I9IIPiCBQVVsEBkNUc0rhsuTzqPKp1HezqU7NuHlbbgIlVM2ZoSsIIFhRXwJ1oZCQiMLi-_vAaibmSbNEUl0II3Sf6KlMuAJAmbB7c-O28HRoCuCBK5LRT7SFBDF8ijam_CSlzYbQ4FoKNDzgVaMZ949-9MIU3FVOENYKWiIUo2HzJThg9dAcGjV0JfZIXgJ3Bl9T_4vrv2PsT23feqeFx1mKoK41mh8HmK0riJ0T6P6yMLgNYUwG8ABerTNbs_bwZ3PO-3xRzV0N481YCMqLrAvy_UrDUL5ds7ETqkWcI5mrPAW34wE53Ne3GaqvOTRZrxv0gcgw1CDn0WhCufkZvNwJEEL0UCfDfttn6GiylPc3dH2C0o1XKSLcNgDTK19OYTeof5y2OPHW-47s9nl4dOSQfsC3S0vuAYcegcuOuvi2CJQnK7GjAMEFg_CUkldkX22qFRPMIZXAB2dvFjzUe45LKM1Rm_qDQj3OS8hNtxYJvG8meEI_EGTvtYfKuqEjvwvICbrNosPwVp99Dj3CtiqHZ5kkqoCZdu1YoGO_b1VAfBzgt-ws7EHNuTmXFlGVPLMEylfMaOORvbpm3b04k5uzJM88p6G-HfGtYcT6_tiXVtmNbMsiafrBHmadFUknZPepclfvsDu22sQA?type=png)](https://mermaid.live/edit#pako:eNqVVG1vmzAQ_iuWpX5LI16SNUXaJAdIglQvyGk_dGOqCDiAVkxkYGnX9r_vbJoITVPK-IDte3ueO9_5BSdVyrGDd4_VIclj2aAbFolIXFygz__-tM4N75C7Zv55w7rdZjLe58r8e4TlL9sqyuQhqSSP8I9IIPiCBQVVsEBkNUc0rhsuTzqPKp1HezqU7NuHlbbgIlVM2ZoSsIIFhRXwJ1oZCQiMLi-_vAaibmSbNEUl0II3Sf6KlMuAJAmbB7c-O28HRoCuCBK5LRT7SFBDF8ijam_CSlzYbQ4FoKNDzgVaMZ949-9MIU3FVOENYKWiIUo2HzJThg9dAcGjV0JfZIXgJ3Bl9T_4vrv2PsT23feqeFx1mKoK41mh8HmK0riJ0T6P6yMLgNYUwG8ABerTNbs_bwZ3PO-3xRzV0N481YCMqLrAvy_UrDUL5ds7ETqkWcI5mrPAW34wE53Ne3GaqvOTRZrxv0gcgw1CDn0WhCufkZvNwJEEL0UCfDfttn6GiylPc3dH2C0o1XKSLcNgDTK19OYTeof5y2OPHW-47s9nl4dOSQfsC3S0vuAYcegcuOuvi2CJQnK7GjAMEFg_CUkldkX22qFRPMIZXAB2dvFjzUe45LKM1Rm_qDQj3OS8hNtxYJvG8meEI_EGTvtYfKuqEjvwvICbrNosPwVp99Dj3CtiqHZ5kkqoCZdu1YoGO_b1VAfBzgt-ws7EHNuTmXFlGVPLMEylfMaOORvbpm3b04k5uzJM88p6G-HfGtYcT6_tiXVtmNbMsiafrBHmadFUknZPepclfvsDu22sQA)
 
 **Pipeline stages:** IF → ID → EX → MEM → WB\
 **Bus standard:** ARM AMBA — AHB for high-speed paths, APB for peripherals\
