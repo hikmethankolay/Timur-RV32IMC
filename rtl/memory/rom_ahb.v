@@ -25,31 +25,33 @@ module rom_ahb (
     output        HRESP_b
 );
 
-    (* ramstyle = "M9K" *) reg [31:0] mem [0:16383];
+    (* ramstyle = "M9K" *) reg [31:0] mem_a [0:16383];
+    (* ramstyle = "M9K" *) reg [31:0] mem_b [0:16383];
 
     initial begin
-        $readmemh("test_rom.hex", mem);
+        $readmemh("test_rom.hex", mem_a);
+        $readmemh("test_rom.hex", mem_b);
     end
 
     wire active_a = HSEL_a & HTRANS_a[1];
     wire active_b = HSEL_b & HTRANS_b[1];
 
-    // Port A read — address registered in address phase, data available next cycle
+    // Port A read
     reg [31:0] rdata_a;
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn)
             rdata_a <= 32'b0;
         else if (active_a && !HWRITE_a)
-            rdata_a <= mem[HADDR_a[15:2]];
+            rdata_a <= mem_a[HADDR_a[15:2]];
     end
 
-    // Port B read — independent port on the same array
+    // Port B read
     reg [31:0] rdata_b;
     always @(posedge HCLK or negedge HRESETn) begin
         if (!HRESETn)
             rdata_b <= 32'b0;
         else if (active_b && !HWRITE_b)
-            rdata_b <= mem[HADDR_b[15:2]];
+            rdata_b <= mem_b[HADDR_b[15:2]];
     end
 
     assign HRDATA_a = rdata_a;
