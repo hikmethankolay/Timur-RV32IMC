@@ -18,6 +18,7 @@ module ex_stage (
     input  [31:0] alu_res_m_fwd_i,
     input  [31:0] rf_wdata_w_fwd_i,
     output [31:0] alu_res_x_o,      // To EX/MEM (or PC+4 for J/JR)
+    output [31:0] rs2_fwd_x_o,      // Forwarded rs2 → store-data path in EX/MEM
     output [31:0] pc_plus4_x_o,     // Pass-through for MEM/WB / link
     output [31:0] jmp_pc_x_o,       // Next PC if redirect
     output        br_taken_x_o,     // Combined with br_jmp in MEM for final redirect
@@ -138,6 +139,7 @@ module ex_stage (
     wire [31:0] jmp_pc_w = is_jalr_w ? jalr_pc_w : btarget_pc_x_i;
 
     assign alu_res_x_o   = is_j_w ? pc_plus4_x_i : alu_raw_w;
+    assign rs2_fwd_x_o  = rs2_fwd_w;
     assign jmp_pc_x_o   = jmp_pc_w;
     assign br_taken_x_o = (is_bcond_w & br_cond_taken_w) | is_j_w;
 endmodule

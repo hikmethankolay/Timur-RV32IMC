@@ -50,6 +50,7 @@ module rv32imc_core (
     wire        trap_ecall_x_w, trap_ebreak_x_w, trap_mret_x_w;
 
     wire [31:0] alu_res_x_w, pc_plus4_x_w, jmp_pc_x_w;
+    wire [31:0] rs2_fwd_x_w; // forwarded rs2 → SW store-data path
     wire        br_taken_x_w;
     wire [1:0]  fwd_rs1_sel_w, fwd_rs2_sel_w; // 00 RF, 01 WB bus, 10 EX/MEM ALU (see forwarding_unit)
 
@@ -250,6 +251,7 @@ module rv32imc_core (
         .alu_res_m_fwd_i  (alu_res_m_w),
         .rf_wdata_w_fwd_i (rf_wdata_w_w),
         .alu_res_x_o      (alu_res_x_w),
+        .rs2_fwd_x_o      (rs2_fwd_x_w),
         .pc_plus4_x_o     (pc_plus4_x_w),
         .jmp_pc_x_o       (jmp_pc_x_w),
         .br_taken_x_o     (br_taken_x_w),
@@ -264,7 +266,7 @@ module rv32imc_core (
         .flush_i          (br_exec_w),
         .gate_i           (~stall_freeze_ex_w),
         .alu_res_x_in     (alu_res_x_w),
-        .rs2_store_x_in   (rs2_val_x_w),
+        .rs2_store_x_in   (rs2_fwd_x_w),
         .rd_adr_x_in      (rd_adr_x_w),
         .pc_plus4_x_in    (pc_plus4_x_w),
         .opc7_x_in        (opc7_x_w),

@@ -71,6 +71,7 @@ module soc (
         .HCLK       (HCLK),
         .HRESETn    (HRESETn),
         .HADDR      (HADDR_s),
+        .HTRANS     (HTRANS_s),
         .HRDATA_rom (HRDATA_rom_b),
         .HREADY_rom (1'b1),          // ROM Port B is zero-wait-state
         .HRDATA_ram (HRDATA_ram),
