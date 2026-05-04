@@ -16,10 +16,10 @@ module divider (
     wire b_negative = b[31] & is_signed;
     wire [31:0] a_abs = a_negative ? (~a + 1) : a;
     wire [31:0] b_abs = b_negative ? (~b + 1) : b;
-    
+
     wire div_by_zero = (b == 32'b0);
     wire signed_overflow = is_signed && (a == 32'h80000000) && (b == 32'hFFFFFFFF);
-    
+
     localparam IDLE = 2'b00;
     localparam RUNNING = 2'b01;
     localparam DONE = 2'b10;
@@ -33,6 +33,10 @@ module divider (
     reg a_neg_reg;
     reg b_neg_reg;
     reg is_signed_reg;
+
+    wire [32:0] shifted = {remainder_reg[31:0], dividend_reg[31]};
+    wire [33:0] trial   = {1'b0, shifted} - {2'b0, divisor_reg};
+    wire        fits    = ~trial[33];
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -80,15 +84,15 @@ module divider (
                 end
 
                 RUNNING: begin
-
-                    if ({remainder_reg[31:0], dividend_reg[bit_counter]} >= {1'b0, divisor_reg}) begin
-                        remainder_reg             <= {remainder_reg[31:0], dividend_reg[bit_counter]} - {1'b0, divisor_reg};
-                        quotient_reg[bit_counter] <= 1;
+                    if (fits) begin
+                        remainder_reg             <= {1'b0, trial[31:0]};
+                        quotient_reg[bit_counter] <= 1'b1;
                     end else begin
-                        remainder_reg             <= {remainder_reg[31:0], dividend_reg[bit_counter]};
-                        quotient_reg[bit_counter] <= 0;
+                        remainder_reg             <= shifted;
+                        quotient_reg[bit_counter] <= 1'b0;
                     end
-                    
+                    dividend_reg <= {dividend_reg[30:0], 1'b0};
+
                     if (bit_counter == 6'd0) begin
                         state <= DONE;
                     end else begin

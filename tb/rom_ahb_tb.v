@@ -88,14 +88,15 @@ module rom_ahb_tb;
         HSEL_b  = 0; HADDR_b  = 0; HTRANS_b = 2'b00; HWRITE_b = 0;
         HSIZE_b = 3'b010; HWDATA_b = 0;
 
-        // Seed known words before reset releases so readmemh can't clobber them.
+        // Seed known words into both ROM copies before reset releases so
+        // readmemh can't clobber them.
         #1;
-        dut.mem[0] = 32'h00000013;   // NOP   @ 0x000
-        dut.mem[1] = 32'hAABBCCDD;   //        @ 0x004
-        dut.mem[2] = 32'hDEADBEEF;   //        @ 0x008
-        dut.mem[3] = 32'hCAFEBABE;   //        @ 0x00C
-        dut.mem[4] = 32'h12345678;   //        @ 0x010
-        dut.mem[5] = 32'hABCDABCD;   //        @ 0x014
+        dut.mem_a[0] = 32'h00000013;  dut.mem_b[0] = 32'h00000013;   // NOP @ 0x000
+        dut.mem_a[1] = 32'hAABBCCDD;  dut.mem_b[1] = 32'hAABBCCDD;   //     @ 0x004
+        dut.mem_a[2] = 32'hDEADBEEF;  dut.mem_b[2] = 32'hDEADBEEF;   //     @ 0x008
+        dut.mem_a[3] = 32'hCAFEBABE;  dut.mem_b[3] = 32'hCAFEBABE;   //     @ 0x00C
+        dut.mem_a[4] = 32'h12345678;  dut.mem_b[4] = 32'h12345678;   //     @ 0x010
+        dut.mem_a[5] = 32'hABCDABCD;  dut.mem_b[5] = 32'hABCDABCD;   //     @ 0x014
 
         // ── T1: reset holds → both HRDATA outputs stay 0 ────────────────────
         @(posedge HCLK); #1;
