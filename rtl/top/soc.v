@@ -33,6 +33,7 @@ module soc (
     wire [2:0]  dmac_HSIZE;
     wire [31:0] dmac_HWDATA;
     wire        dmac_HBUSREQ;
+    wire        dmac_HLOCK;
 
     // Arbiter grants
     wire [1:0]  HGRANT;
@@ -48,19 +49,24 @@ module soc (
         .HCLK      (HCLK),
         .HRESETn   (HRESETn),
         .HBUSREQ   ({dmac_HBUSREQ, cpu_HBUSREQ}),
-        .HLOCK     (2'b00),
+        .HLOCK     ({dmac_HLOCK, 1'b0}),
         .HREADY    (HREADY_s),
         .HGRANT    (HGRANT),
         .HMASTER   (HMASTER),
         .HMASTLOCK (HMASTLOCK)
     );
 
-    // Shared bus mux: winning master drives
-    wire [31:0] HADDR_s  = HMASTER ? dmac_HADDR  : cpu_HADDR;
-    wire [1:0]  HTRANS_s = HMASTER ? dmac_HTRANS : cpu_HTRANS;
-    wire        HWRITE_s = HMASTER ? dmac_HWRITE : cpu_HWRITE;
-    wire [2:0]  HSIZE_s  = HMASTER ? dmac_HSIZE  : cpu_HSIZE;
-    wire [31:0] HWDATA_s = HMASTER ? dmac_HWDATA : cpu_HWDATA;
+    reg HMASTER_d;
+    always @(posedge HCLK or negedge HRESETn) begin
+        if (!HRESETn) HMASTER_d <= 1'b0;
+        else          HMASTER_d <= HMASTER;
+    end
+
+    wire [31:0] HADDR_s  = HMASTER   ? dmac_HADDR  : cpu_HADDR;
+    wire [1:0]  HTRANS_s = HMASTER   ? dmac_HTRANS : cpu_HTRANS;
+    wire        HWRITE_s = HMASTER   ? dmac_HWRITE : cpu_HWRITE;
+    wire [2:0]  HSIZE_s  = HMASTER   ? dmac_HSIZE  : cpu_HSIZE;
+    wire [31:0] HWDATA_s = HMASTER_d ? dmac_HWDATA : cpu_HWDATA;
 
     // ── Address decoder ───────────────────────────────────────────────────────
     wire        HSEL_rom, HSEL_ram, HSEL_apb;
@@ -238,6 +244,7 @@ module soc (
         .HSIZE       (dmac_HSIZE),
         .HWDATA      (dmac_HWDATA),
         .HBUSREQ     (dmac_HBUSREQ),
+        .HLOCK       (dmac_HLOCK),
         .dmac_busy   (dmac_busy),
         .dmac_done   (dmac_done)
     );

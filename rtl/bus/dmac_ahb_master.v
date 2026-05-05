@@ -20,6 +20,7 @@ module dmac_ahb_master (
     output [2:0]  HSIZE,       // Always 3'b010 (word transfers)
     output [31:0] HWDATA,      // Captured read data driven in WRITE_DATA
     output        HBUSREQ,     // Hold high while transfer in progress
+    output        HLOCK,       // Hold bus atomically through one word's 4 cycles
 
     // Status outputs → dmac_apb STATUS register
     output        dmac_busy,   // High from REQUEST until DONE
@@ -127,6 +128,13 @@ module dmac_ahb_master (
 
     assign HWDATA  = (state == S_WRITE_DATA) ? rd_buf : 32'b0;
 
+
+    // HLOCK held through the address-phase states of one word so the arbiter
+    // can't preempt between read-addr/read-data/write-addr. Released in
+    // S_WRITE_DATA so the CPU can grab the bus at word boundaries.
+    assign HLOCK = (state == S_READ_ADDR)  ||
+                   (state == S_READ_DATA)  ||
+                   (state == S_WRITE_ADDR);
 
     assign dmac_busy = (state != S_IDLE);
     assign dmac_done = (state == S_DONE);

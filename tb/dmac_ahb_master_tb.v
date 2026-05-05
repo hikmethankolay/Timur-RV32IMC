@@ -19,6 +19,7 @@ module dmac_ahb_master_tb;
     wire [2:0]  HSIZE;
     wire [31:0] HWDATA;
     wire        HBUSREQ;
+    wire        HLOCK;
 
     // Status
     wire        dmac_busy;
@@ -40,6 +41,7 @@ module dmac_ahb_master_tb;
         .HSIZE       (HSIZE),
         .HWDATA      (HWDATA),
         .HBUSREQ     (HBUSREQ),
+        .HLOCK       (HLOCK),
         .dmac_busy   (dmac_busy),
         .dmac_done   (dmac_done)
     );
@@ -174,6 +176,7 @@ module dmac_ahb_master_tb;
         check1("T1 idle HTRANS IDLE", HTRANS[1],  1'b0);
         check1("T1 idle dmac_busy=0", dmac_busy,  1'b0);
         check1("T1 idle dmac_done=0", dmac_done,  1'b0);
+        check1("T1 idle HLOCK=0",     HLOCK,     1'b0);
 
         // ── T2: single-word transfer (len=1) src=0x00 dst=0x40 ────────────────
         dmac_src    = 32'h0000_0000;
@@ -187,6 +190,7 @@ module dmac_ahb_master_tb;
         @(posedge HCLK); #1;
         check1("T2 HBUSREQ asserted",  HBUSREQ,  1'b1);
         check1("T2 dmac_busy asserted", dmac_busy, 1'b1);
+        check1("T2 HLOCK 0 in REQUEST", HLOCK,    1'b0);
 
         // Wait for transfer to complete
         wait_done(50);
@@ -257,10 +261,15 @@ module dmac_ahb_master_tb;
             end
         end
 
-        if (HTRANS == 2'b10)
+        if (HTRANS == 2'b10) begin
             check("T5 HSIZE=word", {29'b0, HSIZE}, 32'h0000_0002);
+            // HLOCK must be high during address-phase states (READ_ADDR or
+            // WRITE_ADDR — both drive HTRANS=NONSEQ).
+            check1("T5 HLOCK held in addr phase", HLOCK, 1'b1);
+        end
 
         wait_done(40);
+        check1("T5 HLOCK released at done", HLOCK, 1'b0);
 
         $display("-----------------------------");
         if (failed == 0)
