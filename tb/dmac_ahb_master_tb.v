@@ -48,8 +48,8 @@ module dmac_ahb_master_tb;
 
     // ── Simple AHB slave model ────────────────────────────────────────────────
     // src_mem holds data DMAC reads; dst_mem captures what DMAC writes.
-    reg [31:0] src_mem [0:15];
-    reg [31:0] dst_mem [0:15];
+    reg [31:0] src_mem [0:127];
+    reg [31:0] dst_mem [0:127];
 
     // Slave drives HRDATA for reads; captures HWDATA for writes.
     // Address is pipelined: latch it in address phase, use in data phase.
@@ -57,9 +57,14 @@ module dmac_ahb_master_tb;
     reg        slave_write_q;
 
     always @(posedge HCLK) begin
-        if (HTRANS[1] && HREADY) begin
-            slave_addr_q  <= HADDR;
-            slave_write_q <= HWRITE;
+        if (HREADY) begin
+            if (HTRANS[1]) begin
+                slave_addr_q  <= HADDR;
+                slave_write_q <= HWRITE;
+            end else begin
+                // No new address phase → next cycle has no data phase to commit.
+                slave_write_q <= 1'b0;
+            end
         end
     end
 
@@ -67,12 +72,12 @@ module dmac_ahb_master_tb;
         if (slave_write_q)
             HRDATA = 32'h0;
         else
-            HRDATA = src_mem[slave_addr_q[5:2]];  // word index from byte addr
+            HRDATA = src_mem[slave_addr_q[8:2]];  // word index from byte addr
     end
 
     always @(posedge HCLK) begin
         if (slave_write_q && HREADY)
-            dst_mem[slave_addr_q[5:2]] <= HWDATA;
+            dst_mem[slave_addr_q[8:2]] <= HWDATA;
     end
 
     // ── Arbiter model: grant after 2 cycles ───────────────────────────────────
@@ -155,9 +160,9 @@ module dmac_ahb_master_tb;
         slave_write_q = 1'b0;
 
         // Initialize source memory with known pattern
-        for (i = 0; i < 16; i = i + 1)
+        for (i = 0; i < 128; i = i + 1)
             src_mem[i] = 32'hA000_0000 + i;
-        for (i = 0; i < 16; i = i + 1)
+        for (i = 0; i < 128; i = i + 1)
             dst_mem[i] = 32'hDEAD_DEAD;
 
         repeat (4) @(posedge HCLK);
@@ -185,7 +190,6 @@ module dmac_ahb_master_tb;
 
         // Wait for transfer to complete
         wait_done(50);
-        @(posedge HCLK); #1;
 
         check1("T2 done pulse seen",   dmac_done,  1'b1);
         @(posedge HCLK); #1;
@@ -196,7 +200,7 @@ module dmac_ahb_master_tb;
         check("T2 word copied",   dst_mem[32'h40>>2], src_mem[0]);
 
         // ── T3: 4-word burst transfer src=0x00 dst=0x80 ───────────────────────
-        for (i = 0; i < 16; i = i + 1) dst_mem[i] = 32'hDEAD_DEAD;
+        for (i = 0; i < 128; i = i + 1) dst_mem[i] = 32'hDEAD_DEAD;
 
         dmac_src    = 32'h0000_0000;
         dmac_dst    = 32'h0000_0080;
@@ -206,7 +210,6 @@ module dmac_ahb_master_tb;
         dmac_enable = 1'b0;
 
         wait_done(100);
-        @(posedge HCLK); #1;
         check1("T3 done",          dmac_done,  1'b1);
         @(posedge HCLK); #1;
         check1("T3 busy cleared",  dmac_busy,  1'b0);
@@ -216,7 +219,7 @@ module dmac_ahb_master_tb;
                   dst_mem[(32'h80>>2)+i], src_mem[i]);
 
         // ── T4: HREADY=0 wait state during read ───────────────────────────────
-        for (i = 0; i < 16; i = i + 1) dst_mem[i] = 32'hDEAD_DEAD;
+        for (i = 0; i < 128; i = i + 1) dst_mem[i] = 32'hDEAD_DEAD;
 
         dmac_src    = 32'h0000_0000;
         dmac_dst    = 32'h0000_0040;
@@ -232,7 +235,6 @@ module dmac_ahb_master_tb;
         HREADY = 1'b1;
 
         wait_done(60);
-        @(posedge HCLK); #1;
         check1("T4 done after wait",    dmac_done,  1'b1);
         check("T4 word copied (wait)",  dst_mem[32'h40>>2], src_mem[0]);
 
