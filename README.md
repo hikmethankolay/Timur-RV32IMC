@@ -171,11 +171,16 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 ### Phase 9 — AHB Bus Fabric
 
-- **`ahb_arbiter.v`** — 2-master fixed-priority AHB arbiter. CPU (master 0) has higher priority than DMAC (master 1). Master switches only when the current slave asserts `HREADY=1` to prevent mid-transaction corruption.
-- **`rv32imc_core.sv`** — CPU-side AHB master logic. Exports `cpu_HADDR`, `cpu_HWRITE`, `cpu_HSIZE`, `cpu_HWDATA`, and `cpu_HBUSREQ` from the MEM stage so `soc.v` can place the core on the shared bus.
-- **`ahb_decoder.v`** — AHB address decoder. Combinational address decode asserts exactly one `HSEL` from `HADDR[31:16]`: ROM (`0x0000`), RAM (`0x2000`), APB bridge (`0x4000`). The address-phase select is registered internally so `HRDATA` and `HREADY` stay aligned with the following data phase instead of dropping immediately on the next address change. If no slave is selected: `HRDATA=0`, `HREADY=1`.
-- **`dmac_ahb_master.v`** — DMAC AHB master engine. Executes DMA transfers autonomously once `dmac_enable` is asserted by the APB control registers. Six-state FSM (IDLE → REQUEST → `READ_ADDR` → `READ_DATA` → `WRITE_ADDR` → `WRITE_DATA` → DONE). Primary use: copy the `.data` section from ROM to RAM at boot, mirroring what `crt0.S` does in software.
-- **`soc.v`** — System integration top-level. Instantiates the arbiter, decoder, ROM, RAM, APB bridge, CPU core, and DMAC master, then wires the shared bus signals into a single SoC fabric.
+- **`ahb_arbiter.v`** — 2-master AHB arbiter. CPU (master 0) and DMAC (master 1) request the shared bus via `HBUSREQ[1:0]`. The arbiter is a single-bit state machine that grants CPU by default, switches to DMAC only when **CPU is not requesting and DMAC is requesting and `HREADY=1`** (transfer boundary), and reclaims the bus for CPU at the next boundary if CPU re-requests **and** the DMAC is not asserting `HLOCK`. Outputs: `HGRANT[1:0]` (one-hot grant), `HMASTER` (current owner — selects the bus mux), and `HMASTLOCK` (forwards the active master's lock). Switching only on `HREADY=1` boundaries prevents mid-transaction corruption.
+- **`ahb_decoder.v`** — AHB address decoder. Combinational decode of `HADDR[31:16]` asserts exactly one address-phase `HSEL`: ROM (`0x0000`), RAM (`0x2000`), APB bridge (`0x4000`). The selected slave is **registered** internally (`hsel_*_d`) so the data-phase `HRDATA` and `HREADY` muxes follow the slave that was addressed in the *previous* cycle — keeping read data aligned with the AHB pipeline. If no slave is selected: `HRDATA = 0`, `HREADY = 1`.
+- **`dmac_ahb_master.v`** — DMAC AHB master engine. Autonomous, software-programmed memory-to-memory copy. Seven-state FSM: `IDLE → REQUEST → READ_ADDR → READ_DATA → WRITE_ADDR → WRITE_DATA → DONE`. Latches `src_ptr / dst_ptr / words_left` from the APB control registers when leaving `IDLE`, captures `HRDATA` into an internal `rd_buf` during `READ_DATA`, and drives `rd_buf` onto `HWDATA` during `WRITE_DATA`. Address-phase states gate progress on `HGRANT && HREADY` (so a lost grant just stalls); data-phase states gate on `HREADY` alone (the slave's data phase completes regardless of who currently owns the bus). Asserts `HLOCK=1` during `READ_ADDR / READ_DATA / WRITE_ADDR` and releases it in `WRITE_DATA` so each word transfer is atomic from the arbiter's view, but the CPU can preempt at every word boundary. `dmac_done` is a one-cycle pulse on entry to `DONE`. Primary use: copy the `.data` section from ROM to RAM at boot, mirroring what `crt0.S` does in software.
+- **`rv32imc_core.sv`** — CPU-side AHB master interface. Exports `cpu_HADDR`, `cpu_HTRANS`, `cpu_HWRITE`, `cpu_HSIZE`, `cpu_HWDATA`, and `cpu_HBUSREQ` from the MEM stage. The dedicated I-fetch port (`if_HADDR`, `if_HTRANS`, `if_HRDATA`) goes directly to ROM Port A — instruction fetch never arbitrates against the DMAC and is always zero-wait-state.
+- **`soc.v`** — System integration top-level. Wires:
+  - **Two bus domains** — a dedicated I-fetch path to ROM Port A and a shared D-bus driven by the arbiter-selected master.
+  - **Address-phase mux** on current `HMASTER`: `HADDR / HTRANS / HWRITE / HSIZE` follow whoever has the bus this cycle.
+  - **Data-phase mux** on a one-cycle-delayed `HMASTER_d` register: `HWDATA` must follow the master that issued the *address* phase (the previous cycle), because AHB writes drive `HWDATA` one cycle after `HADDR`. Without the delay, an arbiter switch between a write's address phase and its data phase would silently corrupt the slave's commit.
+  - **CPU stall on grant loss**: `cpu_d_hready = HGRANT[0] & HREADY_s` — when the DMAC owns the bus, the CPU pipeline sees `HREADY=0` on the D-side and stalls naturally through the existing Hazard Detection Unit, preserving in-flight load/store correctness.
+  - **Dual-port ROM** — Port A serves the I-fetch path; Port B sits on the shared D-bus for both CPU `.rodata` reads and the DMAC's boot-time `.data` copy.
 
 ### Phase 10 — CSR Register File and Privileged Architecture
 
@@ -216,12 +221,12 @@ The system uses the AMBA bus hierarchy: AHB for high-bandwidth paths (CPU, DMA, 
 
 ### AHB Masters
 
-Two masters compete for the AHB bus through a fixed-priority arbiter:
+Two masters share the data-side AHB bus through the arbiter; instruction fetch uses a dedicated ROM port and never arbitrates.
 
-- **Master 0 — CPU:** Instruction fetches and data load/store
-- **Master 1 — DMAC:** Autonomous DMA transfers (ROM → RAM copy at boot)
+- **Master 0 — CPU:** D-side load/store from the MEM stage. When the DMAC owns the bus, the CPU sees `HREADY=0` (qualified by `HGRANT[0]`) and the pipeline stalls through the regular hazard path.
+- **Master 1 — DMAC:** Autonomous memory-to-memory transfers programmed via APB. Asserts `HLOCK` during the address-phase states of each word so the arbiter can't preempt mid-word; releases it during `WRITE_DATA` so the CPU can step in at word boundaries.
 
-Master switches only occur when `HREADY=1` to prevent mid-transaction corruption.
+**Switch safety.** Master switches only occur on `HREADY=1` (transfer boundaries). The address-phase mux follows current `HMASTER`; the `HWDATA` mux follows a one-cycle-delayed `HMASTER_d` so a switch between a write's address and data phases doesn't route the wrong master's data to the slave.
 
 ---
 
