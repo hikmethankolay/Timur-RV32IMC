@@ -3,7 +3,8 @@
 // ALUControl: 0 AND, 1 OR, 2 ADD, 6 SUB, 7 SLT, 8 XOR, 9 SLL, 10 SRL, 11 SRA, 12 SLTU,
 //             16 MUL, 17 MULH, 18 MULHSU, 19 MULHU, 20 DIV, 21 DIVU, 22 REM, 23 REMU
 // cout/overflow come straight from the adder (a - b for SUB, SLT, SLTU; a + b otherwise).
-// Divider operations: the testbench pulses div_start, waits for div_done, checks, then pulses div_ack.
+// Multiplier and divider operations: the testbench pulses mul_start / div_start, waits for
+// mul_done / div_done, checks, then pulses mul_ack / div_ack.
 //
 // reference cases
 00000003 00000002 2 00000005 0 0 0

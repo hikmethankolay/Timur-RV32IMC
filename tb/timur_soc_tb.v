@@ -10,7 +10,7 @@
 // Checked every cycle during a run:
 //   - the fetch word belongs to the PC and the IF/ID word to IF/ID's pc,
 //     through load-use, divider and bus stalls
-//   - MUL never stalls
+//   - each MUL gets one multiplier start and stalls exactly one cycle
 //   - exactly one divider start per DIV
 //   - a load-use costs exactly one bubble
 // Run with +trace to print PC, instruction and x1-x14 every cycle.
@@ -47,7 +47,8 @@ module timur_soc_tb;
     reg  [31:0] halt_pc;
     integer     cycles, retired;
     reg  [31:0] trace [0:TRACE_MAX-1];
-    integer     align_errors, mul_stalls, div_starts, div_errors, starts_pending, lu_errors;
+    integer     align_errors, mul_count, mul_errors, mul_starts_pending, mul_stall_cycles;
+    integer     div_starts, div_errors, starts_pending, lu_errors;
     reg         last_load_use;
 
     reg print_trace;
@@ -70,8 +71,17 @@ module timur_soc_tb;
             if (dut.if_id_valid && dut.if_id_instr !== dut.u_rom.mem[dut.if_id_pc[15:2]])
                 align_errors = align_errors + 1;
 
+            if (dut.mul_start)
+                mul_starts_pending = mul_starts_pending + 1;
             if (dut.id_ex_valid && dut.id_ex_alucontrol[4:2] == 3'b100 && !dut.bus_wait && !dut.pc_load)
-                mul_stalls = mul_stalls + 1;
+                mul_stall_cycles = mul_stall_cycles + 1;
+            if (dut.mul_ack) begin
+                mul_count = mul_count + 1;
+                if (mul_starts_pending != 1 || mul_stall_cycles != 1)
+                    mul_errors = mul_errors + 1;
+                mul_starts_pending = 0;
+                mul_stall_cycles = 0;
+            end
 
             if (dut.div_start) begin
                 div_starts = div_starts + 1;
@@ -185,7 +195,10 @@ module timur_soc_tb;
             cycles = 0;
             retired = 0;
             align_errors = 0;
-            mul_stalls = 0;
+            mul_count = 0;
+            mul_errors = 0;
+            mul_starts_pending = 0;
+            mul_stall_cycles = 0;
             div_starts = 0;
             div_errors = 0;
             starts_pending = 0;
@@ -287,11 +300,12 @@ module timur_soc_tb;
                         $display("PASS PROG %0s: fetch and IF/ID words always matched their PC", image);
                     else
                         $display("FAIL PROG %0s: %0d cycles with a fetch or IF/ID word not matching its PC", image, align_errors);
-                    result(mul_stalls == 0);
-                    if (mul_stalls == 0)
-                        $display("PASS PROG %0s: MUL never stalled", image);
+                    result(mul_errors == 0);
+                    if (mul_errors == 0)
+                        $display("PASS PROG %0s: one start and one stall cycle per MUL (%0d MULs)", image, mul_count);
                     else
-                        $display("FAIL PROG %0s: MUL stalled the pipeline in %0d cycles", image, mul_stalls);
+                        $display("FAIL PROG %0s: %0d of %0d MULs left EX without exactly one start and one stall cycle",
+                                 image, mul_errors, mul_count);
                     result(div_errors == 0);
                     if (div_errors == 0)
                         $display("PASS PROG %0s: one divider start per DIV (%0d starts)", image, div_starts);

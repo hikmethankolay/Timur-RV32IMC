@@ -1,19 +1,20 @@
 `timescale 1ns/1ps
 //
 // alu_tb: every ALUControl operation, zero flag and adder flags (Phase 2).
-// Combinational operations: apply, wait 10 ns, compare. Divider operations:
-// pulse div_start, wait for div_done, compare, then pulse div_ack (the DIV
-// leaving EX) and check that div_done clears.
+// Combinational operations: apply, wait 10 ns, compare. Multiplier and
+// divider operations: pulse mul_start / div_start, wait for mul_done /
+// div_done (one cycle for a MUL), compare, then pulse mul_ack / div_ack (the
+// instruction leaving EX) and check that done clears.
 // Vector: a(hex) b(hex) ALUControl(dec) result(hex) zero(bin) cout(bin) overflow(bin).
 //
 module alu_tb;
 
-    reg         clk, rst_n, div_start, div_ack;
+    reg         clk, rst_n, mul_start, mul_ack, div_start, div_ack;
     reg  [31:0] a, b;
     reg  [4:0]  ALUControl;
     wire [31:0] result;
     wire        zero, cout, overflow;
-    wire        div_busy, div_done;
+    wire        mul_done, div_busy, div_done;
 
     alu dut (
         .clk        (clk),
@@ -21,12 +22,15 @@ module alu_tb;
         .a          (a),
         .b          (b),
         .ALUControl (ALUControl),
+        .mul_start  (mul_start),
+        .mul_ack    (mul_ack),
         .div_start  (div_start),
         .div_ack    (div_ack),
         .result     (result),
         .zero       (zero),
         .cout       (cout),
         .overflow   (overflow),
+        .mul_done   (mul_done),
         .div_busy   (div_busy),
         .div_done   (div_done)
     );
@@ -38,7 +42,7 @@ module alu_tb;
     reg [8*256-1:0] line;
     reg [31:0]      exp_result;
     reg             exp_zero, exp_cout, exp_ovf;
-    reg             is_div, ok;
+    reg             is_mul, is_div, ok;
 
     initial begin : watchdog
         repeat (50000) @(posedge clk);
@@ -49,6 +53,8 @@ module alu_tb;
     initial begin
         clk = 1'b0;
         rst_n = 1'b0;
+        mul_start = 1'b0;
+        mul_ack = 1'b0;
         div_start = 1'b0;
         div_ack = 1'b0;
         a = 32'b0;
@@ -68,8 +74,13 @@ module alu_tb;
                 n = $fgets(line, fd);
                 if ($sscanf(line, "%h %h %d %h %b %b %b", a, b, ALUControl, exp_result,
                             exp_zero, exp_cout, exp_ovf) == 7) begin
+                    is_mul = (ALUControl[4:2] == 3'b100);
                     is_div = (ALUControl[4:2] == 3'b101);
-                    if (is_div) begin
+                    if (is_mul) begin
+                        mul_start = 1'b1;
+                        @(posedge clk);
+                        #1 mul_start = 1'b0;
+                    end else if (is_div) begin
                         div_start = 1'b1;
                         @(posedge clk);
                         #1 div_start = 1'b0;
@@ -83,6 +94,16 @@ module alu_tb;
 
                     ok = (result === exp_result) && (zero === exp_zero) &&
                          (cout === exp_cout) && (overflow === exp_ovf);
+
+                    if (is_mul) begin
+                        if (mul_done !== 1'b1)
+                            ok = 1'b0;
+                        mul_ack = 1'b1;
+                        @(posedge clk);
+                        #1 mul_ack = 1'b0;
+                        if (mul_done !== 1'b0)
+                            ok = 1'b0;
+                    end
 
                     if (is_div) begin
                         div_ack = 1'b1;

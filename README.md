@@ -100,7 +100,7 @@ The board wrapper `Timur_RV32IMC` contains only `cpu_pll`, the reset gating (but
 | Extension | Description | Status |
 | --------- | ----------- | ------ |
 | **RV32I** | Base integer instructions | ✅ Implemented (Phases 2–7) |
-| **RV32M** | MUL, MULH, MULHSU, MULHU (single cycle), DIV, DIVU, REM, REMU (35 cycles) | ✅ Implemented (Phase 2) |
+| **RV32M** | MUL, MULH, MULHSU, MULHU (2 cycles), DIV, DIVU, REM, REMU (35 cycles) | ✅ Implemented (Phase 2) |
 | **Zicsr** | CSRRW, CSRRS, CSRRC and immediate forms | Decoded (Phase 4); CSR file in Phase 10 — until then CSR reads return 0 |
 | **M-mode** | Traps, precise exceptions, ECALL/EBREAK/MRET, `mtvec`, `mepc`, `mcause` | 🔜 Phase 10 (ECALL, EBREAK, MRET are decoded and retire as NOPs) |
 | **RV32C** | 16-bit compressed instructions | 🔜 Phase 11 |
@@ -133,7 +133,7 @@ Checklist items that need Quartus or the board and are still open:
 - Phase 1: SDC registered and the PLL clock visible in Timing Analyzer.
 - Phase 2: Embedded Multiplier 9-bit element count from the Flow Summary.
 - Phases 3/5: ROM and RAM inferred as M9K (about 128 of 182 blocks), Analysis & Synthesis clean.
-- Phase 5: positive slack at 50 MHz; record Fmax from the Slow 1200mV 85C model together with evidence that the datapath was synthesised (128 M9K blocks, embedded multipliers in use, the LE count, a critical path from the ROM through decode and the ALU). The earlier 296 MHz figure is withdrawn: it is too close to the M9K limit for a real single-cycle datapath. If single-cycle MUL misses timing, register the product and stall MUL in EX like the divider, or lower the PLL frequency.
+- Phase 5: positive slack at 50 MHz; record Fmax from the Slow 1200mV 85C model together with evidence that the datapath was synthesised (128 M9K blocks, embedded multipliers in use, the LE count, the critical path). The earlier 296 MHz figure is withdrawn: it is too close to the M9K limit for a real single-cycle datapath. With a single-cycle MUL the design reached only 30.4 MHz (slack −12.9 ns: load data forwarded from WB ran through the multiply array, the ALU result mux and the zero flag into the branch redirect and the ROM fetch address), so MUL now registers its operands and stalls one cycle in EX like the divider. A trial compile gives 51.6 MHz (setup slack +0.60 ns, hold +0.40 ns). The critical path is load data forwarded from WB into the branch compare, the redirect and the ROM fetch address. The margin is small and moves by about ±0.5 ns with the fitter seed; high-performance effort with physical synthesis (combinational, register duplication, retiming) keeps it positive across seeds (worst of three +0.42 ns). If later phases lose it, lower the PLL frequency.
 - Phase 7: riscv-arch-test RV32I and M suites (RISCOF flow).
 - Phase 9: post-fit timing; on the board — LEDs follow software, UART output readable, DMA checksum correct.
 
@@ -151,12 +151,12 @@ Checklist items that need Quartus or the board and are still open:
 
 ### Phase 2 — Execution Datapath
 
-- **`adder_32bit`** — add/subtract; B is inverted with an XOR against `sub`, which is also the carry-in. Outputs `cout` (1 = no borrow) and signed `overflow`.
-- **`barrel_shifter`** — five cascaded stages; in each a `mux4` (select `shift_type`) forms the shifted candidate and a `mux2` (select one `shamt` bit) chooses it or the unshifted value. SRA fills with the original `in[31]`.
-- **`multiplier`** — single cycle: both operands are extended to 33 bits with a sign bit or zero, and one signed 33×33 multiply serves MUL, MULH, MULHSU and MULHU.
+- **`adder_32bit`** — add/subtract; B is inverted with an XOR against `sub`, which is also the carry-in (carried in an extra low bit, so the sum is one carry chain). Outputs `cout` (1 = no borrow) and signed `overflow`.
+- **`barrel_shifter`** — a left and a right shifter side by side, each five cascaded `mux2` stages (one `shamt` bit per stage); a final `mux4` on `shift_type` picks the result. Every stage is one 2:1 mux deep. The right shifter fills with the original `in[31]` for SRA.
+- **`multiplier`** — two cycles: both operands are extended to 33 bits with a sign bit or zero, and one signed 33×33 multiply serves MUL, MULH, MULHSU and MULHU. `start` registers the extended operands in the first EX cycle (the embedded multipliers' input registers) and the product is formed from them in the second, so late forwarded load data never passes through the multiply array in the same cycle. `done` is a level held until `ack`, as in the divider.
 - **`divider`** — restoring divider, 32 iterations; divide by zero and `0x80000000 / -1` take a fast path. The DIV sits in EX for 35 cycles (2 on the fast path). `done` is a level held until `ack` (the DIV leaving EX), so it is never lost in a bus freeze.
-- **`alu`** — 5-bit `ALUControl` including SLTU (`01100`); shift type decoded explicitly; `zero` computed after the result mux. The divider is started with `div_start` and acknowledged with `div_ack` from the hazard unit.
-- **`branch_condition_evaluator`** — BEQ, BNE, BLT, BGE, BLTU, BGEU from the flags of `a - b`.
+- **`alu`** — 5-bit `ALUControl` including SLTU (`01100`); shift type decoded explicitly; `zero` computed after the result mux. The multiplier and the divider are started with `mul_start` / `div_start` and acknowledged with `mul_ack` / `div_ack` from the hazard unit.
+- **`branch_condition_evaluator`** — BEQ, BNE, BLT, BGE, BLTU, BGEU from the flags of `a - b`. In the pipeline it is fed by a dedicated compare on the forwarded operands (`rs1 - rs2` and `rs1 == rs2`), not by the ALU.
 
 ### Phase 3 — State and Memory
 
@@ -230,11 +230,11 @@ APB3 has no byte strobes: peripheral registers are word-write only (a byte or ha
 | ----- | ---- | ------------ |
 | IF | Select the next PC (sequential or redirect), present the fetch address | ROM fetch port |
 | ID | Parse, immediate, control, ALU decode, register read with WB bypass, load-use detection | — |
-| EX | Forwarding, operand select, ALU, divider, branch evaluation, targets, redirect, result select | — |
+| EX | Forwarding, operand select, ALU, multiplier, divider, branch compare and evaluation, targets, redirect, result select | — |
 | MEM | Store alignment; AHB address phase for loads and stores | AHB address phase |
 | WB | AHB data phase, load formatting, write-back | AHB data phase |
 
-Taken branches, JAL and JALR redirect from EX and kill exactly the two younger instructions.
+Taken branches, JAL and JALR redirect from EX and kill exactly the two younger instructions. The redirect ends at the ROM fetch address register in the same cycle, so it is the longest path in EX. The branch compare and the targets therefore have their own adders on the forwarded operands (`rs1 - rs2`, PC + imm for branches and JAL, rs1 + imm for JALR), and the fetch-address mux applies the redirect select last.
 
 ---
 
@@ -245,14 +245,15 @@ Taken branches, JAL and JALR redirect from EX and kill exactly the two younger i
 | Bus wait (freeze) | hold | hold | hold | hold | hold |
 | Trap or interrupt (Phase 10) | mtvec | bubble | bubble | bubble | advance |
 | Redirect taken | target | bubble | bubble | advance | advance |
-| Divider EX stall | hold | hold | hold | bubble | advance |
+| MUL / DIV EX stall | hold | hold | hold | bubble | advance |
 | Load-use | hold | hold | bubble | advance | advance |
 | Normal | PC + 4 | advance | advance | advance | advance |
 
 - **Bus wait** — CPU address phase not granted or not ready, or CPU data phase with `HREADY = 0` (for example the one wait state of every APB access, or the DMAC owning the bus).
+- **Multiplier** — `mul_start = MUL in EX AND NOT done AND NOT bus_wait` registers the operands; EX stall while `NOT done` (exactly one cycle outside a bus freeze); `mul_ack` when the MUL leaves EX.
 - **Divider** — `div_start = DIV in EX AND NOT busy AND NOT done AND NOT bus_wait`; EX stall while `NOT done`; `div_ack` when the DIV leaves EX.
 - **Load-use** — a load in EX whose `rd` (≠ x0) matches `rs1` or `rs2` of the instruction in ID: one bubble; the value then arrives by WB forwarding.
-- **MUL** never stalls; instruction fetch never waits for the bus.
+- Instruction fetch never waits for the bus.
 
 ---
 
@@ -334,13 +335,13 @@ Paths inside testbenches (`vectors/…`, `rom.hex`) are relative to the project 
 | ------- | ------ |
 | `timur_soc_phase5.hex` | The Phase 5 test program (no loads) |
 | `timur_soc_phase6.hex` | Loads and stores of every size and offset, JAL/JALR links, LUI/AUIPC, register-file bypass |
-| `timur_soc_phase7.hex` | Forwarding, load-use, the Phase 7 walkthrough (LW, dependent ADD, DIV, taken branch), DIV/REM (including an operand from an APB load and REM by zero after an APB load), MUL, taken branch/JAL/JALR killing exactly two instructions — once normally and once with HREADY held low for three cycles in every RAM load |
+| `timur_soc_phase7.hex` | Forwarding, load-use, the Phase 7 walkthrough (LW, dependent ADD, DIV, taken branch), DIV/REM (including an operand from an APB load and REM by zero after an APB load), MUL (including an operand straight from a RAM load), taken branch/JAL/JALR killing exactly two instructions — once normally and once with HREADY held low for three cycles in every RAM load |
 | `timur_soc_random.hex` | Random dependency-dense program (RAM and APB loads/stores, ROM loads, DIV/REM corner cases, branches, JAL, JALR), with and without HREADY waits |
 | `timur_soc_system.hex` | GPIO, UART, DMA copy while the CPU runs loads and stores, DMAC STATUS busy/done, `LEN = 0`, default slave |
 | `rom.hex` | The final cross-phase program (the default ROM image), checked against its expected state before Phase 10 |
 | `sw/bringup/bringup_*.hex` | The three hardware bring-up programs (see [Building & Programming](#building--programming)) |
 
-Every cycle of every program the testbench also checks that the fetch word matches ROM[PC] and the IF/ID word matches ROM[IF/ID pc], that MUL never stalls, that each DIV gets exactly one divider start and that each load-use costs exactly one bubble. Expected registers, RAM words and the order in which instructions leave EX come from the reference model in `sw/gen_soc_tests.py`; programs whose results depend on timing (UART, DMAC polling) have hand-written expectations.
+Every cycle of every program the testbench also checks that the fetch word matches ROM[PC] and the IF/ID word matches ROM[IF/ID pc], that each MUL gets one multiplier start and one stall cycle, that each DIV gets exactly one divider start and that each load-use costs exactly one bubble. Expected registers, RAM words and the order in which instructions leave EX come from the reference model in `sw/gen_soc_tests.py`; programs whose results depend on timing (UART, DMAC polling) have hand-written expectations.
 
 Add `+trace` to the `vsim` command line to print PC, instruction and x1–x14 every cycle.
 

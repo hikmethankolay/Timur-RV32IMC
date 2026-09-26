@@ -554,7 +554,7 @@ PHASE7 = """
         addi  x22, x0, 2           # wrong path, killed
         addi  x22, x0, 3           # never fetched
 walk:
-# MUL: no stall, result forwarded
+# MUL: one EX stall cycle (operand capture), result forwarded
         mul   x22, x20, x18        # 600
         add   x23, x22, x1         # 607
 # DIV and REM results forwarded to the next instruction
@@ -577,6 +577,11 @@ walk:
         lw    x5, 0x58(x31)        # 607
         div   x6, x5, x1           # 86
         sw    x6, 0x7C(x31)
+# MUL whose operand comes straight from a RAM load: the operand capture must
+# also wait for the data phase
+        lw    x5, 0x58(x31)        # 607
+        mul   x6, x5, x1           # 4249
+        sw    x6, 0x80(x31)
 # REM by zero right after an independent APB load: done is not lost
         addi  x5, x0, 123
         lw    x6, 0x108(x30)       # GPIO_DIR = 0
@@ -706,7 +711,7 @@ FINAL = """
         sw    x1, 0(x20)           # AHB write to RAM
         lw    x3, 0(x20)           # store -> load of the same word: RAM bypass
         add   x4, x3, x2           # load-use bubble + WB forwarding -> 11
-        mul   x5, x1, x2           # single-cycle multiply -> 10
+        mul   x5, x1, x2           # multiply, one EX stall -> 10
         div   x6, x1, x2           # divider EX stall -> 10
         bne   x5, x6, skip         # not taken (forwarding from EX/MEM)
         addi  x7, x0, 42           # must execute
@@ -1034,8 +1039,9 @@ def main():
     vec.comment("      hready_waits = 1: HREADY is forced low for three cycles in the")
     vec.comment("      data phase of every RAM load, with garbage on HRDATA until the last cycle.")
     vec.comment("      After each PROG the testbench also checks: halt reached,")
-    vec.comment("      fetch word = ROM[PC] and IF/ID word = ROM[IF/ID pc] every cycle, MUL never stalls,")
-    vec.comment("      exactly one divider start per DIV, one bubble per load-use.")
+    vec.comment("      fetch word = ROM[PC] and IF/ID word = ROM[IF/ID pc] every cycle, one multiplier")
+    vec.comment("      start and one stall cycle per MUL, exactly one divider start per DIV, one bubble")
+    vec.comment("      per load-use.")
     vec.comment("  REG <n> <value>      register x<n> at the end of the run")
     vec.comment("  RAM <addr> <value>   RAM word")
     vec.comment("  RAMNZ <count>        number of non-zero words in 0x2000_0000 - 0x2000_0FFF")

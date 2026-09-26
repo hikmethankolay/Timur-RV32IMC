@@ -39,16 +39,26 @@ module rom_ahb (
     end
     // synthesis translate_on
 
+    // Address phase accepted only with HSEL, HTRANS[1] and HREADY all set.
+    // Between accepted transfers the data port re-reads the last accepted
+    // index, so HRDATA holds. Both ports read unconditionally in one block:
+    // an enable on either read makes Quartus build two single-port ROMs
+    // (twice the M9K blocks) instead of one dual-port ROM.
+    wire        accept = HSEL && HTRANS[1] && HREADY;
+    reg  [13:0] data_index;
+    wire [13:0] data_read_index = accept ? HADDR[15:2] : data_index;
+
+    always @(posedge HCLK)
+        if (accept)
+            data_index <= HADDR[15:2];
+
     reg [31:0] fetch_q;
     reg [31:0] data_q;
 
-    always @(posedge HCLK)
+    always @(posedge HCLK) begin
         fetch_q <= mem[fetch_addr[15:2]];
-
-    // Address phase accepted only with HSEL, HTRANS[1] and HREADY all set.
-    always @(posedge HCLK)
-        if (HSEL && HTRANS[1] && HREADY)
-            data_q <= mem[HADDR[15:2]];
+        data_q  <= mem[data_read_index];
+    end
 
     assign fetch_instr = fetch_q;
     assign HRDATA      = data_q;

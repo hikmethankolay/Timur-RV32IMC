@@ -1,53 +1,65 @@
 // hazard_detection_unit test vectors
 // format: inputs  id_ex_valid id_ex_memread (bin) id_ex_rd if_id_rs1 if_id_rs2 (hex)
-//                 div_in_ex div_busy div_done bus_wait redirect_req trap_req (bin)
+//                 mul_in_ex mul_done div_in_ex div_busy div_done bus_wait redirect_req trap_req (bin)
 //         outputs pc_load if_id_enable if_id_flush id_ex_enable id_ex_flush ex_mem_enable
-//                 ex_mem_flush mem_wb_enable div_start div_ack take_redirect take_trap (bin)
+//                 ex_mem_flush mem_wb_enable mul_start mul_ack div_start div_ack take_redirect take_trap (bin)
 // normal: everything advances, PC + 4
-1 0 05 05 06 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0
+1 0 05 05 06 0 0 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0 0 0
 // load-use on rs1: PC and IF/ID hold, bubble into ID/EX, EX/MEM and MEM/WB advance
-1 1 05 05 06 0 0 0 0 0 0  0 0 0 1 1 1 0 1 0 0 0 0
+1 1 05 05 06 0 0 0 0 0 0 0 0  0 0 0 1 1 1 0 1 0 0 0 0 0 0
 // load-use on rs2
-1 1 06 05 06 0 0 0 0 0 0  0 0 0 1 1 1 0 1 0 0 0 0
+1 1 06 05 06 0 0 0 0 0 0 0 0  0 0 0 1 1 1 0 1 0 0 0 0 0 0
 // load-use on both sources
-1 1 07 07 07 0 0 0 0 0 0  0 0 0 1 1 1 0 1 0 0 0 0
+1 1 07 07 07 0 0 0 0 0 0 0 0  0 0 0 1 1 1 0 1 0 0 0 0 0 0
 // load in EX writing x0: no stall
-1 1 00 00 00 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0
+1 1 00 00 00 0 0 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0 0 0
 // load in EX, no matching source: no stall
-1 1 09 05 06 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0
+1 1 09 05 06 0 0 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0 0 0
 // non-load writing a matching register: no stall (forwarding covers it)
-1 0 05 05 05 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0
+1 0 05 05 05 0 0 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0 0 0
 // invalid (bubble) slot with MemRead: no stall
-0 1 05 05 06 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0
+0 1 05 05 06 0 0 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0 0 0
 // load-use during a bus wait: freeze, no bubble
-1 1 05 05 06 0 0 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0
+1 1 05 05 06 0 0 0 0 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0
 // bus wait alone: every stage holds
-1 0 00 00 00 0 0 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0
+1 0 00 00 00 0 0 0 0 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0
 // redirect taken: PC <- target, IF/ID and ID/EX bubble
-0 0 00 00 00 0 0 0 0 1 0  1 1 1 1 1 1 0 1 0 0 1 0
+0 0 00 00 00 0 0 0 0 0 0 1 0  1 1 1 1 1 1 0 1 0 0 0 0 1 0
 // redirect during a bus wait: not taken, everything holds
-0 0 00 00 00 0 0 0 1 1 0  0 0 0 0 0 0 0 0 0 0 0 0
+0 0 00 00 00 0 0 0 0 0 1 1 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0
 // trap request (Phase 10): PC <- mtvec, IF/ID, ID/EX and EX/MEM bubble, MEM/WB completes
-0 0 00 00 00 0 0 0 0 0 1  1 1 1 1 1 1 1 1 0 0 0 1
+0 0 00 00 00 0 0 0 0 0 0 0 1  1 1 1 1 1 1 1 1 0 0 0 0 0 1
 // trap during a bus wait: not taken
-0 0 00 00 00 0 0 0 1 0 1  0 0 0 0 0 0 0 0 0 0 0 0
+0 0 00 00 00 0 0 0 0 0 1 0 1  0 0 0 0 0 0 0 0 0 0 0 0 0 0
 // trap and redirect together: both flushes, EX/MEM bubbled by the trap
-0 0 00 00 00 0 0 0 0 1 1  1 1 1 1 1 1 1 1 0 0 1 1
+0 0 00 00 00 0 0 0 0 0 0 1 1  1 1 1 1 1 1 1 1 0 0 0 0 1 1
 // DIV enters EX: start pulse, EX stall (PC, IF/ID, ID/EX hold, bubble into EX/MEM)
-1 0 00 00 00 1 0 0 0 0 0  0 0 0 0 0 1 1 1 1 0 0 0
+1 0 00 00 00 0 0 1 0 0 0 0 0  0 0 0 0 0 1 1 1 0 0 1 0 0 0
 // DIV iterating: no second start
-1 0 00 00 00 1 1 0 0 0 0  0 0 0 0 0 1 1 1 0 0 0 0
+1 0 00 00 00 0 0 1 1 0 0 0 0  0 0 0 0 0 1 1 1 0 0 0 0 0 0
 // DIV done: stall released, ack
-1 0 00 00 00 1 0 1 0 0 0  1 1 0 1 0 1 0 1 0 1 0 0
+1 0 00 00 00 0 0 1 0 1 0 0 0  1 1 0 1 0 1 0 1 0 0 0 1 0 0
 // DIV done during a bus wait: no ack, done stays (freeze)
-1 0 00 00 00 1 0 1 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0
+1 0 00 00 00 0 0 1 0 1 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0
 // DIV in EX with no start yet during a bus wait: start waits for the bus
-1 0 00 00 00 1 0 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0
+1 0 00 00 00 0 0 1 0 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0
 // DIV iterating during a bus wait: freeze
-1 0 00 00 00 1 1 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0
+1 0 00 00 00 0 0 1 1 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0
 // divider busy while a non-DIV is in EX: no stall, no start
-1 0 00 00 00 0 1 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0
+1 0 00 00 00 0 0 0 1 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0 0 0
 // DIV in EX with a load-shaped rd match in ID: the DIV stall dominates, no load-use
-1 0 05 05 05 1 0 0 0 0 0  0 0 0 0 0 1 1 1 1 0 0 0
+1 0 05 05 05 0 0 1 0 0 0 0 0  0 0 0 0 0 1 1 1 0 0 1 0 0 0
+// MUL enters EX: start (operands registered), EX stall (PC, IF/ID, ID/EX hold, bubble into EX/MEM)
+1 0 00 00 00 1 0 0 0 0 0 0 0  0 0 0 0 0 1 1 1 1 0 0 0 0 0
+// MUL second cycle, done: stall released, ack
+1 0 00 00 00 1 1 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 1 0 0 0 0
+// MUL in EX with no start yet during a bus wait: start waits for the bus
+1 0 00 00 00 1 0 0 0 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0
+// MUL done during a bus wait: no ack, done stays (freeze)
+1 0 00 00 00 1 1 0 0 0 1 0 0  0 0 0 0 0 0 0 0 0 0 0 0 0 0
+// multiplier done while a non-MUL is in EX: no stall, no ack
+1 0 00 00 00 0 1 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0 0 0
+// MUL in EX with an rd match in ID: the MUL stall, no load-use
+1 0 05 05 05 1 0 0 0 0 0 0 0  0 0 0 0 0 1 1 1 1 0 0 0 0 0
 // reset-like idle state
-0 0 00 00 00 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0
+0 0 00 00 00 0 0 0 0 0 0 0 0  1 1 0 1 0 1 0 1 0 0 0 0 0 0

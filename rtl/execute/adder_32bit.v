@@ -9,11 +9,14 @@ module adder_32bit (
     output        overflow   // signed overflow
 );
 
+    // The carry-in rides in an extra low bit (1 + sub carries out exactly
+    // sub), so a + b_eff + sub is one carry chain; a separate "+ sub" term
+    // synthesises as a second adder in series.
     wire [31:0] b_eff = b ^ {32{sub}};
-    wire [32:0] sum   = {1'b0, a} + {1'b0, b_eff} + {32'b0, sub};
+    wire [33:0] sum   = {1'b0, a, 1'b1} + {1'b0, b_eff, sub};
 
-    assign result   = sum[31:0];
-    assign cout     = sum[32];
+    assign result   = sum[32:1];
+    assign cout     = sum[33];
     assign overflow = (b_eff[31] == a[31]) && (result[31] != a[31]);
 
 endmodule

@@ -33,10 +33,12 @@ module timur_soc #(
     wire id_ex_enable,  id_ex_flush;
     wire ex_mem_enable, ex_mem_flush;
     wire mem_wb_enable;
+    wire mul_start, mul_ack;
     wire div_start, div_ack;
     wire take_redirect;
     wire redirect_req;
     wire bus_wait;
+    wire mul_in_ex, mul_done;
     wire div_in_ex, div_busy, div_done;
 
     // =====================================================================
@@ -45,6 +47,7 @@ module timur_soc #(
     wire [31:0] if_pc;
     wire [31:0] if_pc_plus4;
     wire [31:0] pc_next;
+    wire [31:0] fetch_seq;
     wire [31:0] fetch_hold;
     wire [31:0] fetch_addr;
     wire [31:0] fetch_instr;
@@ -80,10 +83,21 @@ module timur_soc #(
     // the ROM re-reads the current word; during reset it is
     // forced to 0 so the first word is ready when reset releases.
     //   fetch_addr = NOT rst_n ? 0 : (pc_load ? pc_next : pc)
-    mux2 #(.WIDTH(32)) u_fetch_hold (
+    // Without a redirect the PC loads exactly when IF/ID does, so the same
+    // function is built with the redirect select last. The redirect is
+    // decided late in EX; this leaves one mux level between it and the ROM
+    // address registers. Phase 10 adds the trap and MRET selects next to it.
+    mux2 #(.WIDTH(32)) u_fetch_seq (
         .in0 (if_pc),
-        .in1 (pc_next),
-        .sel (pc_load),
+        .in1 (if_pc_plus4),
+        .sel (if_id_enable),
+        .out (fetch_seq)
+    );
+
+    mux2 #(.WIDTH(32)) u_fetch_hold (
+        .in0 (fetch_seq),
+        .in1 (redirect_target),
+        .sel (take_redirect),
         .out (fetch_hold)
     );
 
@@ -313,12 +327,14 @@ module timur_soc #(
     wire [31:0] alu_a;
     wire [31:0] alu_b;
     wire [31:0] alu_result;
-    wire        alu_zero;
-    wire        alu_cout;
-    wire        alu_overflow;
+    wire [31:0] cmp_diff;
+    wire        cmp_equal;
+    wire        cmp_cout;
+    wire        cmp_overflow;
     wire        branch_taken;
     wire [31:0] branch_target;
-    wire [31:0] jump_target;
+    wire [31:0] jalr_sum;
+    wire [31:0] jalr_target;
     wire [31:0] link_addr;
     wire [31:0] ex_result;
 
@@ -376,25 +392,47 @@ module timur_soc #(
         .a          (alu_a),
         .b          (alu_b),
         .ALUControl (id_ex_alucontrol),
+        .mul_start  (mul_start),
+        .mul_ack    (mul_ack),
         .div_start  (div_start),
         .div_ack    (div_ack),
         .result     (alu_result),
-        .zero       (alu_zero),
-        .cout       (alu_cout),
-        .overflow   (alu_overflow),
+        .zero       (),
+        .cout       (),
+        .overflow   (),
+        .mul_done   (mul_done),
         .div_busy   (div_busy),
         .div_done   (div_done)
     );
 
+    // Branch compare and jump targets have their own adders on the forwarded
+    // operands. The redirect ends at the ROM fetch address register, so it is
+    // the longest path in EX; taking it through the ALU would add the operand
+    // select and the full result mux.
+    // rs1 - rs2 for the evaluator; a - b = 0 exactly when a = b, so the
+    // equality compare stands in for the zero test and does not wait for the
+    // carry chain.
+    adder_32bit u_branch_cmp (
+        .a        (ex_rs1),
+        .b        (ex_rs2),
+        .sub      (1'b1),
+        .result   (cmp_diff),
+        .cout     (cmp_cout),
+        .overflow (cmp_overflow)
+    );
+
+    assign cmp_equal = (ex_rs1 == ex_rs2);
+
     branch_condition_evaluator u_branch_eval (
-        .zero           (alu_zero),
-        .alu_result_msb (alu_result[31]),
-        .overflow       (alu_overflow),
-        .cout           (alu_cout),
+        .zero           (cmp_equal),
+        .alu_result_msb (cmp_diff[31]),
+        .overflow       (cmp_overflow),
+        .cout           (cmp_cout),
         .BranchType     (id_ex_funct3),
         .BranchTaken    (branch_taken)
     );
 
+    // Branch and JAL target: PC + imm
     adder_32bit u_branch_target (
         .a        (id_ex_pc),
         .b        (id_ex_imm),
@@ -413,14 +451,23 @@ module timur_soc #(
         .overflow ()
     );
 
-    // JAL: ALU = PC + imm; JALR: ALU = rs1 + imm; the target clears bit 0.
-    assign jump_target  = {alu_result[31:1], 1'b0};
+    // JALR target: rs1 + imm with bit 0 cleared
+    adder_32bit u_jalr_target (
+        .a        (ex_rs1),
+        .b        (id_ex_imm),
+        .sub      (1'b0),
+        .result   (jalr_sum),
+        .cout     (),
+        .overflow ()
+    );
+
+    assign jalr_target  = {jalr_sum[31:1], 1'b0};
     assign redirect_req = (id_ex_branch && branch_taken) || id_ex_jump || id_ex_jalr;
 
     mux2 #(.WIDTH(32)) u_redirect_target (
-        .in0 (jump_target),
-        .in1 (branch_target),
-        .sel (id_ex_branch),
+        .in0 (branch_target),
+        .in1 (jalr_target),
+        .sel (id_ex_jalr),
         .out (redirect_target)
     );
 
@@ -432,7 +479,8 @@ module timur_soc #(
                        id_ex_csraccess            ? csr_rdata :
                                                     alu_result;
 
-    // DIV, DIVU, REM, REMU: ALUControl 101xx
+    // MUL, MULH, MULHSU, MULHU: ALUControl 100xx; DIV, DIVU, REM, REMU: 101xx
+    assign mul_in_ex = id_ex_valid && (id_ex_alucontrol[4:2] == 3'b100);
     assign div_in_ex = id_ex_valid && (id_ex_alucontrol[4:2] == 3'b101);
 
     // =====================================================================
@@ -571,6 +619,8 @@ module timur_soc #(
         .id_ex_rd      (id_ex_rd),
         .if_id_rs1     (id_rs1),
         .if_id_rs2     (id_rs2),
+        .mul_in_ex     (mul_in_ex),
+        .mul_done      (mul_done),
         .div_in_ex     (div_in_ex),
         .div_busy      (div_busy),
         .div_done      (div_done),
@@ -585,6 +635,8 @@ module timur_soc #(
         .ex_mem_enable (ex_mem_enable),
         .ex_mem_flush  (ex_mem_flush),
         .mem_wb_enable (mem_wb_enable),
+        .mul_start     (mul_start),
+        .mul_ack       (mul_ack),
         .div_start     (div_start),
         .div_ack       (div_ack),
         .take_redirect (take_redirect),

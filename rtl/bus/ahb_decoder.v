@@ -47,10 +47,12 @@ module ahb_decoder (
         end
     end
 
-    assign HRDATA = sel_rom_d ? HRDATA_ROM :
-                    sel_ram_d ? HRDATA_RAM :
-                    sel_apb_d ? HRDATA_APB :
-                                32'h00000000;
+    // The data-phase selects are one-hot, or all 0 for the default slave, so
+    // an AND-OR mux gives the priority chain's result in fewer logic levels
+    // (load data is on the WB forwarding path).
+    assign HRDATA = ({32{sel_rom_d}} & HRDATA_ROM) |
+                    ({32{sel_ram_d}} & HRDATA_RAM) |
+                    ({32{sel_apb_d}} & HRDATA_APB);
 
     assign HREADY = sel_rom_d ? HREADYOUT_ROM :
                     sel_ram_d ? HREADYOUT_RAM :

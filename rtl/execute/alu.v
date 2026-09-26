@@ -1,18 +1,22 @@
 // Arithmetic Logic Unit (Phase 2).
-// Combinational except for the divider, which is started and acknowledged by
-// the hazard logic (div_start / div_ack, Phase 7).
+// Combinational except for the multiplier (two cycles) and the divider, which
+// the hazard logic starts and acknowledges (mul_start / mul_ack and
+// div_start / div_ack, Phase 7).
 module alu (
     input             clk,
     input             rst_n,
     input      [31:0] a,
     input      [31:0] b,
     input      [4:0]  ALUControl,
+    input             mul_start,   // first EX cycle of a MUL: operands are registered
+    input             mul_ack,     // the MUL leaves EX; passed to the multiplier's ack
     input             div_start,   // one-cycle start pulse for the divider
     input             div_ack,     // the DIV leaves EX; passed to the divider's ack
     output reg [31:0] result,
     output            zero,        // result == 0, after the final result mux
     output            cout,
     output            overflow,
+    output            mul_done,
     output            div_busy,
     output            div_done
 );
@@ -59,10 +63,15 @@ module alu (
     wire [31:0] mul_result;
 
     multiplier u_mul (
+        .clk    (clk),
+        .rst_n  (rst_n),
+        .start  (mul_start),
+        .ack    (mul_ack),
         .a      (a),
         .b      (b),
         .mul_op (ALUControl[1:0]),
-        .result (mul_result)
+        .result (mul_result),
+        .done   (mul_done)
     );
 
     wire [31:0] div_quotient;
