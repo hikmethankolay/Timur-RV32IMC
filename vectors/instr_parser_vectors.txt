@@ -1,0 +1,30 @@
+// instr_parser test vectors
+// format: instruction opcode rd funct3 rs1 rs2 funct7 (all hex)
+// ADDI x1, x0, 5
+00500093 13 01 0 00 05 00
+// ADD x3, x1, x2
+002081B3 33 03 0 01 02 00
+// SW x1, 0(x2)
+00112023 23 00 2 02 01 00
+// BEQ x1, x2, +8
+00208463 63 08 0 01 02 00
+// JAL x1, 0
+000000EF 6F 01 0 00 00 00
+// LUI x0, 0x12345 (raw fields)
+12345037 37 00 5 08 03 09
+// AUIPC x2, 0
+00000117 17 02 0 00 00 00
+// SLLI x5, x3, 2
+00219293 13 05 1 03 02 00
+// SUB x4, x2, x3
+40310233 33 04 0 02 03 20
+// MUL x31, x30, x29
+03DF0FB3 33 1F 0 1E 1D 01
+// CSRRWI x7, mtvec, 21
+305AD3F3 73 07 5 15 05 18
+// MRET
+30200073 73 00 0 00 02 18
+// all ones
+FFFFFFFF 7F 1F 7 1F 1F 7F
+// all zero
+00000000 00 00 0 00 00 00

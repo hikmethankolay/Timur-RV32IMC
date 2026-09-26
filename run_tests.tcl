@@ -1,131 +1,96 @@
 # ============================================================
-# Timur RV32IMC - Regression Testbench Runner
-# Auto-discovers all *_tb.v files in tb/ folder
-# No temp files / do files are created.
+# Timur RV32IMC - regression runner (ModelSim command-line mode)
+# Started by run_tests.bat:  vsim -c -do run_tests.tcl
+#
+#  1. Collects rtl/*.v and rtl/*/*.v (dropping every *_bb.v) and tb/*_tb.v;
+#     each testbench module name is its file name.
+#  2. Deletes, recreates and maps the work library.
+#  3. Compiles everything once and aborts on any compile error.
+#  4. Runs every testbench with a temporary do-file (run -all, quit -sim),
+#     its transcript redirected to logs/<testbench>.log.
+#  5. A test passes only if its log contains "ALL n TESTS PASSED" with
+#     n > 0 and no FAIL line. A missing summary (crash, missing vector
+#     file, watchdog) counts as a failure.
+#  6. Prints a pass/fail summary and deletes the temporary do-files.
+# Vector files (vectors/...) and memory images (rom.hex) are read relative
+# to the project root.
 # ============================================================
 
-# ── collect source files ──
-# glob rtl/**/*.v is one level deep in Tcl; add a second pass for deeper dirs
-set rtl_v_files  [concat [glob -nocomplain rtl/**/*.v] \
-                          [glob -nocomplain rtl/**/**/*.v]]
-set rtl_sv_files [concat [glob -nocomplain rtl/**/*.sv] \
-                          [glob -nocomplain rtl/**/**/*.sv]]
-set rtl_files    [lsort -unique [concat $rtl_v_files $rtl_sv_files]]
-# Drop black-box stubs and the full PLL megafunction (cpu_pll.v instantiates
-# altpll which requires altera_mf — not available in plain ModelSim).
-# cpu_pll_bb.v is the simulation-safe stub; add it back explicitly.
-set rtl_files [lsearch -all -inline -not $rtl_files *_bb.v]
-set rtl_files [lsearch -all -inline -not $rtl_files */cpu_pll.v]
-lappend rtl_files rtl/primitives/cpu_pll_bb.v
+set rtl_files [lsort [concat [glob -nocomplain rtl/*.v] [glob -nocomplain rtl/*/*.v]]]
+set rtl_files [lsearch -all -inline -not -glob $rtl_files *_bb.v]
+set tb_files  [lsort [glob -nocomplain tb/*_tb.v]]
 
-# SystemVerilog packages must compile before any module that imports them.
-# Hoist rtl/include/pipeline_pkg.sv to the head of the file list.
-set pkg_file rtl/include/pipeline_pkg.sv
-set rtl_files [lsearch -all -inline -not $rtl_files $pkg_file]
-set rtl_files [linsert $rtl_files 0 $pkg_file]
-
-set tb_files  [glob -nocomplain tb/*.v]
-set all_files [concat $rtl_files $tb_files]
-
-# ── auto-discover testbench module names ──
-set testbenches {}
-foreach f $tb_files {
-    lappend testbenches [file rootname [file tail $f]]
+if {[llength $tb_files] == 0} {
+    puts "ERROR: no testbenches found in tb/"
+    quit -f
 }
 
-if {[llength $testbenches] == 0} {
-    puts "ERROR: no *_tb.v files found in tb/ folder"
-    return
-}
-
-# ── create work library ──
-puts "Creating work library..."
+# Compiling without a fresh, mapped library fails with
+# "Execution of vlib.exe failed".
 if {[file exists work]} {
     vdel -lib work -all
 }
 vlib work
 vmap work work
 
-# ── compile all files once ──
-# -sv enables SystemVerilog (packages, packed structs, import).
-# +incdir lets `import pipeline_pkg::*;` resolve from rtl/include/.
-puts "Compiling all sources..."
-if {[catch {eval vlog -quiet -sv +incdir+rtl/include $all_files} err]} {
+puts "Compiling [llength $rtl_files] RTL files and [llength $tb_files] testbenches..."
+if {[catch {eval vlog -quiet -timescale 1ns/1ps $rtl_files $tb_files} err]} {
     puts "COMPILE ERROR: $err"
-    return
+    quit -f
 }
 puts "Compile OK."
 
-# ── safety nets: any $stop / runtime error resumes instead of
-#    parking at the VSIM> prompt and hanging the batch run. ──
-onbreak {resume}
-onerror {resume}
-
-# ── results ──
+file mkdir logs
 set passed      0
-set failed      0
 set failed_list {}
 
-puts ""
-puts "============================================"
-puts " Timur RV32IMC - Running All Tests"
-puts " Found [llength $testbenches] testbench(es)"
-puts "============================================"
+foreach f $tb_files {
+    set tb       [file rootname [file tail $f]]
+    set do_file  "${tb}_run.do"
+    set log_file "logs/${tb}.log"
 
-foreach tb $testbenches {
-    puts ""
-    puts "--------------------------------------------"
-    puts " Running: $tb"
-    puts "--------------------------------------------"
+    set fh [open $do_file w]
+    puts $fh "onbreak {resume}"
+    puts $fh "onerror {resume}"
+    puts $fh "run -all"
+    puts $fh "quit -sim"
+    close $fh
 
-    # Load the testbench. -onfinish stop makes $finish halt the
-    # simulation (without killing vsim) so run -all can return.
-    if {[catch {vsim -quiet -onfinish stop work.$tb} err]} {
+    file delete -force $log_file
+    transcript file $log_file
+    if {[catch {vsim -quiet work.$tb -do $do_file} err]} {
         puts "LOAD ERROR ($tb): $err"
-        incr failed
-        lappend failed_list $tb
-        continue
+    }
+    transcript file ""
+
+    set log ""
+    if {[file exists $log_file]} {
+        set fh [open $log_file r]
+        set log [read $fh]
+        close $fh
     }
 
-    # Re-assert handlers inside this simulation context.
-    onbreak {resume}
-    onerror {resume}
-
-    if {[catch {run -all} err]} {
-        puts "RUN ERROR ($tb): $err"
-    }
-
-    # Read the testbench's internal counters directly - no log files.
-    set f_val "?"
-    set t_val "?"
-    catch {set f_val [examine -radix decimal /${tb}/failed]}
-    catch {set t_val [examine -radix decimal /${tb}/total]}
-
-    catch {quit -sim}
-
-    if {[string is integer -strict $f_val] && $f_val == 0
-        && [string is integer -strict $t_val] && $t_val > 0} {
-        puts "RESULT: PASSED - $tb ($t_val test(s))"
+    set count 0
+    set ok [regexp {ALL ([0-9]+) TESTS PASSED} $log -> count]
+    if {$ok && $count > 0 && [string first "FAIL" $log] < 0} {
+        puts "PASS  $tb ($count tests)"
         incr passed
     } else {
-        puts "RESULT: FAILED - $tb (failed=$f_val total=$t_val)"
-        incr failed
+        puts "FAIL  $tb (see $log_file)"
         lappend failed_list $tb
     }
+
+    file delete -force $do_file
 }
 
-# ── summary ──
 puts ""
 puts "============================================"
-puts " REGRESSION COMPLETE"
+puts " REGRESSION SUMMARY"
 puts "============================================"
 puts " PASSED : $passed"
-puts " FAILED : $failed"
-if {[llength $failed_list] > 0} {
-    puts " Failed testbenches:"
-    foreach f $failed_list {
-        puts "   - $f"
-    }
+puts " FAILED : [llength $failed_list]"
+foreach tb $failed_list {
+    puts "   - $tb"
 }
 puts "============================================"
-puts ""
+quit -f

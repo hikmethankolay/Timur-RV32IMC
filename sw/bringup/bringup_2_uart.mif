@@ -1,0 +1,18 @@
+-- Timur RV32IMC instruction ROM: bring-up, UART: 'U' in a loop
+-- 16384 x 32-bit words; unused words are 00000000 (illegal instruction)
+
+DEPTH = 16384;
+WIDTH = 32;
+ADDRESS_RADIX = HEX;
+DATA_RADIX = HEX;
+
+CONTENT BEGIN
+    0000 : 40000AB7;
+    0001 : 05500093;
+    0002 : 004AA103;
+    0003 : 00117113;
+    0004 : FE011CE3;
+    0005 : 001AA023;
+    0006 : FF1FF06F;
+    [0007..3FFF] : 00000000;
+END;

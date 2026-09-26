@@ -1,0 +1,29 @@
+// pc test vectors
+// format: rst_n(bin) en(bin) pc_next(hex) expected_pc(hex) wait_type
+// wait_type 0: check 3 ns after applying inputs, no clock edge (asynchronous behaviour)
+// wait_type 1: wait for the next rising edge plus 1 ns, then check
+//
+// asynchronous reset to 0, no clock needed
+0 1 00000004 00000000 0
+0 1 00000004 00000000 1
+// released with en = 0: holds 0
+1 0 00000008 00000000 1
+// en = 1: sequential PC + 4
+1 1 00000004 00000004 1
+1 1 00000008 00000008 1
+1 1 0000000C 0000000C 1
+// en = 0 for three cycles: PC holds
+1 0 DEADBEEF 0000000C 1
+1 0 12345678 0000000C 1
+1 0 FFFFFFFC 0000000C 1
+// resume, then a redirect
+1 1 00000010 00000010 1
+1 1 80000000 80000000 1
+1 1 00000000 00000000 1
+// pc_next changes between edges: PC unchanged until the edge
+1 1 00001000 00000000 0
+1 1 00001000 00001000 1
+// asynchronous reset mid-operation
+0 1 12345678 00000000 0
+// recover
+1 1 00002000 00002000 1

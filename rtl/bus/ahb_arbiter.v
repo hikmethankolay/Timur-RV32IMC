@@ -1,48 +1,36 @@
+// AHB arbiter (Phase 9): AMBA 2-style HBUSREQ/HGRANT arbitration in front
+// of AHB-Lite slaves (AHB-Lite itself is single-master).
+// Two masters: [0] CPU data port, [1] DMAC. Ownership only changes on a rising
+// edge with HREADY = 1:
+//   CPU requesting -> CPU; else DMAC requesting -> DMAC; else CPU (parked, so
+//   CPU accesses start with zero arbitration latency).
+// No HLOCK: the DMAC keeps its captured read data if it loses the bus between
+// its read and its write, so no transfer needs to be atomic.
 module ahb_arbiter (
-    input         HCLK,
-    input         HRESETn,
-
-    // Master request / lock inputs
-    input  [1:0]  HBUSREQ,    // [0]=CPU, [1]=DMAC
-    input  [1:0]  HLOCK,      // [0]=unused, [1]=DMAC burst hold
-
-    // Active slave's ready — must be 1 to switch masters
-    input         HREADY,
-
-    // Grants
-    output [1:0]  HGRANT,     // [0]=CPU granted, [1]=DMAC granted
-    output        HMASTER,    // 0=CPU drives bus, 1=DMAC drives bus
-    output        HMASTLOCK   // 1 when current master is in a locked sequence
+    input        HCLK,
+    input        HRESETn,
+    input  [1:0] HBUSREQ,        // [0] CPU, [1] DMAC
+    input        HREADY,
+    output reg   HMASTER,        // address-phase owner: 0 CPU, 1 DMAC
+    output reg   HMASTER_DATA,   // data-phase owner: HMASTER delayed when HREADY = 1
+    output [1:0] HGRANT          // one-hot decode of HMASTER
 );
 
-    localparam GRANT_CPU  = 1'b0;
-    localparam GRANT_DMAC = 1'b1;
-
-    reg state;
-
     always @(posedge HCLK or negedge HRESETn) begin
-        if (!HRESETn)
-            state <= GRANT_CPU;
-        else case (state)
-            GRANT_CPU:
-                // CPU has the bus. Switch to DMAC only if CPU is not requesting,
-                // DMAC is requesting, and we are at a transfer boundary.
-                // (Ties go to CPU because both bits asserted leaves !HBUSREQ[0]=0.)
-                if (!HBUSREQ[0] && HBUSREQ[1] && HREADY)
-                    state <= GRANT_DMAC;
-
-            GRANT_DMAC:
-                // DMAC has the bus. Reclaim for CPU at the next boundary if
-                // CPU requests OR DMAC has stopped requesting, but never while
-                // DMAC is holding its lock (atomic burst in progress).
-                if ((HBUSREQ[0] || !HBUSREQ[1]) && HREADY && !HLOCK[1])
-                    state <= GRANT_CPU;
-        endcase
+        if (!HRESETn) begin
+            HMASTER      <= 1'b0;
+            HMASTER_DATA <= 1'b0;
+        end else if (HREADY) begin
+            HMASTER_DATA <= HMASTER;
+            if (HBUSREQ[0])
+                HMASTER <= 1'b0;
+            else if (HBUSREQ[1])
+                HMASTER <= 1'b1;
+            else
+                HMASTER <= 1'b0;
+        end
     end
 
-    assign HGRANT[0]  = (state == GRANT_CPU);
-    assign HGRANT[1]  = (state == GRANT_DMAC);
-    assign HMASTER    = state;
-    assign HMASTLOCK  = (state == GRANT_CPU) ? HLOCK[0] : HLOCK[1];
+    assign HGRANT = {HMASTER, ~HMASTER};
 
 endmodule

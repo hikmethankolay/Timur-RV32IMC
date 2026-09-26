@@ -1,0 +1,25 @@
+// reset_sync test vectors
+// format: async_rst_n(bin) expected_sync_rst_n(bin) wait_type
+// wait_type 0: check 3 ns after applying inputs, no clock edge
+// wait_type 1: wait for the next rising edge plus 1 ns, then check
+//
+// assertion is immediate, without a clock edge
+0 0 0
+// stays asserted across edges while the input is low
+0 0 1
+0 0 1
+// release: still low after the first rising edge ...
+1 0 1
+// ... high on the second rising edge
+1 1 1
+1 1 1
+// assert again between edges: output low at once
+0 0 0
+0 0 1
+// short release: one edge high, then asserted again before the second edge
+1 0 1
+0 0 0
+0 0 1
+// full release again
+1 0 1
+1 1 1

@@ -1,0 +1,30 @@
+// mem_wb_reg test vectors (seed-driven)
+// format: rst_n(bin) enable(bin) flush(bin) in_seed(hex) expect(bin) exp_seed(hex) wait_type
+// The testbench derives every input field from in_seed with a fixed function (distinct values per
+// field). expect = 1: every output must equal the fields derived from exp_seed; expect = 0: the
+// register must hold a bubble (valid = 0, every control 0, data fields 0).
+// wait_type 0: check 3 ns after applying inputs, no clock edge; 1: next rising edge plus 1 ns
+// asynchronous reset: bubble, also across an edge
+0 1 0 FFFFFFFF 0 00000000 0
+0 1 0 FFFFFFFF 0 00000000 1
+// capture, hold with enable = 0, capture again
+1 1 0 FFFFFFFF 1 FFFFFFFF 1
+1 0 0 00000000 1 FFFFFFFF 1
+1 0 0 A5A5A5A5 1 FFFFFFFF 1
+1 1 0 A5A5A5A5 1 A5A5A5A5 1
+1 1 0 5A5A5A5A 1 5A5A5A5A 1
+1 1 0 00000000 1 00000000 1
+// flush: bubble; flush wins over enable = 0
+1 1 1 FFFFFFFF 0 00000000 1
+1 1 0 C3C3C3C3 1 C3C3C3C3 1
+1 0 1 3C3C3C3C 0 00000000 1
+// bubble holds while enable = 0
+1 0 0 3C3C3C3C 0 00000000 1
+1 1 0 3C3C3C3C 1 3C3C3C3C 1
+// inputs change between edges: outputs unchanged until the edge
+1 1 0 12345678 1 3C3C3C3C 0
+1 1 0 12345678 1 12345678 1
+1 1 0 87654321 1 87654321 1
+// asynchronous reset mid-cycle, then recovery
+0 1 0 FEDCBA98 0 00000000 0
+1 1 0 0F0F0F0F 1 0F0F0F0F 1

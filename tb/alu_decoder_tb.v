@@ -1,90 +1,73 @@
 `timescale 1ns/1ps
 //
-// alu_decoder_tb — vector-driven regression for the alu_decoder module.
-// Purely combinational: apply {opcode, ALUOp, funct3, funct7}, wait #10, check ALUControl.
-// Vector format (hex): opcode ALUOp funct3 funct7 exp_ALUControl
+// alu_decoder_tb: ALUOp / funct3 / funct7 / op5 to ALUControl (Phase 4),
+// including ADDI -5 and ADDI 40 (I-type funct7 must not select SUB or MUL).
+// Vector: ALUOp(bin) funct3(bin) funct7(bin) op5(bin) ALUControl(bin).
 //
 module alu_decoder_tb;
 
-    reg  [6:0] opcode;
     reg  [1:0] ALUOp;
     reg  [2:0] funct3;
     reg  [6:0] funct7;
+    reg        op5;
     wire [4:0] ALUControl;
 
     alu_decoder dut (
-        .opcode    (opcode),
-        .ALUOp     (ALUOp),
-        .funct3    (funct3),
-        .funct7    (funct7),
-        .ALUControl(ALUControl)
+        .ALUOp      (ALUOp),
+        .funct3     (funct3),
+        .funct7     (funct7),
+        .op5        (op5),
+        .ALUControl (ALUControl)
     );
 
-    integer          file, r, slen;
-    reg [8*256-1:0]  line;
-    integer          failed   = 0;
-    integer          total    = 0;
-    integer          test_num = 0;
+    integer         fd, n;
+    integer         total, failed;
+    reg [8*256-1:0] line;
+    reg [4:0]       exp_control;
 
-    task run_vectors(input [8*64-1:0] filename);
-        reg [6:0] op_tmp;
-        reg [1:0] aluop_tmp;
-        reg [2:0] f3_tmp;
-        reg [6:0] f7_tmp;
-        reg [4:0] exp_ctrl;
-        begin
-            file = $fopen(filename, "r");
-            if (file == 0) begin
-                $display("ERROR: could not open %0s", filename);
-                failed = failed + 1;
-            end else begin
-                while (!$feof(file)) begin
-                    line = 0;
-                    slen = $fgets(line, file);
-                    if (slen > 0) begin
-                        r = $sscanf(line, "%h %h %h %h %h",
-                                    op_tmp, aluop_tmp, f3_tmp, f7_tmp, exp_ctrl);
-                        if (r == 5) begin
-                            opcode = op_tmp;
-                            ALUOp  = aluop_tmp;
-                            funct3 = f3_tmp;
-                            funct7 = f7_tmp;
-                            #10;
-                            test_num = test_num + 1;
-                            total    = total    + 1;
-                            if (ALUControl !== exp_ctrl) begin
-                                $display("FAIL test %0d: opcode=%07b ALUOp=%02b funct3=%03b funct7=%07b | got ALUControl=%05b | exp %05b",
-                                          test_num, opcode, ALUOp, funct3, funct7,
-                                          ALUControl, exp_ctrl);
-                                failed = failed + 1;
-                            end else begin
-                                $display("PASS test %0d: opcode=%07b ALUOp=%02b funct3=%03b funct7=%07b | ALUControl=%05b",
-                                          test_num, opcode, ALUOp, funct3, funct7,
-                                          ALUControl);
-                            end
-                        end
-                    end
-                end
-                $fclose(file);
-            end
-        end
-    endtask
+    initial begin : watchdog
+        #100000;
+        $display("FAIL watchdog: no summary after 100 us");
+        $stop;
+    end
 
     initial begin
-        opcode = 7'b0110011;
-        ALUOp  = 2'b00;
-        funct3 = 3'b000;
-        funct7 = 7'b0000000;
+        ALUOp = 2'b0;
+        funct3 = 3'b0;
+        funct7 = 7'b0;
+        op5 = 1'b0;
+        total = 0;
+        failed = 0;
 
-        run_vectors("tb/vectors/alu_decoder_vectors.txt");
+        fd = $fopen("vectors/alu_decoder_vectors.txt", "r");
+        if (fd == 0)
+            $display("FAIL cannot open vectors/alu_decoder_vectors.txt");
+        else begin
+            while (!$feof(fd)) begin
+                line = 0;
+                n = $fgets(line, fd);
+                if ($sscanf(line, "%b %b %b %b %b", ALUOp, funct3, funct7, op5, exp_control) == 5) begin
+                    #10;
+                    total = total + 1;
+                    if (ALUControl !== exp_control) begin
+                        failed = failed + 1;
+                        $display("FAIL ALUOp=%b funct3=%b funct7=%b op5=%b | got=%b expected=%b",
+                                 ALUOp, funct3, funct7, op5, ALUControl, exp_control);
+                    end else
+                        $display("PASS ALUOp=%b funct3=%b funct7=%b op5=%b | ALUControl=%b",
+                                 ALUOp, funct3, funct7, op5, ALUControl);
+                end
+            end
+            $fclose(fd);
+        end
 
-        $display("-----------------------------");
-        if (failed == 0)
+        if (total == 0)
+            $display("FAIL no test vectors were applied");
+        if (failed == 0 && total > 0)
             $display("ALL %0d TESTS PASSED", total);
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
-        $display("-----------------------------");
-        $finish;
+        $stop;
     end
 
 endmodule

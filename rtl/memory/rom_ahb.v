@@ -1,65 +1,58 @@
+// Instruction ROM (Phase 3): one 16384 x 32 array (64 KB) with two
+// synchronous read ports.
+//   Fetch port : dedicated to IF (Harvard fetch, never waits for the bus).
+//   AHB port   : read-only AHB-Lite slave for data loads (.rodata, the .data
+//                initial values copied by crt0) and DMAC reads.
+// Both ports register their address inside the M9K; the outputs are not
+// registered. Memory read registers have no reset (M9K cannot reset them).
 module rom_ahb (
     input         HCLK,
-    input         HRESETn,
+    input         HRESETn,      // AHB-Lite slave convention; nothing to reset here
 
-    // ── Port A : I-Bus ──────────────────────────────────────────────────────
-    input         HSEL_a,
-    input  [31:0] HADDR_a,
-    input  [1:0]  HTRANS_a,
-    input         HWRITE_a,
-    input  [2:0]  HSIZE_a,
-    input  [31:0] HWDATA_a,
-    output [31:0] HRDATA_a,
-    output        HREADY_a,
-    output        HRESP_a,
+    // Fetch port
+    input  [31:0] fetch_addr,   // byte address (word index = bits [15:2])
+    output [31:0] fetch_instr,  // word at the address presented on the previous edge
 
-    // ── Port B : D-Bus ──────────────────────────────────────────────────────
-    input         HSEL_b,
-    input  [31:0] HADDR_b,
-    input  [1:0]  HTRANS_b,
-    input         HWRITE_b,
-    input  [2:0]  HSIZE_b,
-    input  [31:0] HWDATA_b,
-    output [31:0] HRDATA_b,
-    output        HREADY_b,
-    output        HRESP_b
+    // AHB-Lite slave port
+    input         HSEL,
+    input  [31:0] HADDR,
+    input  [1:0]  HTRANS,
+    input         HWRITE,       // writes are ignored
+    input  [2:0]  HSIZE,
+    input  [31:0] HWDATA,
+    input         HREADY,
+    output [31:0] HRDATA,
+    output        HREADYOUT,
+    output        HRESP
 );
 
-    (* ramstyle = "M9K" *) reg [31:0] mem_a [0:16383];
-    (* ramstyle = "M9K" *) reg [31:0] mem_b [0:16383];
+    (* ramstyle = "M9K", ram_init_file = "rom.mif" *) reg [31:0] mem [0:16383];
 
+    // Simulation image: unused words read as 0x00000000 (an illegal
+    // instruction), the same fill as rom.mif; then rom.hex, one word per line.
+    // synthesis translate_off
+    integer i;
     initial begin
-        $readmemh("test_rom.hex", mem_a);
-        $readmemh("test_rom.hex", mem_b);
+        for (i = 0; i < 16384; i = i + 1)
+            mem[i] = 32'h00000000;
+        $readmemh("rom.hex", mem);
     end
+    // synthesis translate_on
 
-    wire active_a = HSEL_a & HTRANS_a[1];
-    wire active_b = HSEL_b & HTRANS_b[1];
+    reg [31:0] fetch_q;
+    reg [31:0] data_q;
 
-    // Port A read
-    reg [31:0] rdata_a;
-    always @(posedge HCLK or negedge HRESETn) begin
-        if (!HRESETn)
-            rdata_a <= 32'b0;
-        else if (active_a && !HWRITE_a)
-            rdata_a <= mem_a[HADDR_a[15:2]];
-    end
+    always @(posedge HCLK)
+        fetch_q <= mem[fetch_addr[15:2]];
 
-    // Port B read
-    reg [31:0] rdata_b;
-    always @(posedge HCLK or negedge HRESETn) begin
-        if (!HRESETn)
-            rdata_b <= 32'b0;
-        else if (active_b && !HWRITE_b)
-            rdata_b <= mem_b[HADDR_b[15:2]];
-    end
+    // Address phase accepted only with HSEL, HTRANS[1] and HREADY all set.
+    always @(posedge HCLK)
+        if (HSEL && HTRANS[1] && HREADY)
+            data_q <= mem[HADDR[15:2]];
 
-    assign HRDATA_a = rdata_a;
-    assign HREADY_a = 1'b1;
-    assign HRESP_a  = 1'b0;
-
-    assign HRDATA_b = rdata_b;
-    assign HREADY_b = 1'b1;
-    assign HRESP_b  = 1'b0;
+    assign fetch_instr = fetch_q;
+    assign HRDATA      = data_q;
+    assign HREADYOUT   = 1'b1;
+    assign HRESP       = 1'b0;
 
 endmodule

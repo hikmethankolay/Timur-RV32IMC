@@ -1,77 +1,72 @@
 `timescale 1ns/1ps
 //
-// adder_32bit_tb — vector-driven regression for the 32-bit add/sub unit.
+// adder_32bit_tb: add/subtract, carry-out and signed overflow (Phase 2).
+// Vector: a(hex) b(hex) sub(bin) result(hex) cout(bin) overflow(bin).
 //
 module adder_32bit_tb;
 
     reg  [31:0] a, b;
     reg         sub;
     wire [31:0] result;
-    wire        cout;
-    wire        overflow;
+    wire        cout, overflow;
 
     adder_32bit dut (
-        .a(a),
-        .b(b),
-        .sub(sub),
-        .result(result),
-        .cout(cout),
-        .overflow(overflow)
+        .a        (a),
+        .b        (b),
+        .sub      (sub),
+        .result   (result),
+        .cout     (cout),
+        .overflow (overflow)
     );
 
-    integer          file, r, slen;
-    reg [8*256-1:0]  line;
-    reg [31:0]       exp_res;
-    reg              exp_cout;
-    reg              exp_ovf;
-    integer          failed   = 0;
-    integer          total    = 0;
-    integer          test_num = 0;
+    integer         fd, n;
+    integer         total, failed;
+    reg [8*256-1:0] line;
+    reg [31:0]      exp_result;
+    reg             exp_cout, exp_ovf;
+
+    initial begin : watchdog
+        #100000;
+        $display("FAIL watchdog: no summary after 100 us");
+        $stop;
+    end
 
     initial begin
-        a   = 32'h0;
-        b   = 32'h0;
+        a = 32'b0;
+        b = 32'b0;
         sub = 1'b0;
+        total = 0;
+        failed = 0;
 
-        file = $fopen("tb/vectors/adder_32bit_vectors.txt", "r");
-        if (file == 0) begin
-            $display("ERROR: could not open adder_32bit_vectors.txt");
-            failed = failed + 1;
-        end else begin
-            while (!$feof(file)) begin
+        fd = $fopen("vectors/adder_32bit_vectors.txt", "r");
+        if (fd == 0)
+            $display("FAIL cannot open vectors/adder_32bit_vectors.txt");
+        else begin
+            while (!$feof(fd)) begin
                 line = 0;
-                slen = $fgets(line, file);
-                if (slen > 0) begin
-                    r = $sscanf(line, "%h %h %b %h %b %b",
-                                a, b, sub, exp_res, exp_cout, exp_ovf);
-                    if (r == 6) begin
-                        #10;
-                        test_num = test_num + 1;
-                        total    = total    + 1;
-                        if (result !== exp_res || cout !== exp_cout
-                            || overflow !== exp_ovf) begin
-                            $display("FAIL test %0d: a=%h b=%h sub=%b | got res=%h cout=%b ovf=%b | exp res=%h cout=%b ovf=%b",
-                                      test_num, a, b, sub,
-                                      result, cout, overflow,
-                                      exp_res, exp_cout, exp_ovf);
-                            failed = failed + 1;
-                        end else begin
-                            $display("PASS test %0d: a=%h b=%h sub=%b | res=%h cout=%b ovf=%b",
-                                      test_num, a, b, sub, result, cout, overflow);
-                        end
-                    end
+                n = $fgets(line, fd);
+                if ($sscanf(line, "%h %h %b %h %b %b", a, b, sub, exp_result, exp_cout, exp_ovf) == 6) begin
+                    #10;
+                    total = total + 1;
+                    if (result !== exp_result || cout !== exp_cout || overflow !== exp_ovf) begin
+                        failed = failed + 1;
+                        $display("FAIL a=%h b=%h sub=%b | got %h c=%b v=%b | expected %h c=%b v=%b",
+                                 a, b, sub, result, cout, overflow, exp_result, exp_cout, exp_ovf);
+                    end else
+                        $display("PASS a=%h b=%h sub=%b | %h c=%b v=%b",
+                                 a, b, sub, result, cout, overflow);
                 end
             end
-            $fclose(file);
+            $fclose(fd);
         end
 
-        $display("-----------------------------");
-        if (failed == 0)
+        if (total == 0)
+            $display("FAIL no test vectors were applied");
+        if (failed == 0 && total > 0)
             $display("ALL %0d TESTS PASSED", total);
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
-        $display("-----------------------------");
-        $finish;
+        $stop;
     end
 
 endmodule

@@ -1,0 +1,18 @@
+-- Timur RV32IMC instruction ROM: bring-up, GPIO: LEDs mirror the switches
+-- 16384 x 32-bit words; unused words are 00000000 (illegal instruction)
+
+DEPTH = 16384;
+WIDTH = 32;
+ADDRESS_RADIX = HEX;
+DATA_RADIX = HEX;
+
+CONTENT BEGIN
+    0000 : 40000AB7;
+    0001 : 2A500113;
+    0002 : 104AA083;
+    0003 : 00009463;
+    0004 : 00010093;
+    0005 : 101AA023;
+    0006 : FF1FF06F;
+    [0007..3FFF] : 00000000;
+END;

@@ -1,0 +1,34 @@
+// ahb_arbiter test vectors
+// format: HRESETn(bin) HBUSREQ[1:0](bin: [1] DMAC, [0] CPU) HREADY(bin) exp_HMASTER exp_HMASTER_DATA exp_HGRANT[1:0] wait_type
+// wait_type 0: check 3 ns after applying inputs, no clock edge; 1: next rising edge plus 1 ns, then check
+// asynchronous reset: CPU owns both phases
+0 00 1 0 0 01 0
+// no requests: parked on the CPU
+1 00 1 0 0 01 1
+// DMAC requests alone: address phase moves to the DMAC, data phase still the CPU's
+1 10 1 1 0 10 1
+// DMAC keeps the bus; the data-phase owner follows one transfer later
+1 10 1 1 1 10 1
+// both request: the CPU wins
+1 11 1 0 1 01 1
+// HREADY = 0: ownership frozen in both phases even though only the DMAC requests
+1 10 0 0 1 01 1
+1 10 0 0 1 01 1
+// HREADY back: the switch happens at the transfer boundary
+1 10 1 1 0 10 1
+// requests withdrawn: parks on the CPU
+1 00 1 0 1 01 1
+1 00 1 0 0 01 1
+// CPU requests while parked: zero arbitration latency
+1 01 1 0 0 01 1
+1 01 1 0 0 01 1
+// back to the DMAC, then a simultaneous request goes to the CPU
+1 10 1 1 0 10 1
+1 11 1 0 1 01 1
+// HREADY = 0 with both requesting: hold
+1 11 0 0 1 01 1
+1 11 1 0 0 01 1
+// reset from a DMAC-owned state
+1 10 1 1 0 10 1
+0 10 1 0 0 01 0
+0 10 1 0 0 01 1

@@ -1,4 +1,8 @@
 `timescale 1ns/1ps
+//
+// d_ff_tb: d_ff at WIDTH = 8 (Phase 1).
+// Vector: rst_n(bin) en(bin) d(hex) expected_q(hex) wait_type.
+//
 module d_ff_tb;
 
     reg        clk, rst_n, en;
@@ -6,70 +10,70 @@ module d_ff_tb;
     wire [7:0] q;
 
     d_ff #(.WIDTH(8)) dut (
-        .d(d), .clk(clk), .en(en), .rst_n(rst_n), .q(q)
+        .d     (d),
+        .clk   (clk),
+        .en    (en),
+        .rst_n (rst_n),
+        .q     (q)
     );
 
     always #5 clk = ~clk;
 
-    integer file, r, slen;
-    reg [7:0] exp;
-    reg       wait_type;   // 0 = async check (no clock), 1 = clock then check
+    integer         fd, n;
+    integer         total, failed;
     reg [8*256-1:0] line;
-    integer failed   = 0;
-    integer total    = 0;
-    integer test_num = 0;
+    reg [7:0]       exp;
+    reg             wait_type;
+
+    initial begin : watchdog
+        repeat (1000) @(posedge clk);
+        $display("FAIL watchdog: no summary after 1000 cycles");
+        $stop;
+    end
 
     initial begin
-        clk   = 0;
-        rst_n = 1;
-        en    = 0;
-        d     = 8'h00;
+        clk = 1'b0;
+        rst_n = 1'b1;
+        en = 1'b0;
+        d = 8'h00;
+        total = 0;
+        failed = 0;
+        #1;
 
-        file = $fopen("tb/vectors/d_ff_vectors.txt", "r");
-        if (file == 0) begin
-            $display("ERROR: could not open d_ff_vectors.txt");
-            $finish;
-        end
-
-        while (!$feof(file)) begin
-            line = 0;
-            slen = $fgets(line, file);
-            if (slen > 0) begin
-                r = $sscanf(line, "%b %b %h %h %b", rst_n, en, d, exp, wait_type);
-                if (r == 5) begin
-                    test_num = test_num + 1;
-                    total    = total    + 1;
-
-                    if (wait_type == 1'b0) begin
-                        // async check - no clock edge, just wait 3ns
+        fd = $fopen("vectors/d_ff_vectors.txt", "r");
+        if (fd == 0)
+            $display("FAIL cannot open vectors/d_ff_vectors.txt");
+        else begin
+            while (!$feof(fd)) begin
+                line = 0;
+                n = $fgets(line, fd);
+                if ($sscanf(line, "%b %b %h %h %b", rst_n, en, d, exp, wait_type) == 5) begin
+                    if (wait_type == 1'b0)
                         #3;
-                    end else begin
-                        // sequential check - wait for rising edge, then 1ns settle
-                        @(posedge clk); #1;
+                    else begin
+                        @(posedge clk);
+                        #1;
                     end
-
+                    total = total + 1;
                     if (q !== exp) begin
-                        $display("FAIL test %0d: rst_n=%b en=%b d=%h | got=%h expected=%h",
-                                  test_num, rst_n, en, d, q, exp);
                         failed = failed + 1;
-                    end else begin
-                        $display("PASS test %0d: rst_n=%b en=%b d=%h | q=%h",
-                                  test_num, rst_n, en, d, q);
-                    end
+                        $display("FAIL rst_n=%b en=%b d=%h wait=%b | got=%h expected=%h",
+                                 rst_n, en, d, wait_type, q, exp);
+                    end else
+                        $display("PASS rst_n=%b en=%b d=%h wait=%b | q=%h",
+                                 rst_n, en, d, wait_type, q);
                 end
             end
+            $fclose(fd);
         end
 
-        $fclose(file);
-
-        $display("-----------------------------");
-        if (failed == 0)
+        if (total == 0)
+            $display("FAIL no test vectors were applied");
+        if (failed == 0 && total > 0)
             $display("ALL %0d TESTS PASSED", total);
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
-        $display("-----------------------------");
-
-        $finish;
+        $stop;
     end
 
 endmodule

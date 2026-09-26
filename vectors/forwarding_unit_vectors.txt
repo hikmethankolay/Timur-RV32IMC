@@ -1,0 +1,43 @@
+// forwarding_unit test vectors
+// format: id_ex_rs1 id_ex_rs2 ex_mem_rd (hex) ex_mem_regwrite(bin) mem_wb_rd(hex) mem_wb_regwrite(bin) forwardA forwardB (bin)
+// 00 = ID/EX value, 01 = WB value, 10 = EX/MEM result
+// idle: no producer writes
+05 06 00 0 00 0 00 00
+// producers present, no match
+05 06 0A 1 0B 1 00 00
+// EX/MEM -> rs1 (10)
+05 06 05 1 00 0 10 00
+// EX/MEM -> rs2
+05 06 06 1 00 0 00 10
+// EX/MEM -> both
+05 05 05 1 00 0 10 10
+// MEM/WB -> rs1 (01)
+05 06 0A 1 05 1 01 00
+// MEM/WB -> rs2
+05 06 0A 1 06 1 00 01
+// MEM/WB -> both
+05 05 0A 1 05 1 01 01
+// both match rs1: EX/MEM has priority
+05 06 05 1 05 1 10 00
+// both match rs1 and rs2: EX/MEM has priority
+07 07 07 1 07 1 10 10
+// rd = x0 on EX/MEM is never forwarded
+00 00 00 1 00 0 00 00
+// rd = x0 on MEM/WB is never forwarded
+00 00 00 0 00 1 00 00
+// x0 sources with x0 producers on both
+00 00 00 1 00 1 00 00
+// EX/MEM regwrite = 0
+05 06 05 0 00 0 00 00
+// MEM/WB regwrite = 0
+05 06 0A 1 05 0 00 00
+// rs1 from EX/MEM, rs2 from MEM/WB
+05 06 05 1 06 1 10 01
+// rs1 from MEM/WB, rs2 from EX/MEM
+05 06 06 1 05 1 01 10
+// EX/MEM rd = x0 skipped, MEM/WB forwards
+05 06 00 1 05 1 01 00
+// EX/MEM regwrite = 0 on a match, MEM/WB forwards
+09 09 09 0 09 1 01 01
+// x31
+1F 1E 1F 1 1E 1 10 01

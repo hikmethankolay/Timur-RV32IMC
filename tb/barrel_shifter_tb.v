@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 //
-// barrel_shifter_tb — vector-driven regression for the 32-bit barrel shifter.
-// shift_type: 00=SLL, 01=SRL, 10=SRA, 11=per-stage bypass (RTL mux in3 = in).
+// barrel_shifter_tb: SLL, SRL, SRA and pass-through (Phase 2).
+// Vector: in(hex) shamt(dec) shift_type(bin) out(hex).
 //
 module barrel_shifter_tb;
 
@@ -11,60 +11,59 @@ module barrel_shifter_tb;
     wire [31:0] dout;
 
     barrel_shifter dut (
-        .in(din),
-        .shamt(shamt),
-        .shift_type(shift_type),
-        .out(dout)
+        .in         (din),
+        .shamt      (shamt),
+        .shift_type (shift_type),
+        .out        (dout)
     );
 
-    integer          file, r, slen;
-    reg [8*256-1:0]  line;
-    reg [31:0]       exp_out;
-    integer          failed   = 0;
-    integer          total    = 0;
-    integer          test_num = 0;
+    integer         fd, n;
+    integer         total, failed;
+    reg [8*256-1:0] line;
+    reg [31:0]      exp_out;
+
+    initial begin : watchdog
+        #100000;
+        $display("FAIL watchdog: no summary after 100 us");
+        $stop;
+    end
 
     initial begin
-        din        = 32'h0;
-        shamt      = 5'h0;
-        shift_type = 2'h0;
+        din = 32'b0;
+        shamt = 5'b0;
+        shift_type = 2'b0;
+        total = 0;
+        failed = 0;
 
-        file = $fopen("tb/vectors/barrel_shifter_vectors.txt", "r");
-        if (file == 0) begin
-            $display("ERROR: could not open barrel_shifter_vectors.txt");
-            failed = failed + 1;
-        end else begin
-            while (!$feof(file)) begin
+        fd = $fopen("vectors/barrel_shifter_vectors.txt", "r");
+        if (fd == 0)
+            $display("FAIL cannot open vectors/barrel_shifter_vectors.txt");
+        else begin
+            while (!$feof(fd)) begin
                 line = 0;
-                slen = $fgets(line, file);
-                if (slen > 0) begin
-                    r = $sscanf(line, "%h %d %b %h",
-                                din, shamt, shift_type, exp_out);
-                    if (r == 4) begin
-                        #10;
-                        test_num = test_num + 1;
-                        total    = total    + 1;
-                        if (dout !== exp_out) begin
-                            $display("FAIL test %0d: in=%h shamt=%0d ty=%b | got=%h exp=%h",
-                                      test_num, din, shamt, shift_type, dout, exp_out);
-                            failed = failed + 1;
-                        end else begin
-                            $display("PASS test %0d: in=%h shamt=%0d ty=%b | out=%h",
-                                      test_num, din, shamt, shift_type, dout);
-                        end
-                    end
+                n = $fgets(line, fd);
+                if ($sscanf(line, "%h %d %b %h", din, shamt, shift_type, exp_out) == 4) begin
+                    #10;
+                    total = total + 1;
+                    if (dout !== exp_out) begin
+                        failed = failed + 1;
+                        $display("FAIL in=%h shamt=%0d type=%b | got=%h expected=%h",
+                                 din, shamt, shift_type, dout, exp_out);
+                    end else
+                        $display("PASS in=%h shamt=%0d type=%b | out=%h",
+                                 din, shamt, shift_type, dout);
                 end
             end
-            $fclose(file);
+            $fclose(fd);
         end
 
-        $display("-----------------------------");
-        if (failed == 0)
+        if (total == 0)
+            $display("FAIL no test vectors were applied");
+        if (failed == 0 && total > 0)
             $display("ALL %0d TESTS PASSED", total);
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
-        $display("-----------------------------");
-        $finish;
+        $stop;
     end
 
 endmodule

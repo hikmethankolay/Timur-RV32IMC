@@ -1,149 +1,118 @@
 `timescale 1ns/1ps
 //
-// alu_tb — vector-driven regression for the ALU (logic, add/sub, shifts, M-extension mul*, div/rem).
-// Combinational ops: apply inputs, wait #10, check result/zero/cout/overflow.
-// Mul ops (ALUControl 16-19): pulse mul_start, wait for mul_done, check result/zero only.
-// Div/rem ops (ALUControl 20-23): pulse div_start, wait for div_done, check result/zero only
-// (cout/overflow reflect the internal adder and are not meaningful for mul/div results).
+// alu_tb: every ALUControl operation, zero flag and adder flags (Phase 2).
+// Combinational operations: apply, wait 10 ns, compare. Divider operations:
+// pulse div_start, wait for div_done, compare, then pulse div_ack (the DIV
+// leaving EX) and check that div_done clears.
+// Vector: a(hex) b(hex) ALUControl(dec) result(hex) zero(bin) cout(bin) overflow(bin).
 //
 module alu_tb;
 
-    reg         clk, rst_n, div_start, mul_start;
+    reg         clk, rst_n, div_start, div_ack;
     reg  [31:0] a, b;
     reg  [4:0]  ALUControl;
     wire [31:0] result;
-    wire        zero;
-    wire        adder_zero;
-    wire        cout;
-    wire        overflow;
-    wire        div_busy;
-    wire        div_done;
-    wire        mul_busy;
-    wire        mul_done;
+    wire        zero, cout, overflow;
+    wire        div_busy, div_done;
 
     alu dut (
-        .clk       (clk),
-        .rst_n     (rst_n),
-        .a         (a),
-        .b         (b),
-        .ALUControl(ALUControl),
-        .div_start (div_start),
-        .mul_start (mul_start),
-        .result    (result),
-        .zero      (zero),
-        .adder_zero(adder_zero),
-        .cout      (cout),
-        .overflow  (overflow),
-        .div_busy  (div_busy),
-        .div_done  (div_done),
-        .mul_busy  (mul_busy),
-        .mul_done  (mul_done)
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .a          (a),
+        .b          (b),
+        .ALUControl (ALUControl),
+        .div_start  (div_start),
+        .div_ack    (div_ack),
+        .result     (result),
+        .zero       (zero),
+        .cout       (cout),
+        .overflow   (overflow),
+        .div_busy   (div_busy),
+        .div_done   (div_done)
     );
 
     always #5 clk = ~clk;
 
-    integer          file, r, slen;
-    reg [8*256-1:0]  line;
-    reg [31:0]       exp_res;
-    reg              exp_zero;
-    reg              exp_cout;
-    reg              exp_ovf;
-    integer          failed   = 0;
-    integer          total    = 0;
-    integer          test_num = 0;
-    reg              is_div_op;
-    reg              is_mul_op;
+    integer         fd, n, guard;
+    integer         total, failed;
+    reg [8*256-1:0] line;
+    reg [31:0]      exp_result;
+    reg             exp_zero, exp_cout, exp_ovf;
+    reg             is_div, ok;
+
+    initial begin : watchdog
+        repeat (50000) @(posedge clk);
+        $display("FAIL watchdog: no summary after 50000 cycles");
+        $stop;
+    end
 
     initial begin
-        clk        = 0;
-        rst_n      = 0;
-        div_start  = 0;
-        mul_start  = 0;
-        a          = 32'h0;
-        b          = 32'h0;
-        ALUControl = 5'h0;
+        clk = 1'b0;
+        rst_n = 1'b0;
+        div_start = 1'b0;
+        div_ack = 1'b0;
+        a = 32'b0;
+        b = 32'b0;
+        ALUControl = 5'b0;
+        total = 0;
+        failed = 0;
+        @(posedge clk);
+        #1 rst_n = 1'b1;
 
-        @(posedge clk); #1;
-        rst_n = 1;
-        @(posedge clk); #1;
-
-        file = $fopen("tb/vectors/alu_vectors.txt", "r");
-        if (file == 0) begin
-            $display("ERROR: could not open alu_vectors.txt");
-            failed = failed + 1;
-        end else begin
-            while (!$feof(file)) begin
+        fd = $fopen("vectors/alu_vectors.txt", "r");
+        if (fd == 0)
+            $display("FAIL cannot open vectors/alu_vectors.txt");
+        else begin
+            while (!$feof(fd)) begin
                 line = 0;
-                slen = $fgets(line, file);
-                if (slen > 0) begin
-                    r = $sscanf(line, "%h %h %d %h %b %b %b",
-                                a, b, ALUControl, exp_res,
-                                exp_zero, exp_cout, exp_ovf);
-                    if (r == 7) begin
-                        is_div_op = (ALUControl >= 5'd20 && ALUControl <= 5'd23);
-                        is_mul_op = (ALUControl >= 5'd16 && ALUControl <= 5'd19);
-                        test_num = test_num + 1;
-                        total    = total    + 1;
-
-                        if (is_div_op) begin
-                            // Pulse div_start for one cycle, wait for done.
-                            @(posedge clk); #1;
-                            div_start = 1;
-                            @(posedge clk); #1;
-                            div_start = 0;
-                            if (!div_done) @(posedge div_done);
-                            #1;
-                        end else if (is_mul_op) begin
-                            // Pulse mul_start for one cycle, wait for done.
-                            @(posedge clk); #1;
-                            mul_start = 1;
-                            @(posedge clk); #1;
-                            mul_start = 0;
-                            if (!mul_done) @(posedge mul_done);
-                            #1;
-                        end else begin
-                            #10;
+                n = $fgets(line, fd);
+                if ($sscanf(line, "%h %h %d %h %b %b %b", a, b, ALUControl, exp_result,
+                            exp_zero, exp_cout, exp_ovf) == 7) begin
+                    is_div = (ALUControl[4:2] == 3'b101);
+                    if (is_div) begin
+                        div_start = 1'b1;
+                        @(posedge clk);
+                        #1 div_start = 1'b0;
+                        guard = 0;
+                        while (!div_done && guard < 100) begin
+                            @(posedge clk);
+                            #1 guard = guard + 1;
                         end
+                    end else
+                        #10;
 
-                        if (is_div_op || is_mul_op) begin
-                            if (result !== exp_res || zero !== exp_zero) begin
-                                $display("FAIL test %0d: a=%h b=%h ctrl=%0d | got res=%h z=%b | exp res=%h z=%b",
-                                          test_num, a, b, ALUControl,
-                                          result, zero, exp_res, exp_zero);
-                                failed = failed + 1;
-                            end else begin
-                                $display("PASS test %0d: a=%h b=%h ctrl=%0d | res=%h z=%b",
-                                          test_num, a, b, ALUControl,
-                                          result, zero);
-                            end
-                        end else begin
-                            if (result !== exp_res || zero !== exp_zero
-                                || cout !== exp_cout
-                                || overflow !== exp_ovf) begin
-                                $display("FAIL test %0d: a=%h b=%h ctrl=%0d | got res=%h z=%b c=%b v=%b | exp res=%h z=%b c=%b v=%b",
-                                          test_num, a, b, ALUControl,
-                                          result, zero, cout, overflow,
-                                          exp_res, exp_zero, exp_cout, exp_ovf);
-                                failed = failed + 1;
-                            end else begin
-                                $display("PASS test %0d: a=%h b=%h ctrl=%0d | res=%h z=%b c=%b v=%b",
-                                          test_num, a, b, ALUControl,
-                                          result, zero, cout, overflow);
-                            end
-                        end
+                    ok = (result === exp_result) && (zero === exp_zero) &&
+                         (cout === exp_cout) && (overflow === exp_ovf);
+
+                    if (is_div) begin
+                        div_ack = 1'b1;
+                        @(posedge clk);
+                        #1 div_ack = 1'b0;
+                        if (div_done !== 1'b0)
+                            ok = 1'b0;
                     end
+
+                    total = total + 1;
+                    if (!ok) begin
+                        failed = failed + 1;
+                        $display("FAIL a=%h b=%h ctrl=%0d | got %h z=%b c=%b v=%b | expected %h z=%b c=%b v=%b",
+                                 a, b, ALUControl, result, zero, cout, overflow,
+                                 exp_result, exp_zero, exp_cout, exp_ovf);
+                    end else
+                        $display("PASS a=%h b=%h ctrl=%0d | %h z=%b c=%b v=%b",
+                                 a, b, ALUControl, result, zero, cout, overflow);
                 end
             end
-            $fclose(file);
+            $fclose(fd);
         end
 
-        $display("-----------------------------");
-        if (failed == 0)
+        if (total == 0)
+            $display("FAIL no test vectors were applied");
+        if (failed == 0 && total > 0)
             $display("ALL %0d TESTS PASSED", total);
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
-        $display("-----------------------------");
-        $finish;
+        $stop;
     end
 
 endmodule

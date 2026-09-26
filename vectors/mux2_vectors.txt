@@ -1,0 +1,54 @@
+// mux2 test vectors
+// format: width(dec) in0(hex) in1(hex) sel(bin) expected_out(hex)
+// widths 1, 5, 8 and 32: both select values, and the output tracking an
+// input change while sel is constant
+//
+// --- WIDTH = 1 ---
+1 0 1 0 0
+1 0 1 1 1
+// in0 changes while sel = 0: output follows
+1 1 1 0 1
+1 0 1 0 0
+// in1 changes while sel = 1: output follows
+1 0 0 1 0
+1 0 1 1 1
+1 1 1 1 1
+1 0 0 0 0
+//
+// --- WIDTH = 5 ---
+5 0A 15 0 0A
+5 0A 15 1 15
+5 1F 00 0 1F
+5 00 1F 1 1F
+// in0 changes while sel = 0
+5 12 1E 0 12
+5 05 1E 0 05
+// in1 changes while sel = 1
+5 12 1E 1 1E
+5 12 07 1 07
+//
+// --- WIDTH = 8 ---
+8 AA 55 0 AA
+8 AA 55 1 55
+8 00 FF 0 00
+8 00 FF 1 FF
+// in0 changes while sel = 0
+8 3C C3 0 3C
+8 81 C3 0 81
+// in1 changes while sel = 1
+8 81 C3 1 C3
+8 81 7E 1 7E
+//
+// --- WIDTH = 32 ---
+32 DEADBEEF CAFEBABE 0 DEADBEEF
+32 DEADBEEF CAFEBABE 1 CAFEBABE
+32 00000000 FFFFFFFF 0 00000000
+32 00000000 FFFFFFFF 1 FFFFFFFF
+32 AAAA5555 5555AAAA 0 AAAA5555
+32 AAAA5555 5555AAAA 1 5555AAAA
+// in0 changes while sel = 0
+32 80000000 00000001 0 80000000
+32 12345678 00000001 0 12345678
+// in1 changes while sel = 1
+32 12345678 00000001 1 00000001
+32 12345678 9ABCDEF0 1 9ABCDEF0

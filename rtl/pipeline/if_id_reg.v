@@ -1,26 +1,35 @@
-// IF/ID pipeline register: gate=advance when not stalled; flush squashes speculated instr to NOP.
+// IF/ID pipeline register (Phase 6).
+// Priority: reset -> flush (bubble: valid = 0, instruction = NOP) -> hold
+// (enable = 0) -> capture.
 module if_id_reg (
-    input         clk_i,
-    input         rst_n_i,
-    input         gate_i,   // 1 = accept new PC/instr from IF
-    input         flush_i,  // 1 = force NOP and clear PC field
-    input  [31:0] pc_in,    // Delayed PC tag from fetch (pairs with instr_in)
-    input  [31:0] instr_in,
+    input             clk,
+    input             rst_n,
+    input             enable,
+    input             flush,
+    input      [31:0] pc_in,
+    input      [31:0] instr_in,
+    input             valid_in,
     output reg [31:0] pc_out,
-    output reg [31:0] instr_out
+    output reg [31:0] instr_out,
+    output reg        valid_out
 );
-    localparam NOP = 32'h00000013;
 
-    always @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i) begin
+    localparam [31:0] NOP = 32'h00000013;   // ADDI x0, x0, 0
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
             pc_out    <= 32'b0;
             instr_out <= NOP;
-        end else if (flush_i) begin
+            valid_out <= 1'b0;
+        end else if (flush) begin
             pc_out    <= 32'b0;
             instr_out <= NOP;
-        end else if (gate_i) begin
+            valid_out <= 1'b0;
+        end else if (enable) begin
             pc_out    <= pc_in;
             instr_out <= instr_in;
+            valid_out <= valid_in;
         end
     end
+
 endmodule

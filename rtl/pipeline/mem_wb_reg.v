@@ -1,55 +1,43 @@
-// MEM/WB register: WB controls + ALU result; load data path comes from mem_stage flops in parallel.
+// MEM/WB pipeline register (Phase 6).
+// Does not capture load data: with synchronous memory the data only appears
+// in the AHB data phase, while the load is in WB.
+// Priority: reset -> flush (bubble) -> hold (enable = 0) -> capture.
 module mem_wb_reg (
-    input         clk_i,
-    input         rst_n_i,
-    input         flush_i, // Unused tied 0 in current datapath
-    input         gate_i,  // Freeze with backend stall
-    input  [31:0] alu_res_m_in,    // ALU result for non-load WB
-    input  [4:0]  rd_adr_m_in,
-    input  [31:0] pc_plus4_m_in,   // Saved for JAL-style WB metadata if extended
-    input  [6:0]  opc7_m_in,
-    input         wb_from_ld_m_in,
-    input         rf_we_m_in,
-    input  [31:0] csr_rdata_m_in, // CSR read path (stubbed in datapath today)
-    input         csr_to_rf_m_in,
-    // Values valid during WB stage
-    output reg [31:0] alu_res_w_out,
-    output reg [4:0]  rd_adr_w_out,
-    output reg [31:0] pc_plus4_w_out,
-    output reg [6:0]  opc7_w_out,
-    output reg        wb_from_ld_w_out,
-    output reg        rf_we_w_out,
-    output reg [31:0] csr_rdata_w_out,
-    output reg        csr_to_rf_w_out
+    input         clk,
+    input         rst_n,
+    input         enable,
+    input         flush,
+
+    input  [31:0] result_in,   // write-back value for non-loads; address bits [1:0] for loads
+    input  [4:0]  rd_addr_in,
+    input  [2:0]  funct3_in,   // load type
+    input         MemToReg_in,
+    input         RegWrite_in,
+    input         valid_in,
+
+    output [31:0] result_out,
+    output [4:0]  rd_addr_out,
+    output [2:0]  funct3_out,
+    output        MemToReg_out,
+    output        RegWrite_out,
+    output        valid_out
 );
-    always @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i) begin
-            alu_res_w_out    <= 32'b0;
-            rd_adr_w_out     <= 5'b0;
-            pc_plus4_w_out   <= 32'b0;
-            opc7_w_out       <= 7'b0;
-            wb_from_ld_w_out <= 1'b0;
-            rf_we_w_out      <= 1'b0;
-            csr_rdata_w_out  <= 32'b0;
-            csr_to_rf_w_out  <= 1'b0;
-        end else if (flush_i) begin
-            alu_res_w_out    <= 32'b0;
-            rd_adr_w_out     <= 5'b0;
-            pc_plus4_w_out   <= 32'b0;
-            opc7_w_out       <= 7'b0;
-            wb_from_ld_w_out <= 1'b0;
-            rf_we_w_out      <= 1'b0;
-            csr_rdata_w_out  <= 32'b0;
-            csr_to_rf_w_out  <= 1'b0;
-        end else if (gate_i) begin
-            alu_res_w_out    <= alu_res_m_in;
-            rd_adr_w_out     <= rd_adr_m_in;
-            pc_plus4_w_out   <= pc_plus4_m_in;
-            opc7_w_out       <= opc7_m_in;
-            wb_from_ld_w_out <= wb_from_ld_m_in;
-            rf_we_w_out      <= rf_we_m_in;
-            csr_rdata_w_out  <= csr_rdata_m_in;
-            csr_to_rf_w_out  <= csr_to_rf_m_in;
-        end
+
+    localparam W = 32 + 5 + 3 + 2 + 1;
+
+    wire [W-1:0] d = {result_in, rd_addr_in, funct3_in, MemToReg_in, RegWrite_in, valid_in};
+
+    reg [W-1:0] q;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            q <= {W{1'b0}};
+        else if (flush)
+            q <= {W{1'b0}};
+        else if (enable)
+            q <= d;
     end
+
+    assign {result_out, rd_addr_out, funct3_out, MemToReg_out, RegWrite_out, valid_out} = q;
+
 endmodule

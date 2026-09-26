@@ -1,6 +1,6 @@
 # Timur-RV32IMC
 
-> A fully pipelined RISC-V RV32IMC soft-core microcontroller implemented in Verilog/SystemVerilog, targeting Intel FPGAs with Quartus Prime. Capable of executing GCC-compiled C code with a complete AHB+APB bus fabric, hardware multiply/divide, and Machine Mode privilege support.
+> A pipelined RISC-V RV32IMC microcontroller in Verilog-2001 for the Terasic DE10-Lite (Intel MAX 10), with a Harvard instruction-fetch port, an AHB-Lite/APB bus fabric with DMA, GPIO and UART. *Timur* means "iron" in Old Turkic.
 
 ---
 
@@ -13,22 +13,15 @@
   - [ISA Support](#isa-support)
   - [Current Status](#current-status)
   - [Module Structure](#module-structure)
-    - [Phase 1 — Primitives](#phase-1--primitives)
+    - [Phase 1 — Primitives and Verification Infrastructure](#phase-1--primitives-and-verification-infrastructure)
     - [Phase 2 — Execution Datapath](#phase-2--execution-datapath)
     - [Phase 3 — State and Memory](#phase-3--state-and-memory)
     - [Phase 4 — Instruction Decode and Control](#phase-4--instruction-decode-and-control)
-    - [Phase 5 — Core Integration](#phase-5--core-integration)
-    - [Phase 6 — Pipeline Registers](#phase-6--pipeline-registers)
-    - [Phase 7 — Hazard Resolution](#phase-7--hazard-resolution)
+    - [Phases 5–7 — Pipeline and Hazard Resolution](#phases-57--pipeline-and-hazard-resolution)
     - [Phase 8 — APB Peripherals](#phase-8--apb-peripherals)
-    - [Phase 9 — AHB Bus Fabric](#phase-9--ahb-bus-fabric)
-    - [Phase 10 — CSR Register File and Privileged Architecture](#phase-10--csr-register-file-and-privileged-architecture)
-    - [Phase 11 — C Extension Decompressor](#phase-11--c-extension-decompressor)
-    - [Phase 12 — C Software Layer](#phase-12--c-software-layer)
-  - [Bus Architecture \& Address Map](#bus-architecture--address-map)
-    - [AHB Address Map](#ahb-address-map)
-    - [APB Address Map (within bridge)](#apb-address-map-within-bridge)
-    - [AHB Masters](#ahb-masters)
+    - [Phase 9 — AHB Bus Fabric and System](#phase-9--ahb-bus-fabric-and-system)
+    - [Phases 10–12 — Planned](#phases-1012--planned)
+  - [Address Map](#address-map)
   - [Pipeline Design](#pipeline-design)
   - [Hazard Handling](#hazard-handling)
   - [Peripherals](#peripherals)
@@ -36,17 +29,13 @@
     - [UART](#uart)
     - [DMAC](#dmac)
   - [Tool Stack](#tool-stack)
-  - [Getting Started](#getting-started)
-    - [Prerequisites](#prerequisites)
-    - [Cloning](#cloning)
   - [Simulation](#simulation)
-    - [Simulation Prerequisites](#simulation-prerequisites)
     - [Running all tests](#running-all-tests)
-    - [Running a single testbench manually](#running-a-single-testbench-manually)
     - [Testbench conventions](#testbench-conventions)
+    - [System tests and test programs](#system-tests-and-test-programs)
   - [Building \& Programming](#building--programming)
   - [C Software Layer](#c-software-layer)
-  - [Project Roadmap](#project-roadmap)
+  - [Development Phases](#development-phases)
   - [Directory Structure](#directory-structure)
   - [License](#license)
 
@@ -54,19 +43,55 @@
 
 ## Overview
 
-**Timur-RV32IMC** is a from-scratch implementation of a pipelined RISC-V microcontroller built for Intel FPGAs. The design follows the classic 5-stage pipeline (IF → ID → EX → MEM → WB) and is implemented entirely in synthesizable Verilog/SystemVerilog with no IP vendor dependencies except the ALTPLL clock generator.
-
-The goal is a complete, C-executable microcontroller — not just a CPU core. This means a full AMBA bus fabric, real memory-mapped peripherals (GPIO, UART, DMAC), a Machine Mode privileged architecture with trap/exception handling, and a C software layer (linker script, `crt0.S`, syscall stubs) that allows programs compiled with a standard RISC-V GCC toolchain to run without modification.
+| Item | Value |
+| ---- | ----- |
+| ISA | RV32IMC + Zicsr, machine mode only (C and Zicsr from Phases 10–11) |
+| Pipeline | 5-stage in-order: IF, ID, EX, MEM, WB; full forwarding; control transfers resolved in EX |
+| Instruction path | Dedicated fetch port into the on-chip ROM (Harvard fetch, never waits for the bus) |
+| Data path | AHB-Lite slaves behind a two-master arbiter (CPU data port with priority, DMAC) using AMBA 2-style HBUSREQ/HGRANT arbitration; APB peripherals behind a bridge |
+| Memory | 64 KB instruction ROM + 64 KB data RAM in M9K blocks |
+| Peripherals | GPIO (LEDs, switches), UART (115200 8N1), DMA controller |
+| Board | Terasic DE10-Lite, Intel MAX 10 `10M50DAF484C7G` |
+| Clock | 50 MHz from ALTPLL (Fmax to be measured; see [Current Status](#current-status)) |
 
 ---
 
 ## Architecture
 
-[![Architecture](https://mermaid.ink/img/pako:eNqVVG1vmzAQ_iuWpX5LI16SNUXaJAdIglQvyGk_dGOqCDiAVkxkYGnX9r_vbJoITVPK-IDte3ueO9_5BSdVyrGDd4_VIclj2aAbFolIXFygz__-tM4N75C7Zv55w7rdZjLe58r8e4TlL9sqyuQhqSSP8I9IIPiCBQVVsEBkNUc0rhsuTzqPKp1HezqU7NuHlbbgIlVM2ZoSsIIFhRXwJ1oZCQiMLi-_vAaibmSbNEUl0II3Sf6KlMuAJAmbB7c-O28HRoCuCBK5LRT7SFBDF8ijam_CSlzYbQ4FoKNDzgVaMZ949-9MIU3FVOENYKWiIUo2HzJThg9dAcGjV0JfZIXgJ3Bl9T_4vrv2PsT23feqeFx1mKoK41mh8HmK0riJ0T6P6yMLgNYUwG8ABerTNbs_bwZ3PO-3xRzV0N481YCMqLrAvy_UrDUL5ds7ETqkWcI5mrPAW34wE53Ne3GaqvOTRZrxv0gcgw1CDn0WhCufkZvNwJEEL0UCfDfttn6GiylPc3dH2C0o1XKSLcNgDTK19OYTeof5y2OPHW-47s9nl4dOSQfsC3S0vuAYcegcuOuvi2CJQnK7GjAMEFg_CUkldkX22qFRPMIZXAB2dvFjzUe45LKM1Rm_qDQj3OS8hNtxYJvG8meEI_EGTvtYfKuqEjvwvICbrNosPwVp99Dj3CtiqHZ5kkqoCZdu1YoGO_b1VAfBzgt-ws7EHNuTmXFlGVPLMEylfMaOORvbpm3b04k5uzJM88p6G-HfGtYcT6_tiXVtmNbMsiafrBHmadFUknZPepclfvsDu22sQA?type=png)](https://mermaid.live/edit#pako:eNqVVG1vmzAQ_iuWpX5LI16SNUXaJAdIglQvyGk_dGOqCDiAVkxkYGnX9r_vbJoITVPK-IDte3ueO9_5BSdVyrGDd4_VIclj2aAbFolIXFygz__-tM4N75C7Zv55w7rdZjLe58r8e4TlL9sqyuQhqSSP8I9IIPiCBQVVsEBkNUc0rhsuTzqPKp1HezqU7NuHlbbgIlVM2ZoSsIIFhRXwJ1oZCQiMLi-_vAaibmSbNEUl0II3Sf6KlMuAJAmbB7c-O28HRoCuCBK5LRT7SFBDF8ijam_CSlzYbQ4FoKNDzgVaMZ949-9MIU3FVOENYKWiIUo2HzJThg9dAcGjV0JfZIXgJ3Bl9T_4vrv2PsT23feqeFx1mKoK41mh8HmK0riJ0T6P6yMLgNYUwG8ABerTNbs_bwZ3PO-3xRzV0N481YCMqLrAvy_UrDUL5ds7ETqkWcI5mrPAW34wE53Ne3GaqvOTRZrxv0gcgw1CDn0WhCufkZvNwJEEL0UCfDfttn6GiylPc3dH2C0o1XKSLcNgDTK19OYTeof5y2OPHW-47s9nl4dOSQfsC3S0vuAYcegcuOuvi2CJQnK7GjAMEFg_CUkldkX22qFRPMIZXAB2dvFjzUe45LKM1Rm_qDQj3OS8hNtxYJvG8meEI_EGTvtYfKuqEjvwvICbrNosPwVp99Dj3CtiqHZ5kkqoCZdu1YoGO_b1VAfBzgt-ws7EHNuTmXFlGVPLMEylfMaOORvbpm3b04k5uzJM88p6G-HfGtYcT6_tiXVtmNbMsiafrBHmadFUknZPepclfvsDu22sQA)
+```mermaid
+flowchart LR
+    subgraph SOC["timur_soc"]
+        CORE["5-stage pipeline<br/>IF ID EX MEM WB"]
+        CPUM["cpu_ahb_master<br/>(master 0, priority)"]
+        DMAM["dmac_ahb_master<br/>(master 1)"]
+        ARB["ahb_arbiter<br/>HMASTER / HMASTER_DATA<br/>parks on the CPU"]
+        MUX["ahb_bus_mux<br/>HWDATA follows the data phase"]
+        DEC["ahb_decoder<br/>registered data-phase select"]
+        ROM["rom_ahb<br/>fetch port + AHB port"]
+        RAM["ram_ahb"]
+        BR["ahb_apb_bridge"]
+        UART["uart_apb"]
+        GPIO["gpio_apb"]
+        DREG["dmac_apb_regs"]
+    end
+    CORE -->|"fetch (direct)"| ROM
+    CORE --> CPUM
+    CPUM --> ARB
+    DMAM --> ARB
+    ARB --> MUX
+    CPUM --> MUX
+    DMAM --> MUX
+    MUX --> DEC
+    DEC --> ROM
+    DEC --> RAM
+    DEC --> BR
+    BR --> UART
+    BR --> GPIO
+    BR --> DREG
+    DREG -->|"src / dst / len / start"| DMAM
+```
 
-**Pipeline stages:** IF → ID → EX → MEM → WB\
-**Bus standard:** ARM AMBA — AHB for high-speed paths, APB for peripherals\
-**Target FPGA:** Terasic DE10-Lite (Intel MAX 10 `10M50DAF484C7G`, 50K LEs) — synthesized with Quartus Prime
+The board wrapper `Timur_RV32IMC` contains only `cpu_pll`, the reset gating (button AND PLL locked), `reset_sync` and `timur_soc`. Testbenches instantiate `timur_soc` and drive its clock and reset directly.
 
 ---
 
@@ -74,210 +99,160 @@ The goal is a complete, C-executable microcontroller — not just a CPU core. Th
 
 | Extension | Description | Status |
 | --------- | ----------- | ------ |
-| **RV32I** | Base 32-bit integer instructions | ✅ Phase 2 Complete |
-| **RV32M** | Hardware multiply & divide (MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU) | ✅ Phase 2 Complete |
+| **RV32I** | Base integer instructions | ✅ Implemented (Phases 2–7) |
+| **RV32M** | MUL, MULH, MULHSU, MULHU (single cycle), DIV, DIVU, REM, REMU (35 cycles) | ✅ Implemented (Phase 2) |
+| **Zicsr** | CSRRW, CSRRS, CSRRC and immediate forms | Decoded (Phase 4); CSR file in Phase 10 — until then CSR reads return 0 |
+| **M-mode** | Traps, precise exceptions, ECALL/EBREAK/MRET, `mtvec`, `mepc`, `mcause` | 🔜 Phase 10 (ECALL, EBREAK, MRET are decoded and retire as NOPs) |
 | **RV32C** | 16-bit compressed instructions | 🔜 Phase 11 |
-| **Zicsr** | CSR read/write instructions (CSRRW, CSRRS, CSRRC + immediate variants) | 🔜 Phase 10 |
-| **M-mode** | Machine Mode privilege: traps, exceptions, MRET, mtvec, mepc, mcause | 🔜 Phase 10 |
+
+Unrecognised encodings (including `0x00000000`) raise `Illegal` in decode and retire with every side effect disabled; Phase 10 turns this into an illegal-instruction trap.
 
 ---
 
 ## Current Status
 
-**Phase 9 complete — full AHB bus fabric, system top-level, and APB peripherals implemented and verified.**
+**Phases 1–9 implemented and verified in simulation.**
 
 | Phase | Description | Status |
 | ----- | ----------- | ------ |
-| 1 | Foundational primitives (Mux2, Mux4, DFF, ALTPLL) | ✅ Complete |
-| 2 | Execution datapath — ALU, Barrel Shifter, Multiplier, Divider, Branch Evaluator | ✅ Complete |
-| 3 | State & memory — PC, Register File, ROM AHB slave, RAM AHB slave | ✅ Complete |
-| 4 | Instruction decode & control — ImmGen, InstrParser, ALU Decoder, Main Control Unit | ✅ Complete |
-| 5 | Core integration — pipelined CPU, MEM-stage bus interface, writeback | ✅ Complete |
-| 6 | 5-stage pipelining with pipeline registers | ✅ Complete |
-| 7 | Hazard resolution — forwarding, load-use, HREADY, div/mul multicycle, branch flush | ✅ Complete |
-| 8 | APB peripherals — GPIO, UART, DMAC control registers, AHB-to-APB bridge | ✅ Complete |
-| 9 | Full AHB bus fabric — arbiter, CPU/DMAC masters, decoder, top-level | ✅ Complete |
-| 10 | CSR register file, trap mechanism, MRET | 🔜 Next |
-| 11 | C extension — 16-bit compressed instruction decompressor | 🔜 |
-| 12 | C software layer — linker script, crt0.S, syscall stubs | 🔜 |
+| 1 | Primitives and verification infrastructure | ✅ Simulation |
+| 2 | Execution datapath | ✅ Simulation |
+| 3 | State and memory | ✅ Simulation |
+| 4 | Decode and control | ✅ Simulation |
+| 5 | Single-cycle integration | ✅ Simulation (superseded by the pipeline) |
+| 6 | Five-stage pipeline | ✅ Simulation |
+| 7 | Hazard resolution | ✅ Simulation |
+| 8 | APB peripherals | ✅ Simulation |
+| 9 | AHB fabric and system | ✅ Simulation |
+| 10 | CSRs, traps, machine mode | 🔜 Next |
+| 11 | C extension | 🔜 |
+| 12 | C software layer | 🔜 |
+
+Checklist items that need Quartus or the board and are still open:
+
+- Phase 1: SDC registered and the PLL clock visible in Timing Analyzer.
+- Phase 2: Embedded Multiplier 9-bit element count from the Flow Summary.
+- Phases 3/5: ROM and RAM inferred as M9K (about 128 of 182 blocks), Analysis & Synthesis clean.
+- Phase 5: positive slack at 50 MHz; record Fmax from the Slow 1200mV 85C model together with evidence that the datapath was synthesised (128 M9K blocks, embedded multipliers in use, the LE count, a critical path from the ROM through decode and the ALU). The earlier 296 MHz figure is withdrawn: it is too close to the M9K limit for a real single-cycle datapath. If single-cycle MUL misses timing, register the product and stall MUL in EX like the divider, or lower the PLL frequency.
+- Phase 7: riscv-arch-test RV32I and M suites (RISCOF flow).
+- Phase 9: post-fit timing; on the board — LEDs follow software, UART output readable, DMA checksum correct.
 
 ---
 
 ## Module Structure
 
-### Phase 1 — Primitives
+### Phase 1 — Primitives and Verification Infrastructure
 
-- **`mux2.v`** — Parameterized 2:1 multiplexer (default WIDTH=32). Used extensively as ALUSrc mux, MemToReg mux, PC-next mux, forwarding muxes.
-- **`mux4.v`** — Parameterized 4:1 multiplexer with 2-bit select. Used in the Forwarding Unit where ALU inputs may come from one of four sources.
-- **`d_ff.v`** — D flip-flop with synchronous enable and asynchronous active-low reset. Foundation of all pipeline registers and state elements.
-- **`cpu_pll.v`** — ALTPLL Megafunction wrapper. Takes the 50 MHz board oscillator and produces the CPU clock. (`cpu_pll_bb.v` is the black-box stub generated by Quartus for simulation.)
+- **`mux2`, `mux4`** — parameterised multiplexers (default `WIDTH` 32).
+- **`d_ff`** — D flip-flop with enable and asynchronous active-low reset.
+- **`reset_sync`** — two-flop reset synchroniser: asynchronous assertion, release on the second rising edge.
+- **`cpu_pll`** — ALTPLL (50 MHz in, `c0` 50 MHz out, `areset` and `locked` used). Added to the project through `cpu_pll.qip`; `cpu_pll_bb.v` is excluded from synthesis and simulation.
+- **`run_tests.tcl` / `run_tests.bat`** — ModelSim regression runner (see [Simulation](#simulation)); `Timur_RV32IMC.sdc` — timing constraints.
 
 ### Phase 2 — Execution Datapath
 
-- **`adder_32bit.v`** — 32-bit adder/subtractor. `sub=1` inverts `b` and carries in 1, implementing two's complement subtraction. Outputs `cout` (unsigned compare) and `overflow` (signed compare).
-- **`barrel_shifter.v`** — 32-bit barrel shifter using a 5-stage mux cascade. Supports SLL, SRL, and SRA. Sign fill for SRA uses the original `in[31]`, not the intermediate stage MSB.
-- **`multiplier.v`** — Single-cycle multiplier for all four RV32M multiply operations (MUL, MULH, MULHSU, MULHU). Uses 33-bit sign/zero-extended operands to handle mixed signed/unsigned products. Infers Intel DSP blocks.
-- **`divider.v`** — Sequential restoring divider. Processes one bit per cycle — 32 cycles total. Implements the full RV32M corner case specification (divide-by-zero, signed overflow). `busy` output feeds the Hazard Detection Unit.
-- **`alu.v`** — Top-level ALU. Instantiates adder, barrel shifter, multiplier, and divider. Selects result via a 5-bit `ALUControl` (widened from 4 bits to cover M-extension opcodes). Outputs `zero`, `cout`, `overflow`, `div_busy`.
-- **`branch_condition_evaluator.v`** — Branch condition evaluator. Takes ALU flags and a 3-bit `BranchType` (matching RISC-V `funct3`) and produces a single `BranchTaken` signal for all six branch instructions (BEQ, BNE, BLT, BGE, BLTU, BGEU).
+- **`adder_32bit`** — add/subtract; B is inverted with an XOR against `sub`, which is also the carry-in. Outputs `cout` (1 = no borrow) and signed `overflow`.
+- **`barrel_shifter`** — five cascaded stages; in each a `mux4` (select `shift_type`) forms the shifted candidate and a `mux2` (select one `shamt` bit) chooses it or the unshifted value. SRA fills with the original `in[31]`.
+- **`multiplier`** — single cycle: both operands are extended to 33 bits with a sign bit or zero, and one signed 33×33 multiply serves MUL, MULH, MULHSU and MULHU.
+- **`divider`** — restoring divider, 32 iterations; divide by zero and `0x80000000 / -1` take a fast path. The DIV sits in EX for 35 cycles (2 on the fast path). `done` is a level held until `ack` (the DIV leaving EX), so it is never lost in a bus freeze.
+- **`alu`** — 5-bit `ALUControl` including SLTU (`01100`); shift type decoded explicitly; `zero` computed after the result mux. The divider is started with `div_start` and acknowledged with `div_ack` from the hazard unit.
+- **`branch_condition_evaluator`** — BEQ, BNE, BLT, BGE, BLTU, BGEU from the flags of `a - b`.
 
 ### Phase 3 — State and Memory
 
-- **`pc.v`** — Program Counter register. 32-bit DFF with asynchronous reset to `0x00000000`. Enable input driven LOW by the combined stall signal (load-use OR !HREADY OR div_busy) from the Hazard Detection Unit.
-- **`registers.v`** — 32×32-bit register file. `x0` hardwired to zero — reads always return 0, writes silently ignored. Two combinational read ports (rs1, rs2) and one synchronous write port (rd).
-- **`rom_ahb.v`** — Instruction ROM as an AHB slave. Single-cycle response — `HREADY` always 1. Registers the AHB address phase on the clock edge (`HSEL=1` and `HTRANS[1]=1`), presents `HRDATA` on the following cycle. Initialized from a Quartus `.mif` file.
-- **`ram_ahb.v`** — Data RAM as an AHB slave. Single-cycle response — `HREADY` always 1. Decodes `HSIZE` and `HADDR[1:0]` to generate byte-enable signals for sub-word writes. Performs sign/zero-extension on `HRDATA` for LB, LH, LBU, LHU load instructions.
+- **`pc`** — 32-bit `d_ff`, enable = `pc_load`; all next-PC selection lives outside it.
+- **`registers`** — 32×32 array `regs` in logic, asynchronous reads, x0 forced to 0 through a `mux2` per port, and a write-through bypass: a same-cycle WB write is returned on the read ports.
+- **`rom_ahb`** — one 16384×32 dual-port ROM (`ram_init_file = "rom.mif"` for synthesis; zero fill plus `rom.hex` in simulation). Fetch port for IF; read-only AHB-Lite slave port for loads and DMAC reads (writes ignored).
+- **`ram_ahb`** — four 16384×8 byte lanes; synchronous read in the address phase, write in the data phase on the enabled lanes, read-after-write bypass for a load right behind a store to the same word, raw 32-bit `HRDATA`.
+- **AHB-Lite slave convention** — every slave has an `HREADY` input and an `HREADYOUT` output and accepts an address phase only with `HSEL & HTRANS[1] & HREADY`.
+- **`store_aligner`** (MEM) and **`load_formatter`** (WB) — byte/halfword replication for stores, lane selection and sign/zero extension for loads. `HSIZE` carries only the size.
 
 ### Phase 4 — Instruction Decode and Control
 
-- **`instr_parser.v`** — Instruction Parser. Purely combinational slicing of the 32-bit instruction word into `opcode`, `rd`, `funct3`, `rs1`, `rs2`, and `funct7` fields.
-- **`imm_gen.v`** — Immediate Generator. Sign-extends all five RISC-V immediate formats (I, S, B, U, J) to 32 bits. B-type and J-type `imm[0]` hardwired to 0 to enforce 2-byte alignment.
-- **`alu_decoder.v`** — ALU Decoder. Two-level control: maps 2-bit `ALUOp` + `funct3` + `funct7` to the 5-bit `ALUControl` for the ALU. Detects the M-extension by checking `funct7 == 7'b0000001`.
-- **`main_control_unit.v`** — Main Control Unit. Combinational lookup from 7-bit `opcode` (plus `funct3`/`funct7` for disambiguation) to all primary control signals: `Branch`, `MemRead`, `MemToReg`, `ALUOp`, `MemWrite`, `ALUSrc`, `RegWrite`, `CSRWrite`, `CSROp`, `IsECALL`, `IsEBREAK`, `IsMRET`. FENCE decoded as NOP.
+- **`instr_parser`** — field slicing (`opcode`, `rd`, `funct3`, `rs1`, `rs2`, `funct7`).
+- **`imm_gen`** — I, S, B, U, J immediates (bit 0 of B and J is 0).
+- **`alu_decoder`** — uses opcode bit 5 (`op5`): for I-type arithmetic `funct7` holds immediate bits, so `ADDI x1, x0, -5` stays ADD and `ADDI x1, x0, 40` does not become MUL.
+- **`main_control_unit`** — `RegWrite`, `ALUSrcA` (rs1 / PC / zero), `ALUSrcB`, `ALUOp`, `MemRead`, `MemWrite`, `MemToReg`, `Branch`, `Jump`, `Jalr`, `CSRAccess`, `CSROp`, `CSRImm`, `IsECALL`, `IsEBREAK`, `IsMRET`, `Illegal`. SYSTEM is decoded on the full `funct12` (ECALL, EBREAK, MRET, WFI as NOP); FENCE and FENCE.I are NOPs; reserved encodings raise `Illegal` and force every side-effect control to 0.
 
-### Phase 5 — Core Integration
+### Phases 5–7 — Pipeline and Hazard Resolution
 
-- **`rv32imc_core.sv`** — Top-level pipelined CPU core integration. Wires the decode, execute, memory, hazard, and writeback stages into the 5-stage datapath. The MEM stage exports the shared AHB signals (`cpu_HADDR`, `cpu_HWRITE`, `cpu_HSIZE`, `cpu_HWDATA`, `cpu_HBUSREQ`) to `soc.v`.
-- **`Timur_RV32IMC.sv`** — Board-level wrapper. Connects the core and SoC to the FPGA clocking and external pins.
+The datapath lives in **`timur_soc`**:
 
-  Key implementation decisions:
-  - **PC Next Logic:** Two adders run in parallel — one computes `PC+4` (sequential fetch), the other computes `PC+imm` (branch target). A mux controlled by `Branch AND BranchTaken` selects between them.
-  - **ALU Source mux:** `ALUSrc` from Main Control selects between `rs2_data` (register operand) and the sign-extended immediate.
-  - **Write-back mux:** `MemToReg` selects between `alu_result` and `ram_hrdata` for the register file write data.
-  - **AHB bus:** the core-only datapath assumes `HREADY=1`; the shared SoC bus in `soc.v` adds the arbiter, decoder, ROM, RAM, APB bridge, and DMAC master.
-  - **LUI / AUIPC:** Handled by routing `pc` into the ALU B-input for AUIPC and setting `rs1=x0` for LUI so the adder computes `0 + imm`.
-  - **JAL / JALR:** `rd` receives `PC+4` (the link address) via a dedicated mux; the PC loads the jump target computed by the ALU.
-  - **Branch evaluation:** `BranchTaken` from `branch_condition_evaluator.v` is ANDed with the `Branch` control signal to gate spurious PC redirects on non-branch instructions.
-  - Verified against hand-assembled RV32IM test programs loaded via the ROM `.mif` file.
-
-### Phase 6 — Pipeline Registers
-
-- **`if_id_reg.v`** — IF/ID pipeline register. Holds `pc` and `instr`. `enable` input freezes the register during any stall. `flush` overrides enable and inserts a NOP (`32'h00000013`) to cancel wrongly-fetched instructions on a branch.
-- **`id_ex_reg.v`** — ID/EX pipeline register. Carries all datapath values (`rs1_data`, `rs2_data`, imm, pc, register addresses) and all control signals forward. Explicitly carries `funct3` for AHB `HSIZE` encoding and reserves CSR signal fields (`CSRWrite`, `CSROp`, `csr_addr`, `IsECALL`, `IsEBREAK`, `IsMRET`) from this phase onward even before Phase 10.
-- **`ex_mem_reg.v`** — EX/MEM pipeline register. `alu_result` becomes AHB `HADDR` for the data memory address phase. `rs2_data` becomes AHB `HWDATA` for the data phase of stores. Carries `BranchTaken` and `branch_target` for the branch flush logic.
-- **`mem_wb_reg.v`** — MEM/WB pipeline register. Carries `mem_read_data` (sourced from AHB `HRDATA`) and `alu_result` to the writeback mux. Also carries `csr_rdata` and `CSRToReg` for CSR instruction writeback (Phase 10).
-
-### Phase 7 — Hazard Resolution
-
-- **`forwarding_unit.v`** — Forwarding Unit. Compares EX-stage source register addresses against MEM-stage and WB-stage destination addresses to generate 2-bit `forwardA`/`forwardB` selects for the Mux4 inputs to the ALU. EX/MEM result has priority over MEM/WB. No forwarding occurs when `rd == x0`.
-- **`hazard_detection_unit.v`** — Hazard Detection Unit. Detects load-use (LW in EX with `rd` matching `rs1`/`rs2` in IF/ID), AHB wait (`!HREADY`, combined instruction/data path ready), and multi-cycle ALU ops (`div_busy`, `mul_busy`). `stall` freezes PC and IF/ID for all cases. Load-use and bus wait assert `bubble_stall` so ID/EX is flushed to NOP while the consumer stays in IF/ID; divide/multiply assert `freeze_stall` so the op remains in EX until complete. Taken branch/jump redirect is evaluated in MEM (`br_jmp` ∧ `br_taken`); the top-level datapath flushes IF/ID and ID/EX and reloads the PC.
+- **Fetch** — `fetch_addr = NOT rst_n ? 0 : (pc_load ? pc_next : pc)`: the ROM registers the same address as the PC register, so the fetched word always belongs to the current PC and is re-read while the PC holds.
+- **`if_id_reg`, `id_ex_reg`, `ex_mem_reg`, `mem_wb_reg`** — common interface (`clk`, `rst_n`, `enable`, `flush`) and a `valid` bit; priority reset → flush (bubble) → hold → capture. A bubble has every side-effect control 0; in IF/ID it holds the NOP `0x00000013`.
+- **EX** — forwarding muxes, `ALUSrcA`/`ALUSrcB`, ALU, branch evaluation, branch target (PC + imm), jump target (ALU result with bit 0 cleared), redirect, result mux (PC + 4 for JAL/JALR).
+- **MEM / WB** — the AHB address phase is issued in MEM and the data phase completes in WB; MEM/WB does not capture load data.
+- **`forwarding_unit`** — 00 ID/EX value, 01 WB value, 10 EX/MEM result; EX/MEM wins; never for x0.
+- **`hazard_detection_unit`** — produces every enable and flush; see [Hazard Handling](#hazard-handling).
 
 ### Phase 8 — APB Peripherals
 
-- **`gpio_apb.v`** — GPIO APB slave. Three 32-bit memory-mapped registers: `GPIO_OUT` (drives LED pins), `GPIO_IN` (reflects switch/button pins, read-only), `GPIO_DIR` (per-pin direction). `PREADY` hardwired to 1 — no wait states.
-- **`uart_apb.v`** — UART APB slave. Standard 8N1 UART with a baud rate generator (`counter_max = f_sys/baud - 1`). TX state machine: IDLE → START → DATA (8 bits) → STOP. `UART_STATUS` register exposes `tx_busy` (bit 0) and `rx_valid` (bit 1) flags. `PREADY` hardwired to 1.
-- **`dmac_apb.v`** — DMAC APB control registers. Five registers: `DMAC_SRC`, `DMAC_DST`, `DMAC_LEN`, `DMAC_CTRL` (bit 0 starts transfer), `DMAC_STATUS` (bit 0 busy, bit 1 done). CPU writes these to program a DMA transfer; the AHB master engine in `dmac_ahb_master.v` executes it autonomously.
-- **`ahb2apb_bridge.v`** — AHB-to-APB bridge. Acts as AHB slave and APB master simultaneously. Four-state FSM: IDLE → SETUP (`HREADY=0`, `PSEL=1`) → ACCESS (`HREADY=0`, `PENABLE=1`) → COMPLETE (`HREADY=1`, drives `HRDATA=PRDATA`). Holds `HREADY=0` for 2 cycles on every peripheral access, which the Hazard Detection Unit sees as a bus-wait stall.
+- **`gpio_apb`** — GPIO_OUT (LEDs), GPIO_IN (switches through a two-flop synchroniser), GPIO_DIR.
+- **`uart_apb`** — 8N1 UART with a fixed divider (433 → 115,207 baud at 50 MHz); transmitter and receiver time each bit from the start of the frame, the receiver samples at bit centres, rejects glitches and framing errors, and reports `rx_overrun`.
+- **`dmac_apb_regs`** — SRC, DST, LEN, CTRL (self-clearing start, `irq_enable`), STATUS (engine busy, sticky done).
 
-### Phase 9 — AHB Bus Fabric
+### Phase 9 — AHB Bus Fabric and System
 
-- **`ahb_arbiter.v`** — 2-master AHB arbiter. CPU (master 0) and DMAC (master 1) request the shared bus via `HBUSREQ[1:0]`. The arbiter is a single-bit state machine that grants CPU by default, switches to DMAC only when **CPU is not requesting and DMAC is requesting and `HREADY=1`** (transfer boundary), and reclaims the bus for CPU at the next boundary if CPU re-requests **and** the DMAC is not asserting `HLOCK`. Outputs: `HGRANT[1:0]` (one-hot grant), `HMASTER` (current owner — selects the bus mux), and `HMASTLOCK` (forwards the active master's lock). Switching only on `HREADY=1` boundaries prevents mid-transaction corruption.
-- **`ahb_decoder.v`** — AHB address decoder. Combinational decode of `HADDR[31:16]` asserts exactly one address-phase `HSEL`: ROM (`0x0000`), RAM (`0x2000`), APB bridge (`0x4000`). The selected slave is **registered** internally (`hsel_*_d`) so the data-phase `HRDATA` and `HREADY` muxes follow the slave that was addressed in the *previous* cycle — keeping read data aligned with the AHB pipeline. If no slave is selected: `HRDATA = 0`, `HREADY = 1`.
-- **`dmac_ahb_master.v`** — DMAC AHB master engine. Autonomous, software-programmed memory-to-memory copy. Seven-state FSM: `IDLE → REQUEST → READ_ADDR → READ_DATA → WRITE_ADDR → WRITE_DATA → DONE`. Latches `src_ptr / dst_ptr / words_left` from the APB control registers when leaving `IDLE`, captures `HRDATA` into an internal `rd_buf` during `READ_DATA`, and drives `rd_buf` onto `HWDATA` during `WRITE_DATA`. Address-phase states gate progress on `HGRANT && HREADY` (so a lost grant just stalls); data-phase states gate on `HREADY` alone (the slave's data phase completes regardless of who currently owns the bus). Asserts `HLOCK=1` during `READ_ADDR / READ_DATA / WRITE_ADDR` and releases it in `WRITE_DATA` so each word transfer is atomic from the arbiter's view, but the CPU can preempt at every word boundary. `dmac_done` is a one-cycle pulse on entry to `DONE`. Primary use: copy the `.data` section from ROM to RAM at boot, mirroring what `crt0.S` does in software.
-- **`rv32imc_core.sv`** — CPU-side AHB master interface. Exports `cpu_HADDR`, `cpu_HTRANS`, `cpu_HWRITE`, `cpu_HSIZE`, `cpu_HWDATA`, and `cpu_HBUSREQ` from the MEM stage. The dedicated I-fetch port (`if_HADDR`, `if_HTRANS`, `if_HRDATA`) goes directly to ROM Port A — instruction fetch never arbitrates against the DMAC and is always zero-wait-state.
-- **`soc.v`** — System integration top-level. Wires:
-  - **Two bus domains** — a dedicated I-fetch path to ROM Port A and a shared D-bus driven by the arbiter-selected master.
-  - **Address-phase mux** on current `HMASTER`: `HADDR / HTRANS / HWRITE / HSIZE` follow whoever has the bus this cycle.
-  - **Data-phase mux** on a one-cycle-delayed `HMASTER_d` register: `HWDATA` must follow the master that issued the *address* phase (the previous cycle), because AHB writes drive `HWDATA` one cycle after `HADDR`. Without the delay, an arbiter switch between a write's address phase and its data phase would silently corrupt the slave's commit.
-  - **CPU stall on grant loss**: `cpu_d_hready = HGRANT[0] & HREADY_s` — when the DMAC owns the bus, the CPU pipeline sees `HREADY=0` on the D-side and stalls naturally through the existing Hazard Detection Unit, preserving in-flight load/store correctness.
-  - **Dual-port ROM** — Port A serves the I-fetch path; Port B sits on the shared D-bus for both CPU `.rodata` reads and the DMAC's boot-time `.data` copy.
+- **`cpu_ahb_master`** — AHB master 0: NONSEQ address phase from MEM (`HBURST` SINGLE, `HPROT` 0011), `HWDATA` loaded when the address phase is accepted and held through wait states, `bus_wait` for a pending address or data phase.
+- **`ahb_arbiter`** — at each rising edge with `HREADY = 1`: CPU requesting → CPU; else DMAC requesting → DMAC; else park on the CPU. Outputs `HMASTER`, `HMASTER_DATA` (data-phase owner) and `HGRANT`. No HLOCK.
+- **`ahb_bus_mux`** — address/control from `HMASTER`, `HWDATA` from `HMASTER_DATA`.
+- **`ahb_decoder`** — `HSEL` from `HADDR[31:16]`; `HRDATA`/`HREADY` multiplexed with a data-phase select registered when `HREADY = 1`; default slave (reads 0, writes ignored).
+- **`ahb_apb_bridge`** — IDLE → SETUP → ACCESS, one wait state per APB access, APB decode on `PADDR[15:8]`, back-to-back APB transfers.
+- **`dmac_ahb_master`** — IDLE, RD_ADDR, RD_DATA, WR_ADDR, WR_DATA, DONE; word copies from ROM or RAM to RAM; `LEN = 0` finishes at once; keeps its data if the CPU takes the bus between the read and the write.
+- **`Timur_RV32IMC`** — board wrapper: `clk_50mhz`, `rst_btn_n`, `sw[9:0]`, `leds[9:0]`, `uart_tx`, `uart_rx`.
 
-### Phase 10 — CSR Register File and Privileged Architecture
+### Phases 10–12 — Planned
 
-- **`csr_regfile.v`** — CSR Register File. Implements the minimum M-mode CSR set: `mstatus` (MIE/MPIE bits), `mie`, `mtvec`, `mscratch`, `mepc`, `mcause`, `mtval`, `mip`, `cycle`, `time`, `instret`. Supports WRITE/SET/CLEAR operations. On `trap_en` pulse: atomically saves PC to `mepc`, writes `mcause`/`mtval`, saves MIE to MPIE, and clears MIE. `mtvec_out` and `mepc_out` feed the PC Next Logic for trap entry and MRET return. `misa` (address `0x301`) hardwired read-only to `0x40001100` (RV32IM) or `0x40001140` (RV32IMC).
-
-### Phase 11 — C Extension Decompressor
-
-- **`decompressor.v`** — 16-bit compressed instruction decompressor. Purely combinational. Checks `instr[1:0]` to detect a compressed instruction, then maps each C-extension encoding (C.ADDI, C.LW, C.SW, C.JAL, C.BEQZ, C.BNEZ, C.MV, C.ADD, C.LWSP, C.SWSP, etc.) to its full 32-bit RV32I equivalent. `illegal` output flags unrecognised encodings. The decompressor output is wired directly into the IF/ID register — the rest of the pipeline sees only 32-bit instructions and requires no changes. A small fetch-stage state machine (ALIGNED / UNALIGNED) handles 16-bit instruction buffering and the corner case of a 32-bit instruction spanning two ROM words.
-
-### Phase 12 — C Software Layer
-
-- **`sw/linker.ld`** — Linker script. Defines ROM at `0x00000000` (64 KB, rx) and RAM at `0x20000000` (64 KB, rwx). Places `.text` and `.rodata` in ROM; places `.data` and `.bss` in RAM. The `.data` section uses `AT> ROM` so its load address is in ROM and its virtual address is in RAM — `crt0.S` copies it at startup. Exports `_bss_start`, `_bss_end`, `_stack_top`, and `_data_start_rom` symbols used by startup code.
-- **`sw/crt0.S`** — Startup assembly. Placed at `.text.start` so the linker positions it at address `0x00000000` — the first instruction fetched after reset. Sequence: (1) set `sp = _stack_top`, (2) zero the `.bss` section, (3) copy `.data` from ROM to RAM, (4) write trap handler address to `mtvec`, (5) call `main()`, (6) infinite loop if `main` returns. Includes a minimal trap handler that advances `mepc` past ECALL and executes MRET.
-- **`sw/syscalls.c`** — Newlib/picolibc syscall stubs. Provides the low-level I/O primitives GCC's C library requires: `_write` (loops bytes to `UART_DATA`, polling `tx_busy`), `_read` (polls `rx_valid`), `_sbrk` (static heap pointer for `malloc`), `_exit` (infinite loop), and minimal stubs for `_close`, `_fstat`, `_isatty`, `_lseek`.
-- **`sw/bin2mif.py`** — Python utility. Converts a raw `.bin` binary produced by `riscv-objcopy` into a Quartus `.mif` file suitable for initializing the ROM BRAM.
+- **Phase 10** — `csr_file` and `trap_unit` in `rtl/csr/`: CSR accesses atomic in EX, precise traps taken in EX (ECALL from M-mode is cause 11), `misa = 0x40001100` (`0x40001104` after Phase 11), 64-bit `mcycle`/`minstret`.
+- **Phase 11** — `decompressor` before IF/ID and a split-bank halfword ROM (`rom_lo`/`rom_hi`) so any 32-bit window starting on a halfword boundary is fetched in one cycle.
+- **Phase 12** — `sw/linker.ld`, `sw/crt0.S`, `sw/syscalls.c` and the binary-to-memory converter (see [C Software Layer](#c-software-layer)).
 
 ---
 
-## Bus Architecture & Address Map
+## Address Map
 
-The system uses the AMBA bus hierarchy: AHB for high-bandwidth paths (CPU, DMA, ROM, RAM) and APB for low-speed peripherals accessed through a bridge.
+| Range | Slave | Size | Notes |
+| ----- | ----- | ---- | ----- |
+| `0x0000_0000 – 0x0000_FFFF` | ROM | 64 KB | Fetch port (IF) + AHB data port (loads, DMAC reads) |
+| `0x2000_0000 – 0x2000_FFFF` | RAM | 64 KB | `.data`, `.bss`, heap, stack; DMAC destination |
+| `0x4000_0000 – 0x4000_00FF` | UART (APB) | 256 B | DATA `0x00`, STATUS `0x04`, CTRL `0x08` |
+| `0x4000_0100 – 0x4000_01FF` | GPIO (APB) | 256 B | OUT `0x00`, IN `0x04`, DIR `0x08` |
+| `0x4000_0200 – 0x4000_02FF` | DMAC registers (APB) | 256 B | SRC `0x00`, DST `0x04`, LEN `0x08`, CTRL `0x0C`, STATUS `0x10` |
+| anything else | default slave | — | Reads 0, writes ignored |
 
-### AHB Address Map
-
-| Range | Slave | Size |
-| ----- | ----- | ---- |
-| `0x0000_0000 – 0x0000_FFFF` | Instruction ROM | 64 KB |
-| `0x2000_0000 – 0x2000_FFFF` | Data RAM | 64 KB |
-| `0x4000_0000 – 0x4000_FFFF` | AHB → APB Bridge | — |
-
-### APB Address Map (within bridge)
-
-| Range | Peripheral | Registers |
-| ----- | ---------- | --------- |
-| `0x4000_0000 – 0x4000_00FF` | UART | DATA, STATUS, CTRL |
-| `0x4000_0100 – 0x4000_01FF` | GPIO | OUT, IN, DIR |
-| `0x4000_0200 – 0x4000_02FF` | DMAC control | SRC, DST, LEN, CTRL, STATUS |
-
-### AHB Masters
-
-Two masters share the data-side AHB bus through the arbiter; instruction fetch uses a dedicated ROM port and never arbitrates.
-
-- **Master 0 — CPU:** D-side load/store from the MEM stage. When the DMAC owns the bus, the CPU sees `HREADY=0` (qualified by `HGRANT[0]`) and the pipeline stalls through the regular hazard path.
-- **Master 1 — DMAC:** Autonomous memory-to-memory transfers programmed via APB. Asserts `HLOCK` during the address-phase states of each word so the arbiter can't preempt mid-word; releases it during `WRITE_DATA` so the CPU can step in at word boundaries.
-
-**Switch safety.** Master switches only occur on `HREADY=1` (transfer boundaries). The address-phase mux follows current `HMASTER`; the `HWDATA` mux follows a one-cycle-delayed `HMASTER_d` so a switch between a write's address and data phases doesn't route the wrong master's data to the slave.
+APB3 has no byte strobes: peripheral registers are word-write only (a byte or halfword store writes the replicated value to the whole register), and registers are decoded on `PADDR[7:2]`.
 
 ---
 
 ## Pipeline Design
 
-The CPU uses the classic 5-stage RISC pipeline. Each stage boundary is a registered pipeline stage that carries both datapath values and control signals forward.
+| Stage | Work | Memory / bus |
+| ----- | ---- | ------------ |
+| IF | Select the next PC (sequential or redirect), present the fetch address | ROM fetch port |
+| ID | Parse, immediate, control, ALU decode, register read with WB bypass, load-use detection | — |
+| EX | Forwarding, operand select, ALU, divider, branch evaluation, targets, redirect, result select | — |
+| MEM | Store alignment; AHB address phase for loads and stores | AHB address phase |
+| WB | AHB data phase, load formatting, write-back | AHB data phase |
 
-```text
-┌────┐   ┌────┐   ┌────┐   ┌─────┐   ┌────┐
-│ IF │──►│ ID │──►│ EX │──►│ MEM │──►│ WB │
-└────┘   └────┘   └────┘   └─────┘   └────┘
-   IF/ID      ID/EX      EX/MEM      MEM/WB
-  (flush,    (flush,    (flush)
-   stall)     stall)
-```
-
-**Key signal routing decisions:**
-
-- `funct3` is carried through all pipeline registers to encode `HSIZE` on the AHB bus and to control load sign/zero-extension in the RAM slave
-- `ALUControl` is 5 bits throughout — not truncated at any stage boundary
-- CSR signals (`csr_addr`, `CSRWrite`, `CSROp`, `IsECALL`, `IsMRET`) are reserved in pipeline registers from Phase 6 onward, even before Phase 10 is implemented
-- `rs2_data` in `EX/MEM` drives `HWDATA` on the AHB bus for store instructions
+Taken branches, JAL and JALR redirect from EX and kill exactly the two younger instructions.
 
 ---
 
 ## Hazard Handling
 
-Stall sources are combined in the Hazard Detection Unit:
+| Condition (highest first) | PC | IF/ID | ID/EX | EX/MEM | MEM/WB |
+| ------------------------- | -- | ----- | ----- | ------ | ------ |
+| Bus wait (freeze) | hold | hold | hold | hold | hold |
+| Trap or interrupt (Phase 10) | mtvec | bubble | bubble | bubble | advance |
+| Redirect taken | target | bubble | bubble | advance | advance |
+| Divider EX stall | hold | hold | hold | bubble | advance |
+| Load-use | hold | hold | bubble | advance | advance |
+| Normal | PC + 4 | advance | advance | advance | advance |
 
-```text
-stall        = bubble_stall | freeze_stall
-bubble_stall = load_use_hazard | bus_wait
-freeze_stall = div_busy | mul_busy
-```
-
-| Source | Duration | Mechanism |
-| ------ | -------- | --------- |
-| Load-use hazard | 1+ cycles | LW result not available until end of MEM; cannot be forwarded; bubble in ID/EX |
-| AHB bus wait (`!HREADY`) | N cycles | Combined ROM/RAM ready; future APB bridge holds `HREADY=0` during SETUP/ACCESS |
-| Divider busy | 32 cycles | DIV/REM; `freeze_stall` holds ID/EX and EX/MEM until `div_done` |
-| Multiplier busy | As implemented | MUL family; same `freeze_stall` until `mul_done` |
-
-PC and IF/ID always freeze on any `stall`. Load-use and bus wait additionally replace ID/EX with a NOP; divide/multiply freeze ID/EX without bubbling so the multi-cycle instruction stays in EX.
-
-**Data forwarding** resolves RAW hazards without stalling for ALU-to-ALU and store-after-load sequences:
-
-- `forwardA/B = 2'b10` — Forward from EX/MEM (highest priority)
-- `forwardA/B = 2'b01` — Forward from MEM/WB (fallback)
-- `forwardA/B = 2'b00` — Register file value (no hazard)
-
-**Branch / jump redirect** is committed in MEM (`br_jmp` ∧ `br_taken`). When taken, IF/ID and ID/EX are flushed (NOP injected) and the PC loads the jump target from EX/MEM.
+- **Bus wait** — CPU address phase not granted or not ready, or CPU data phase with `HREADY = 0` (for example the one wait state of every APB access, or the DMAC owning the bus).
+- **Divider** — `div_start = DIV in EX AND NOT busy AND NOT done AND NOT bus_wait`; EX stall while `NOT done`; `div_ack` when the DIV leaves EX.
+- **Load-use** — a load in EX whose `rd` (≠ x0) matches `rs1` or `rs2` of the instruction in ID: one bubble; the value then arrives by WB forwarding.
+- **MUL** never stalls; instruction fetch never waits for the bus.
 
 ---
 
@@ -285,178 +260,160 @@ PC and IF/ID always freeze on any `stall`. Load-use and bus wait additionally re
 
 ### GPIO
 
-Three memory-mapped registers: `GPIO_OUT` (drive LEDs), `GPIO_IN` (read switches), `GPIO_DIR` (per-pin direction). Single-cycle APB slave (`PREADY` always 1).
+| Offset | Register | Access | Description |
+| ------ | -------- | ------ | ----------- |
+| `0x00` | GPIO_OUT | R/W | Drives `LEDR[9:0]` |
+| `0x04` | GPIO_IN | R | `SW[9:0]` through a two-flop synchroniser |
+| `0x08` | GPIO_DIR | R/W | Reserved for header pins |
 
 ### UART
 
-Standard 8N1 UART with a baud rate generator derived from the system clock. TX state machine: IDLE → START → DATA (8 bits) → STOP. Status register exposes `tx_busy` and `rx_valid` flags. For a 50 MHz system clock targeting 115200 baud, the counter max is 433.
+| Offset | Register | Access | Description |
+| ------ | -------- | ------ | ----------- |
+| `0x00` | UART_DATA | R/W | Write: byte to send (ignored while `tx_busy`). Read: received byte; clears `rx_valid` and `rx_overrun` |
+| `0x04` | UART_STATUS | R | bit 0 `tx_busy`, bit 1 `rx_valid`, bit 2 `rx_overrun` |
+| `0x08` | UART_CTRL | R/W | bit 0 `rx_enable`, bit 1 `rx_irq_enable` |
+
+All UART registers reset to 0, so the receiver starts disabled; software sets `rx_enable` before the first read. The DE10-Lite has no USB-UART bridge: connect a **3.3 V** USB-to-TTL adapter (FT232R, CP2102 or CH340) to the GPIO header — see [Building & Programming](#building--programming).
 
 ### DMAC
 
-A two-part DMA controller: APB control registers (SRC, DST, LEN, CTRL, STATUS) that the CPU programs, and an AHB master engine that executes the transfer autonomously after `CTRL[0]` is set. Primary use: copy the `.data` section from ROM to RAM at boot — mirroring what `crt0.S` does in software.
+| Offset | Register | Access | Description |
+| ------ | -------- | ------ | ----------- |
+| `0x00` | DMAC_SRC | R/W | Source byte address (word-aligned): ROM or RAM |
+| `0x04` | DMAC_DST | R/W | Destination byte address (word-aligned): RAM |
+| `0x08` | DMAC_LEN | R/W | Number of 32-bit words; 0 = no transfer, done set at once |
+| `0x0C` | DMAC_CTRL | R/W | bit 0 start (self-clearing, ignored while busy), bit 1 `irq_enable`; any write clears done |
+| `0x10` | DMAC_STATUS | R | bit 0 busy, bit 1 done (sticky) |
+
+Typical use: copy the `.data` section from ROM to RAM at boot, the hardware version of the `crt0` copy loop.
 
 ---
 
 ## Tool Stack
 
-| Tool | Purpose |
-| ---- | ------- |
-| Verilog / SystemVerilog | HDL implementation |
-| Intel Quartus Prime | Synthesis, place & route, timing analysis |
-| ALTPLL Megafunction | PLL / clock generation |
-| ModelSim-Intel FPGA Edition | RTL simulation |
-| `.qsf` | Pin assignments and device settings |
-| `.mif` | ROM initialization (Quartus native BRAM format) |
-| `riscv64-unknown-elf-gcc` | Cross-compiler for C software |
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Intel Quartus Prime (tested with 21.x / 22.x)
-- ModelSim-Intel FPGA Edition (bundled with Quartus)
-- DE10-Lite board (MAX 10 `10M50DAF484C7G`) or compatible Intel FPGA board
-- RISC-V GNU Toolchain for the C software layer (Phase 12):
-
-  ```bash
-  # Ubuntu/Debian — easiest option
-  sudo apt install gcc-riscv64-unknown-elf
-  
-  # Or download xpack prebuilt binaries:
-  # https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases
-  ```
-
-### Cloning
-
-```bash
-git clone https://github.com/hikmethan/Timur-RV32IMC.git
-cd Timur-RV32IMC
-```
+| Purpose | Tool |
+| ------- | ---- |
+| HDL | Verilog-2001 |
+| Synthesis, fitting, timing | Quartus Prime Lite 25.1std (Timing Analyzer with `Timur_RV32IMC.sdc`) |
+| Simulation | ModelSim-Intel FPGA Starter Edition 2020.1 (standalone), driven by `run_tests.tcl`; Questa-Altera FPGA Starter Edition is an acceptable replacement |
+| PLL | ALTPLL via the IP Catalog (`cpu_pll.v` + `cpu_pll.qip`) |
+| Memory initialisation | `rom.mif` (synthesis), `rom.hex` (simulation), both from the same program |
+| Test programs | `sw/gen_soc_tests.py` (Python 3): assembler, reference model and vector writer |
+| Software (Phase 12) | xPack `riscv-none-elf-gcc` 14.2.0-3 or later (one pinned release) |
+| On-chip debug | Signal Tap Logic Analyzer |
 
 ---
 
 ## Simulation
 
-Simulation uses ModelSim-Intel FPGA Edition (bundled with Quartus). A batch regression runner auto-discovers all testbenches, compiles the full RTL, runs every test, and prints a PASSED/FAILED summary — no manual waveform inspection needed.
-
-### Simulation Prerequisites
-
-- `vsim` must be on your `PATH`. The easiest way is to add the ModelSim `win32aloem` (or `win64aloem`) directory from your Quartus installation:
-
-  ```text
-  C:\intelFPGA_lite\<version>\modelsim_ase\win32aloem
-  ```
-
 ### Running all tests
 
-From the repo root, double-click `run_tests.bat` or run it from a terminal:
+Double-click `run_tests.bat` or run it from a terminal. It changes to the project folder and starts `C:\intelFPGA\20.1\modelsim_ase\win32aloem\vsim.exe -c -do run_tests.tcl`, which:
 
-```bat
-run_tests.bat
-```
+1. collects `rtl/*.v` and `rtl/*/*.v` (dropping every `*_bb.v`) and `tb/*_tb.v`;
+2. deletes, recreates and maps the `work` library;
+3. compiles everything once and aborts on any compile error;
+4. runs each testbench through a temporary do-file (`run -all`, `quit -sim`), with its transcript in `logs/<testbench>.log`;
+5. counts a test as passed only if its log contains `ALL n TESTS PASSED` with n > 0 and no `FAIL` line — a crash, a missing vector file or a watchdog timeout leaves no summary line and fails;
+6. prints a summary and deletes the temporary do-files.
 
-This calls `vsim -c -do run_tests.tcl`. The TCL script:
-
-1. Globs all `rtl/**/*.v` sources (excluding `*_bb.v` black-box stubs) and all `tb/*.v` testbenches.
-2. Creates a fresh `work` library (`vdel` + `vlib`).
-3. Compiles everything in one `vlog` pass.
-4. Auto-discovers every `*_tb` module by scanning the `tb/` directory.
-5. Runs each testbench with `vsim -onfinish stop` + `run -all`, then reads the testbench's internal `failed` and `total` signal counters directly (no log files).
-6. Prints a regression summary:
-
-```text
-============================================
- REGRESSION COMPLETE
-============================================
- PASSED : 12
- FAILED : 0
-============================================
-```
-
-### Running a single testbench manually
-
-```tcl
-# From the ModelSim transcript (or vsim -c)
-vlib work
-vlog rtl/**/*.v tb/alu_tb.v
-vsim work.alu_tb
-run -all
-```
+Paths inside testbenches (`vectors/…`, `rom.hex`) are relative to the project root.
 
 ### Testbench conventions
 
-All testbenches in `tb/` follow a common pattern:
+- One `tb/<module>_tb.v` per module and one `vectors/<module>_vectors.txt`; lines starting with `//` are comments, and lines whose field count does not match are skipped.
+- Sequential vectors end with a `wait_type` column: `0` = check 3 ns after applying inputs without a clock edge, `1` = wait for the next rising edge plus 1 ns, then check. Protocol testbenches may use `x` digits in expected values for "don't care".
+- Every testbench starts with `` `timescale 1ns/1ps``, has a watchdog that prints a `FAIL` line, compares with `!==`, prints one `PASS`/`FAIL` line per vector, and ends with exactly `ALL n TESTS PASSED` or `f / n TESTS FAILED` followed by `$stop`. A run with no vectors is a failure.
 
-- Test vectors are read from files (no hard-coded stimulus in the HDL).
-- Each testbench maintains integer `total` and `failed` counters that the regression runner reads via `examine`.
-- A `$display("PASSED")` / `$display("FAILED")` line is printed at the end of each run.
-- `$finish` is used to end simulation cleanly — the regression runner catches this via `-onfinish stop`.
+### System tests and test programs
 
-**Note:** For combinational modules, testbenches insert a `#10` delay after driving inputs before sampling outputs to allow logic to settle.
+`tb/timur_soc_tb.v` runs the programs listed in `vectors/timur_soc_vectors.txt` on `timur_soc`:
+
+| Program | Covers |
+| ------- | ------ |
+| `timur_soc_phase5.hex` | The Phase 5 test program (no loads) |
+| `timur_soc_phase6.hex` | Loads and stores of every size and offset, JAL/JALR links, LUI/AUIPC, register-file bypass |
+| `timur_soc_phase7.hex` | Forwarding, load-use, the Phase 7 walkthrough (LW, dependent ADD, DIV, taken branch), DIV/REM (including an operand from an APB load and REM by zero after an APB load), MUL, taken branch/JAL/JALR killing exactly two instructions — once normally and once with HREADY held low for three cycles in every RAM load |
+| `timur_soc_random.hex` | Random dependency-dense program (RAM and APB loads/stores, ROM loads, DIV/REM corner cases, branches, JAL, JALR), with and without HREADY waits |
+| `timur_soc_system.hex` | GPIO, UART, DMA copy while the CPU runs loads and stores, DMAC STATUS busy/done, `LEN = 0`, default slave |
+| `rom.hex` | The final cross-phase program (the default ROM image), checked against its expected state before Phase 10 |
+| `sw/bringup/bringup_*.hex` | The three hardware bring-up programs (see [Building & Programming](#building--programming)) |
+
+Every cycle of every program the testbench also checks that the fetch word matches ROM[PC] and the IF/ID word matches ROM[IF/ID pc], that MUL never stalls, that each DIV gets exactly one divider start and that each load-use costs exactly one bubble. Expected registers, RAM words and the order in which instructions leave EX come from the reference model in `sw/gen_soc_tests.py`; programs whose results depend on timing (UART, DMAC polling) have hand-written expectations.
+
+Add `+trace` to the `vsim` command line to print PC, instruction and x1–x14 every cycle.
+
+To regenerate the program images, `vectors/timur_soc_vectors.txt`, `rom.hex`, `rom.mif` and the bring-up programs, run from the project root:
+
+```bash
+python3 sw/gen_soc_tests.py              # default seed 20260926
+python3 sw/gen_soc_tests.py --seed 42    # another random program; the seed is recorded in the vector file
+```
 
 ---
 
 ## Building & Programming
 
-1. Open `Timur_RV32IMC.qpf` in Quartus Prime
-2. Verify pin assignments in `Timur_RV32IMC.qsf`
-3. Run full compilation: **Processing → Start Compilation**
-4. Check timing: **Tools → Timing Analyzer → Report Timing Summary**
-   - All paths must have non-negative slack before programming the FPGA
-5. Program: **Tools → Programmer** → select `.sof` from `output_files/`
+1. Open `Timur_RV32IMC.qpf` in Quartus Prime Lite 25.1std.
+2. Run **Processing → Start Compilation**.
+3. Check **Timing Analyzer → Slow 1200mV 85C Model → Setup Summary / Fmax Summary**: slack must be positive, with 0 illegal and 0 unconstrained clocks.
+4. Check **Fitter → Resource Section → RAM Summary** for the M9K blocks and **Flow Summary** for the Embedded Multiplier 9-bit elements.
+5. Program the `.sof` from `output_files/` with **Tools → Programmer**.
+
+Pins (DE10-Lite golden top, 3.3-V LVTTL):
+
+| Port | Board signal |
+| ---- | ------------ |
+| `clk_50mhz` | `MAX10_CLK1_50` (PIN_P11) |
+| `rst_btn_n` | `KEY[0]` (PIN_B8), active low |
+| `sw[9:0]` | `SW[9:0]` |
+| `leds[9:0]` | `LEDR[9:0]` |
+| `uart_tx` | `GPIO[0]` (PIN_V10), header pin 1 → adapter RX |
+| `uart_rx` | `GPIO[1]` (PIN_W10), header pin 2 ← adapter TX |
+
+Use a 3.3 V adapter only (never 5 V) and connect its ground to a GND pin of the GPIO header. Terminal settings: 115200 8N1.
+
+Hardware bring-up order (copy the program's `.mif` over `rom.mif`, and its `.hex` over `rom.hex` for simulation, then recompile):
+
+| Step | Program | Expected on the board |
+| ---- | ------- | --------------------- |
+| 1 | `sw/bringup/bringup_1_gpio.mif` | LEDs mirror the switches; with every switch off they show `0x2A5` |
+| 2 | `sw/bringup/bringup_2_uart.mif` | `UUUU…` in the terminal, a square wave on `uart_tx` |
+| 3 | `sw/bringup/bringup_3_dma.mif` | DMA copies four ROM words to RAM; the LEDs show the checksum's low bits `0x2AA` |
+| 4 | `rom.mif` (as shipped) | Final cross-phase program: LEDs show 42 (`0b00_0010_1010`), one `U` on the UART |
 
 ---
 
 ## C Software Layer
 
-Once Phases 10–12 are complete, C programs can be compiled and loaded into the ROM `.mif` file:
+Phase 12 (planned). Toolchain and flow:
 
-```bash
-# Compile
-riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -O2 \
-    -ffreestanding -nostdlib \
-    -c main.c -o main.o
-
-# Assemble startup code
-riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 \
-    -c crt0.S -o crt0.o
-
-# Compile syscall stubs
-riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 \
-    -c syscalls.c -o syscalls.o
-
-# Link
-riscv64-unknown-elf-ld -T sw/linker.ld \
-    crt0.o syscalls.o main.o -o program.elf
-
-# Convert to .mif for Quartus ROM initialization
-python3 sw/bin2mif.py program.bin > rtl/rom.mif
-```
-
-The memory layout follows the address map above: `.text` and `.rodata` in ROM at `0x0000_0000`, `.data` and `.bss` in RAM at `0x2000_0000`. The stack grows downward from the top of RAM. `crt0.S` handles zeroing `.bss`, copying `.data` from ROM to RAM, setting up `mtvec`, and calling `main()`.
+- xPack `riscv-none-elf-gcc`, one pinned release (14.2.0-3 or later); check with `-print-multi-directory` that the `rv32im/ilp32` (later `rv32imc/ilp32`) library is used, never the default `rv32imac`.
+- `-march=rv32im_zicsr` before Phase 11, `-march=rv32imc_zicsr` after it (without `_zicsr` the CSR instructions in `crt0` do not assemble), `-mabi=ilp32`, `-O2 -ffunction-sections -fdata-sections`, `-nostartfiles -T linker.ld`, `--specs=nano.specs`, `-Wl,--gc-sections -Wl,-Map=program.map`.
+- Link through the gcc driver, not `ld` directly.
+- `crt0.S` loads `gp`, sets `sp`, sets a 4-byte-aligned `mtvec`, copies `.data`, clears `.bss` and calls `main`; the converter writes `rom.hex` and `rom.mif` (unused words `00000000`).
 
 ---
 
-## Project Roadmap
+## Development Phases
 
 ```text
-Phase 1  ✅  Primitives (Mux2, Mux4, DFF, PLL)
-Phase 2  ✅  Execution Datapath (ALU + M-extension)
-Phase 3  ✅  PC, Register File, ROM/RAM AHB slaves
-Phase 4  ✅  Decode stage (ImmGen, Parser, Control)
-Phase 5  ✅  Single-cycle CPU integration
-Phase 6  ✅  5-stage pipeline registers
-Phase 7  ✅  Hazard resolution (forwarding, stalls, flush)
-Phase 8  ✅  APB peripherals (GPIO, UART, DMAC registers, AHB→APB bridge)
-Phase 9  ✅  Full AHB bus fabric + system top-level
-Phase 10 🔜  CSR file, trap mechanism, M-mode   ← Next
-Phase 11 🔜  C extension decompressor (RV32IMC)
-Phase 12 🔜  C software layer (linker, crt0, syscalls)
+Phase 1  ✅  Primitives and verification infrastructure
+Phase 2  ✅  Execution datapath (ALU, multiplier, divider, branch evaluator)
+Phase 3  ✅  State and memory (PC, register file, ROM, RAM, load/store helpers)
+Phase 4  ✅  Decode and control
+Phase 5  ✅  Single-cycle integration
+Phase 6  ✅  Five-stage pipeline
+Phase 7  ✅  Hazard resolution
+Phase 8  ✅  APB peripherals (GPIO, UART, DMAC registers)
+Phase 9  ✅  AHB fabric and system (arbiter, bus mux, decoder, bridge, DMA engine)
+Phase 10 🔜  CSRs, traps, machine mode   ← Next
+Phase 11 🔜  C extension (decompressor, split-bank ROM)
+Phase 12 🔜  C software layer (linker script, crt0, syscalls, converter)
 ```
 
-**End goal:** A fully functional RV32IMC microcontroller, synthesized on an Intel FPGA, capable of running GCC-compiled C code with `printf` output over UART, GPIO-driven LEDs, and hardware DMA.
+✅ = implemented and verified in simulation; the Quartus and board checks listed under [Current Status](#current-status) are still open.
 
 ---
 
@@ -464,27 +421,25 @@ Phase 12 🔜  C software layer (linker, crt0, syscalls)
 
 ```text
 Timur-RV32IMC/
-├── rtl/                  # Synthesizable Verilog/SystemVerilog source
-│   ├── primitives/       # Phase 1: Mux2, Mux4, DFF, PLL wrapper
-│   ├── execution/        # Phase 2: ALU, Adder, Shifter, Multiplier, Divider, BranchEval
-│   ├── memory/           # Phase 3: PC, RegisterFile, ROM_AHB, RAM_AHB
-│   ├── decode/           # Phase 4: InstrParser, ImmGen, ALUDecoder, MainControlUnit
-│   ├── pipeline/         # Phase 6: IF/ID, ID/EX, EX/MEM, MEM/WB registers
-│   ├── hazard/           # Phase 7: ForwardingUnit, HazardDetectionUnit
-│   ├── peripherals/      # Phase 8: GPIO, UART, DMAC_APB, AHB2APB bridge
-│   ├── bus/              # Phase 9: AHB arbiter, address decoder, DMAC master
-│   ├── csr/              # Phase 10: CSR register file, trap logic
-│   └── top/              # rv32imc_core, soc, board-level wrapper
-├── tb/                   # Testbenches and test vectors
-├── sw/                   # C software layer (Phase 12)
-│   ├── crt0.S
-│   ├── linker.ld
-│   ├── syscalls.c
-│   └── bin2mif.py
-├── simulation/           # ModelSim/Questa generated files (git-ignored)
-├── Timur_RV32IMC.qpf     # Quartus project file
-├── Timur_RV32IMC.qsf     # Quartus settings (pin assignments, device)
-├── .gitignore
+├── rtl/
+│   ├── primitives/   # mux2, mux4, d_ff, reset_sync, cpu_pll (+ .qip; cpu_pll_bb.v not used)
+│   ├── execute/      # adder_32bit, barrel_shifter, multiplier, divider, alu, branch_condition_evaluator
+│   ├── state/        # pc, registers
+│   ├── memory/       # rom_ahb, ram_ahb
+│   ├── decode/       # instr_parser, imm_gen, alu_decoder, main_control_unit
+│   ├── pipeline/     # if_id_reg, id_ex_reg, ex_mem_reg, mem_wb_reg, forwarding_unit,
+│   │                 # hazard_detection_unit, store_aligner, load_formatter
+│   ├── bus/          # cpu_ahb_master, ahb_arbiter, ahb_bus_mux, ahb_decoder, ahb_apb_bridge, dmac_ahb_master
+│   ├── periph/       # gpio_apb, uart_apb, dmac_apb_regs
+│   ├── csr/          # csr_file, trap_unit (Phase 10)
+│   └── top/          # Timur_RV32IMC (board wrapper), timur_soc
+├── tb/               # <module>_tb.v, one per module
+├── vectors/          # <module>_vectors.txt and the timur_soc program images
+├── sw/               # gen_soc_tests.py, bringup/ (Phase 12 adds linker.ld, crt0.S, syscalls.c, converter)
+├── rom.hex, rom.mif  # default ROM image (final cross-phase program)
+├── ram.mif
+├── run_tests.tcl, run_tests.bat
+├── Timur_RV32IMC.qpf, Timur_RV32IMC.qsf, Timur_RV32IMC.sdc
 └── README.md
 ```
 

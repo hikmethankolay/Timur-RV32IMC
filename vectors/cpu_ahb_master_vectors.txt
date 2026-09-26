@@ -1,0 +1,62 @@
+// cpu_ahb_master test vectors
+// format: HRESETn addr(hex) store_data(hex) funct3(bin) mem_read mem_write mem_valid HGRANT HREADY (bin) HRDATA(hex)
+//         expected: HADDR(hex) HTRANS(bin) HWRITE(bin) HSIZE(bin) HWDATA(hex) HBUSREQ(bin) load_data(hex) bus_wait(bin)
+//         wait_type
+// Each clock cycle is two lines: wait_type 0 checks the cycle's outputs, wait_type 1 clocks with the same
+// inputs (x = don't care). HBURST = 000, HPROT = 0011 and HMASTLOCK = 0 are checked on every line.
+// reset
+0 00000000 00000000 010 0 0 0 1 1 55AA55AA  xxxxxxxx 00 x xxx 00000000 0 55AA55AA 0 0
+0 00000000 00000000 010 0 0 0 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// no access in MEM: IDLE, no request, no wait
+1 00000000 00000000 010 0 0 0 1 1 55AA55AA  xxxxxxxx 00 x xxx 00000000 0 55AA55AA 0 0
+1 00000000 00000000 010 0 0 0 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// valid = 0 (bubble) with MemRead set: still no access
+1 20000000 00000000 010 1 0 0 1 1 55AA55AA  xxxxxxxx 00 x xxx 00000000 0 55AA55AA 0 0
+1 20000000 00000000 010 1 0 0 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// LW granted with HREADY = 1: NONSEQ, size from funct3[1:0], accepted
+1 20000010 00000000 010 1 0 1 1 1 55AA55AA  20000010 10 0 010 00000000 1 55AA55AA 0 0
+1 20000010 00000000 010 1 0 1 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// data phase with a wait state: bus_wait from the pending data phase
+1 00000000 00000000 010 0 0 0 1 0 12345678  xxxxxxxx 00 x xxx 00000000 0 12345678 1 0
+1 00000000 00000000 010 0 0 0 1 0 12345678  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// data phase completes: load_data = HRDATA
+1 00000000 00000000 010 0 0 0 1 1 87654321  xxxxxxxx 00 x xxx 00000000 0 87654321 0 0
+1 00000000 00000000 010 0 0 0 1 1 87654321  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// LBU address phase, not granted (DMAC owns the bus): bus_wait
+1 20000013 00000000 100 1 0 1 0 1 55AA55AA  20000013 10 0 000 00000000 1 55AA55AA 1 0
+1 20000013 00000000 100 1 0 1 0 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+1 20000013 00000000 100 1 0 1 0 1 55AA55AA  20000013 10 0 000 00000000 1 55AA55AA 1 0
+1 20000013 00000000 100 1 0 1 0 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// granted: accepted
+1 20000013 00000000 100 1 0 1 1 1 55AA55AA  20000013 10 0 000 00000000 1 55AA55AA 0 0
+1 20000013 00000000 100 1 0 1 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// SW accepted on the same edge the load's data phase completes: data phase stays pending
+1 40000100 CAFEF00D 010 0 1 1 1 1 55AA55AA  40000100 10 1 010 00000000 1 55AA55AA 0 0
+1 40000100 CAFEF00D 010 0 1 1 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// store data phase with a wait state: HWDATA held; store_data input changes do not reach HWDATA
+1 00000000 11111111 010 0 0 0 1 0 55AA55AA  xxxxxxxx 00 x xxx CAFEF00D 0 55AA55AA 1 0
+1 00000000 11111111 010 0 0 0 1 0 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+1 00000000 22222222 010 0 0 0 1 0 55AA55AA  xxxxxxxx 00 x xxx CAFEF00D 0 55AA55AA 1 0
+1 00000000 22222222 010 0 0 0 1 0 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+1 00000000 33333333 010 0 0 0 1 1 55AA55AA  xxxxxxxx 00 x xxx CAFEF00D 0 55AA55AA 0 0
+1 00000000 33333333 010 0 0 0 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// SH address phase while HREADY = 0 (another master's data phase): not accepted, bus_wait
+1 2000000A 0000BEEF 001 0 1 1 1 0 55AA55AA  2000000A 10 1 001 CAFEF00D 1 55AA55AA 1 0
+1 2000000A 0000BEEF 001 0 1 1 1 0 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// accepted; HWDATA register loaded
+1 2000000A 0000BEEF 001 0 1 1 1 1 55AA55AA  2000000A 10 1 001 CAFEF00D 1 55AA55AA 0 0
+1 2000000A 0000BEEF 001 0 1 1 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// SB back to back
+1 20000003 000000AB 000 0 1 1 1 1 55AA55AA  20000003 10 1 000 0000BEEF 1 55AA55AA 0 0
+1 20000003 000000AB 000 0 1 1 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// LH back to back
+1 20000002 00000000 001 1 0 1 1 1 55AA55AA  20000002 10 0 001 000000AB 1 55AA55AA 0 0
+1 20000002 00000000 001 1 0 1 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// LHU
+1 20000006 00000000 101 1 0 1 1 1 55AA55AA  20000006 10 0 001 00000000 1 55AA55AA 0 0
+1 20000006 00000000 101 1 0 1 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+// idle; last data phase completes
+1 00000000 00000000 010 0 0 0 1 1 55AA55AA  xxxxxxxx 00 x xxx 00000000 0 55AA55AA 0 0
+1 00000000 00000000 010 0 0 0 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1
+1 00000000 00000000 010 0 0 0 1 1 55AA55AA  xxxxxxxx 00 x xxx 00000000 0 55AA55AA 0 0
+1 00000000 00000000 010 0 0 0 1 1 55AA55AA  xxxxxxxx xx x xxx xxxxxxxx x xxxxxxxx x 1

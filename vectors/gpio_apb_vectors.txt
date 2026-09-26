@@ -1,0 +1,52 @@
+// gpio_apb test vectors, one operation per line
+// format: op(dec) a(hex) b(hex)
+//   op 0  read       a = PADDR, b = expected PRDATA (sampled in ACCESS)
+//   op 1  write      a = PADDR, b = PWDATA; gpio_out must not change in SETUP
+//   op 2  set pins   a = gpio_in value
+//   op 3  check pins a = expected gpio_out
+//   op 4  wait       a = cycles
+//   op 5  write with PSEL = 0 (another peripheral selected): must have no effect
+// PREADY = 1 and PSLVERR = 0 are checked in every ACCESS cycle.
+//
+// reset values
+0 00 000
+0 04 000
+0 08 000
+3 000 0
+// GPIO_OUT drives the pins; only bits [9:0] exist
+1 00 2A5
+3 2A5 0
+0 00 2A5
+1 00 FFFFFFFF
+3 3FF 0
+0 00 3FF
+1 00 000
+3 000 0
+// GPIO_DIR is read/write and does not touch the pins
+1 08 155
+0 08 155
+3 000 0
+// GPIO_IN goes through a two-flop synchroniser: the first read after a change
+// still returns the old value, the next one the new value
+2 1A5 0
+0 04 000
+0 04 1A5
+2 3C3 0
+4 3 0
+0 04 3C3
+// GPIO_IN is read-only
+1 04 000
+0 04 3C3
+// a write while PSEL = 0 is ignored
+5 00 111
+3 000 0
+0 00 000
+// only PADDR[7:2] selects the register: upper address bits and the byte offset are ignored
+1 40000101 0CC
+3 0CC 0
+0 40000100 0CC
+0 00000102 0CC
+// unmapped offset reads 0, a write there has no effect
+1 0C 3FF
+0 0C 000
+0 00 0CC

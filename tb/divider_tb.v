@@ -1,132 +1,123 @@
 `timescale 1ns/1ps
 //
-// divider_tb — vector-driven regression for DIV / DIVU (quotient + remainder).
-// The divider is sequential; each test pulses start for one cycle then waits
-// for done while counting clock cycles.
-//
-// Latency model (10 ns clock):
-//   trivial path (div-by-zero / signed-overflow): done fires in the IDLE cycle
-//     itself — cycle_count = 0.
-//   normal path (32 shift-subtract iterations):
-//     P0  : IDLE samples start, busy<=1, state->RUNNING, bit_counter=31
-//     P1-P32 : RUNNING (32 iterations, bit 31..0)
-//     P33 : DONE, busy<=0, done<=1
-//     => cycle_count = 33 (P1..P33 counted in the while loop)
-//   Expected: cycle_count == 33 for all normal (non-trivial) divisions.
+// divider_tb: results, corner cases, latency and the done/ack handshake
+// (Phase 2). For each vector the testbench pulses start for one cycle,
+// counts cycles until done, checks both results and the latency, checks that
+// done stays at 1 without ack (fast path included), then pulses ack and
+// checks that done clears.
+// Vector: a(hex) b(hex) div_op(dec) quotient(hex) remainder(hex) cycles_in_ex(dec)
+// cycles_in_ex counts the start cycle through the cycle in which done is seen.
 //
 module divider_tb;
 
-    reg         clk, rst_n, start;
+    reg         clk, rst_n, start, ack;
     reg  [31:0] a, b;
     reg  [1:0]  div_op;
     wire [31:0] quotient, remainder;
     wire        busy, done;
 
     divider dut (
-        .clk      (clk),
-        .rst_n    (rst_n),
-        .start    (start),
-        .a        (a),
-        .b        (b),
-        .div_op   (div_op),
-        .quotient (quotient),
-        .remainder(remainder),
-        .busy     (busy),
-        .done     (done)
+        .clk       (clk),
+        .rst_n     (rst_n),
+        .start     (start),
+        .ack       (ack),
+        .a         (a),
+        .b         (b),
+        .div_op    (div_op),
+        .quotient  (quotient),
+        .remainder (remainder),
+        .busy      (busy),
+        .done      (done)
     );
 
     always #5 clk = ~clk;
 
-    integer          file, r, slen;
-    reg [8*256-1:0]  line;
-    reg [31:0]       exp_quot, exp_rem;
-    integer          failed   = 0;
-    integer          total    = 0;
-    integer          test_num = 0;
+    integer         fd, n;
+    integer         total, failed;
+    integer         cycles, exp_cycles, held;
+    reg [8*256-1:0] line;
+    reg [31:0]      exp_q, exp_r;
+    reg             ok;
 
-    integer          cycle_count;
-    reg              is_trivial;
-
-    // Expected cycle count for a normal (non-trivial) 32-bit division.
-    localparam EXPECTED_CYCLES = 33;
+    initial begin : watchdog
+        repeat (20000) @(posedge clk);
+        $display("FAIL watchdog: no summary after 20000 cycles");
+        $stop;
+    end
 
     initial begin
-        clk    = 0;
-        rst_n  = 0;
-        start  = 0;
-        a      = 32'h0;
-        b      = 32'h0;
-        div_op = 2'h0;
+        clk = 1'b0;
+        rst_n = 1'b0;
+        start = 1'b0;
+        ack = 1'b0;
+        a = 32'b0;
+        b = 32'b0;
+        div_op = 2'b0;
+        total = 0;
+        failed = 0;
+        @(posedge clk);
+        #1 rst_n = 1'b1;
 
-        @(posedge clk); #1;
-        rst_n = 1;
-        @(posedge clk); #1;
-
-        file = $fopen("tb/vectors/divider_vectors.txt", "r");
-        if (file == 0) begin
-            $display("ERROR: could not open divider_vectors.txt");
-            failed = failed + 1;
-        end else begin
-            while (!$feof(file)) begin
+        fd = $fopen("vectors/divider_vectors.txt", "r");
+        if (fd == 0)
+            $display("FAIL cannot open vectors/divider_vectors.txt");
+        else begin
+            while (!$feof(fd)) begin
                 line = 0;
-                slen = $fgets(line, file);
-                if (slen > 0) begin
-                    r = $sscanf(line, "%h %h %d %h %h",
-                                a, b, div_op, exp_quot, exp_rem);
-                    if (r == 5) begin
-                        test_num  = test_num + 1;
-                        total     = total    + 1;
+                n = $fgets(line, fd);
+                if ($sscanf(line, "%h %h %d %h %h %d", a, b, div_op, exp_q, exp_r, exp_cycles) == 6) begin
+                    ok = 1'b1;
 
-                        // Trivial path: div-by-zero or signed overflow
-                        // (done fires in the same IDLE cycle as start).
-                        is_trivial = (b == 32'h0) ||
-                                     (!div_op[0] &&
-                                      (a == 32'h80000000) &&
-                                      (b == 32'hFFFFFFFF));
-
-                        // Pulse start for one clock; count cycles until done.
-                        @(posedge clk); #1;
-                        start = 1;
-                        @(posedge clk); #1;   // P0: divider samples start
-                        start = 0;
-                        cycle_count = 0;
-                        while (!done) begin
-                            @(posedge clk); #1;
-                            cycle_count = cycle_count + 1;
-                        end
-
-                        // Latency assertion for normal (non-trivial) divisions.
-                        if (!is_trivial && cycle_count !== EXPECTED_CYCLES) begin
-                            $display("FAIL test %0d [LATENCY]: a=%h b=%h div_op=%0d | cycles=%0d exp=%0d",
-                                      test_num, a, b, div_op, cycle_count, EXPECTED_CYCLES);
-                            failed = failed + 1;
-                            total  = total  + 1;
-                        end
-
-                        if (quotient !== exp_quot || remainder !== exp_rem) begin
-                            $display("FAIL test %0d: a=%h b=%h div_op=%0d | got quot=%h rem=%h | exp quot=%h rem=%h (cycles=%0d)",
-                                      test_num, a, b, div_op,
-                                      quotient, remainder,
-                                      exp_quot, exp_rem, cycle_count);
-                            failed = failed + 1;
-                        end else begin
-                            $display("PASS test %0d: a=%h b=%h div_op=%0d | quot=%h rem=%h (cycles=%0d)",
-                                      test_num, a, b, div_op,
-                                      quotient, remainder, cycle_count);
-                        end
+                    // start cycle: the DIV's first cycle in EX
+                    start = 1'b1;
+                    cycles = 1;
+                    @(posedge clk);
+                    #1 start = 1'b0;
+                    cycles = cycles + 1;
+                    while (!done && cycles < 100) begin
+                        @(posedge clk);
+                        #1 cycles = cycles + 1;
                     end
+
+                    if (quotient !== exp_q || remainder !== exp_r || cycles !== exp_cycles || busy !== 1'b0)
+                        ok = 1'b0;
+
+                    // done is a level: it must stay at 1 while no ack arrives
+                    held = 0;
+                    repeat (3) begin
+                        @(posedge clk);
+                        #1 if (done === 1'b1) held = held + 1;
+                    end
+                    if (held != 3)
+                        ok = 1'b0;
+
+                    // ack (the DIV leaves EX) clears done on the next edge
+                    ack = 1'b1;
+                    @(posedge clk);
+                    #1 ack = 1'b0;
+                    if (done !== 1'b0 || busy !== 1'b0)
+                        ok = 1'b0;
+
+                    total = total + 1;
+                    if (!ok) begin
+                        failed = failed + 1;
+                        $display("FAIL a=%h b=%h op=%0d | got q=%h r=%h cycles=%0d held=%0d done_after_ack=%b | expected q=%h r=%h cycles=%0d",
+                                 a, b, div_op, quotient, remainder, cycles, held, done, exp_q, exp_r, exp_cycles);
+                    end else
+                        $display("PASS a=%h b=%h op=%0d | q=%h r=%h cycles=%0d",
+                                 a, b, div_op, quotient, remainder, cycles);
                 end
             end
-            $fclose(file);
+            $fclose(fd);
         end
 
-        $display("-----------------------------");
-        if (failed == 0)
+        if (total == 0)
+            $display("FAIL no test vectors were applied");
+        if (failed == 0 && total > 0)
             $display("ALL %0d TESTS PASSED", total);
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
-        $display("-----------------------------");
-        $finish;
+        $stop;
     end
 
 endmodule

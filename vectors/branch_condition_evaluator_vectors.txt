@@ -1,0 +1,31 @@
+// branch_condition_evaluator test vectors
+// format: zero(bin) alu_result_msb(bin) overflow(bin) cout(bin) BranchType(bin) BranchTaken(bin)
+// flags come from an ALU subtraction a - b; BranchType = funct3
+//
+// BEQ (000): taken when zero = 1
+1 0 0 0 000 1
+0 0 0 0 000 0
+1 1 1 1 000 1
+// BNE (001): taken when zero = 0
+0 0 0 0 001 1
+1 0 0 0 001 0
+// BLT (100): taken when msb XOR overflow = 1
+0 1 0 0 100 1
+0 0 0 0 100 0
+0 0 1 0 100 1
+0 1 1 0 100 0
+// BGE (101): taken when msb XOR overflow = 0
+0 0 0 0 101 1
+0 1 0 0 101 0
+0 1 1 0 101 1
+0 0 1 0 101 0
+// BLTU (110): taken when cout = 0 (borrow)
+0 0 0 0 110 1
+0 0 0 1 110 0
+// BGEU (111): taken when cout = 1
+0 0 0 1 111 1
+0 0 0 0 111 0
+// 010, 011: never taken (illegal, flagged by main control)
+0 0 0 0 010 0
+1 1 1 1 010 0
+1 1 1 1 011 0

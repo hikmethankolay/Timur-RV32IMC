@@ -78,6 +78,10 @@ simulation/questa/*.do.bak*
 transcript
 modelsim.ini
 
+# Regression runner (run_tests.tcl): per-test logs, temporary do-files
+logs/
+*_run.do
+
 # ------------------------------------------------------------------
 # Miscellaneous generated files
 # ------------------------------------------------------------------
@@ -104,4 +108,5 @@ desktop.ini
 *.docx
 *.pdf
 /tools/__pycache__
+/sw/__pycache__
 /.claude

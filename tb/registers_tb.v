@@ -1,4 +1,9 @@
 `timescale 1ns/1ps
+//
+// registers_tb: x0 hard-wired to 0, synchronous write, asynchronous reads and
+// the same-cycle write-through bypass on both ports (Phase 3).
+// Vector: reg_write(bin) rd_addr rd_data rs1_addr rs2_addr exp_rs1 exp_rs2 (hex) wait_type.
+//
 module registers_tb;
 
     reg         clk;
@@ -8,84 +13,78 @@ module registers_tb;
     wire [31:0] rs1_data, rs2_data;
 
     registers dut (
-        .clk      (clk),
-        .rs1_addr (rs1_addr),
-        .rs2_addr (rs2_addr),
-        .rd_addr  (rd_addr),
-        .rd_data  (rd_data),
-        .reg_write(reg_write),
-        .rs1_data (rs1_data),
-        .rs2_data (rs2_data)
+        .clk       (clk),
+        .rs1_addr  (rs1_addr),
+        .rs2_addr  (rs2_addr),
+        .rd_addr   (rd_addr),
+        .rd_data   (rd_data),
+        .reg_write (reg_write),
+        .rs1_data  (rs1_data),
+        .rs2_data  (rs2_data)
     );
 
     always #5 clk = ~clk;
 
-    integer file, r, slen;
-    reg [31:0] exp_rs1, exp_rs2;
-    reg        wait_type;   // 0 = async check (no clock), 1 = clock then check
+    integer         fd, n;
+    integer         total, failed;
     reg [8*256-1:0] line;
-    integer failed   = 0;
-    integer total    = 0;
-    integer test_num = 0;
+    reg [31:0]      exp_rs1, exp_rs2;
+    reg             wait_type;
+
+    initial begin : watchdog
+        repeat (1000) @(posedge clk);
+        $display("FAIL watchdog: no summary after 1000 cycles");
+        $stop;
+    end
 
     initial begin
-        clk       = 0;
-        reg_write = 0;
-        rd_addr   = 5'h00;
-        rd_data   = 32'h0000_0000;
-        rs1_addr  = 5'h00;
-        rs2_addr  = 5'h00;
+        clk = 1'b0;
+        reg_write = 1'b0;
+        rd_addr = 5'b0;
+        rd_data = 32'b0;
+        rs1_addr = 5'b0;
+        rs2_addr = 5'b0;
+        total = 0;
+        failed = 0;
+        #1;
 
-        file = $fopen("tb/vectors/registers_vectors.txt", "r");
-        if (file == 0) begin
-            $display("ERROR: could not open registers_vectors.txt");
-            $finish;
-        end
-
-        while (!$feof(file)) begin
-            line = 0;
-            slen = $fgets(line, file);
-            if (slen > 0) begin
-                r = $sscanf(line, "%b %h %h %h %h %h %h %b",
-                            reg_write, rd_addr, rd_data,
-                            rs1_addr, rs2_addr,
-                            exp_rs1, exp_rs2, wait_type);
-                if (r == 8) begin
-                    test_num = test_num + 1;
-                    total    = total    + 1;
-
-                    if (wait_type == 1'b0) begin
+        fd = $fopen("vectors/registers_vectors.txt", "r");
+        if (fd == 0)
+            $display("FAIL cannot open vectors/registers_vectors.txt");
+        else begin
+            while (!$feof(fd)) begin
+                line = 0;
+                n = $fgets(line, fd);
+                if ($sscanf(line, "%b %h %h %h %h %h %h %b", reg_write, rd_addr, rd_data,
+                            rs1_addr, rs2_addr, exp_rs1, exp_rs2, wait_type) == 8) begin
+                    if (wait_type == 1'b0)
                         #3;
-                    end else begin
-                        @(negedge clk); #1;
+                    else begin
+                        @(posedge clk);
+                        #1;
                     end
-
+                    total = total + 1;
                     if (rs1_data !== exp_rs1 || rs2_data !== exp_rs2) begin
-                        $display("FAIL test %0d: reg_write=%b rd_addr=%h rd_data=%h rs1_addr=%h rs2_addr=%h | rs1=%h (exp %h)  rs2=%h (exp %h)",
-                                  test_num, reg_write, rd_addr, rd_data,
-                                  rs1_addr, rs2_addr,
-                                  rs1_data, exp_rs1, rs2_data, exp_rs2);
                         failed = failed + 1;
-                    end else begin
-                        $display("PASS test %0d: reg_write=%b rd_addr=%h rd_data=%h rs1_addr=%h rs2_addr=%h | rs1=%h rs2=%h",
-                                  test_num, reg_write, rd_addr, rd_data,
-                                  rs1_addr, rs2_addr,
-                                  rs1_data, rs2_data);
-                    end
+                        $display("FAIL we=%b rd=%h data=%h rs1=%h rs2=%h wait=%b | got %h %h | expected %h %h",
+                                 reg_write, rd_addr, rd_data, rs1_addr, rs2_addr, wait_type,
+                                 rs1_data, rs2_data, exp_rs1, exp_rs2);
+                    end else
+                        $display("PASS we=%b rd=%h data=%h rs1=%h rs2=%h wait=%b | %h %h",
+                                 reg_write, rd_addr, rd_data, rs1_addr, rs2_addr, wait_type,
+                                 rs1_data, rs2_data);
                 end
             end
+            $fclose(fd);
         end
 
-        $fclose(file);
-
-        $display("-----------------------------");
-        if (failed == 0)
+        if (total == 0)
+            $display("FAIL no test vectors were applied");
+        if (failed == 0 && total > 0)
             $display("ALL %0d TESTS PASSED", total);
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
-        $display("-----------------------------");
-
-        $finish;
+        $stop;
     end
 
 endmodule

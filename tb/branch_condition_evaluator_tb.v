@@ -1,7 +1,8 @@
 `timescale 1ns/1ps
 //
-// branch_condition_evaluator_tb — vector-driven regression for all six RISC-V
-// branch conditions (BEQ, BNE, BLT, BGE, BLTU, BGEU) plus the default case.
+// branch_condition_evaluator_tb: all six branch conditions and the reserved
+// funct3 values (Phase 2).
+// Vector: zero msb overflow cout (bin) BranchType(bin) BranchTaken(bin).
 //
 module branch_condition_evaluator_tb;
 
@@ -18,59 +19,53 @@ module branch_condition_evaluator_tb;
         .BranchTaken    (BranchTaken)
     );
 
-    integer          file, r, slen;
-    reg [8*256-1:0]  line;
-    reg              exp_taken;
-    integer          failed   = 0;
-    integer          total    = 0;
-    integer          test_num = 0;
+    integer         fd, n;
+    integer         total, failed;
+    reg [8*256-1:0] line;
+    reg             exp_taken;
+
+    initial begin : watchdog
+        #100000;
+        $display("FAIL watchdog: no summary after 100 us");
+        $stop;
+    end
 
     initial begin
-        zero           = 0;
-        alu_result_msb = 0;
-        overflow       = 0;
-        cout           = 0;
-        BranchType     = 3'h0;
+        {zero, alu_result_msb, overflow, cout} = 4'b0;
+        BranchType = 3'b0;
+        total = 0;
+        failed = 0;
 
-        file = $fopen("tb/vectors/branch_condition_evaluator_vectors.txt", "r");
-        if (file == 0) begin
-            $display("ERROR: could not open branch_condition_evaluator_vectors.txt");
-            failed = failed + 1;
-        end else begin
-            while (!$feof(file)) begin
+        fd = $fopen("vectors/branch_condition_evaluator_vectors.txt", "r");
+        if (fd == 0)
+            $display("FAIL cannot open vectors/branch_condition_evaluator_vectors.txt");
+        else begin
+            while (!$feof(fd)) begin
                 line = 0;
-                slen = $fgets(line, file);
-                if (slen > 0) begin
-                    r = $sscanf(line, "%b %b %b %b %d %b",
-                                zero, alu_result_msb, overflow, cout,
-                                BranchType, exp_taken);
-                    if (r == 6) begin
-                        #10;
-                        test_num = test_num + 1;
-                        total    = total    + 1;
-                        if (BranchTaken !== exp_taken) begin
-                            $display("FAIL test %0d: zero=%b msb=%b ovf=%b cout=%b BranchType=%0d | got=%b exp=%b",
-                                      test_num, zero, alu_result_msb, overflow, cout,
-                                      BranchType, BranchTaken, exp_taken);
-                            failed = failed + 1;
-                        end else begin
-                            $display("PASS test %0d: zero=%b msb=%b ovf=%b cout=%b BranchType=%0d | taken=%b",
-                                      test_num, zero, alu_result_msb, overflow, cout,
-                                      BranchType, BranchTaken);
-                        end
-                    end
+                n = $fgets(line, fd);
+                if ($sscanf(line, "%b %b %b %b %b %b", zero, alu_result_msb, overflow, cout,
+                            BranchType, exp_taken) == 6) begin
+                    #10;
+                    total = total + 1;
+                    if (BranchTaken !== exp_taken) begin
+                        failed = failed + 1;
+                        $display("FAIL z=%b msb=%b v=%b c=%b funct3=%b | got=%b expected=%b",
+                                 zero, alu_result_msb, overflow, cout, BranchType, BranchTaken, exp_taken);
+                    end else
+                        $display("PASS z=%b msb=%b v=%b c=%b funct3=%b | taken=%b",
+                                 zero, alu_result_msb, overflow, cout, BranchType, BranchTaken);
                 end
             end
-            $fclose(file);
+            $fclose(fd);
         end
 
-        $display("-----------------------------");
-        if (failed == 0)
+        if (total == 0)
+            $display("FAIL no test vectors were applied");
+        if (failed == 0 && total > 0)
             $display("ALL %0d TESTS PASSED", total);
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
-        $display("-----------------------------");
-        $finish;
+        $stop;
     end
 
 endmodule

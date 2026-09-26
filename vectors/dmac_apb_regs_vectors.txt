@@ -1,0 +1,71 @@
+// dmac_apb_regs test vectors, one operation per line
+// format: op(dec) a(hex) b(hex) c(hex)
+//   op 0  read          a = PADDR, b = expected PRDATA
+//   op 1  write         a = PADDR, b = PWDATA
+//   op 2  engine busy   a = dmac_busy level
+//   op 3  engine done   one-cycle dmac_done pulse
+//   op 4  start pulses  a = number of one-cycle dmac_start pulses since the last check
+//   op 5  outputs       a = dmac_src, b = dmac_dst, c = dmac_len
+//   op 6  irq           a = expected irq
+//   op 7  CTRL write with a dmac_done pulse in the same (ACCESS) cycle: a = PADDR, b = PWDATA
+// Registers: 0x00 SRC, 0x04 DST, 0x08 LEN, 0x0C CTRL (bit 0 start, bit 1 irq_enable),
+// 0x10 STATUS (bit 0 busy, bit 1 done). PREADY = 1 and PSLVERR = 0 checked in every ACCESS.
+//
+// reset values
+0 00 0 0
+0 04 0 0
+0 08 0 0
+0 0C 0 0
+0 10 0 0
+6 0 0 0
+// program a transfer; registers read back and drive the engine
+1 00 00001000 0
+1 04 20000100 0
+1 08 00000004 0
+0 00 00001000 0
+0 04 20000100 0
+0 08 00000004 0
+5 00001000 20000100 00000004
+4 0 0 0
+// CTRL start: exactly one one-cycle pulse; start reads back as 0
+1 0C 1 0
+4 1 0 0
+0 0C 0 0
+// STATUS mirrors the engine's busy; a start while busy is ignored
+2 1 0 0
+0 10 1 0
+1 0C 1 0
+4 0 0 0
+// completion: done is sticky, busy follows the engine
+3 0 0 0
+2 0 0 0
+0 10 2 0
+0 10 2 0
+// any CTRL write clears done; irq_enable reads back
+1 0C 2 0
+4 0 0 0
+0 10 0 0
+0 0C 2 0
+// irq = done AND irq_enable
+6 0 0 0
+3 0 0 0
+6 1 0 0
+0 10 2 0
+1 0C 0 0
+6 0 0 0
+0 10 0 0
+// a completion in the same cycle as a CTRL write stays visible
+7 0C 2 0
+0 10 2 0
+6 1 0 0
+1 0C 0 0
+// LEN = 0 is stored like any value (the engine finishes at once)
+1 08 0 0
+0 08 0 0
+// unmapped offset reads 0 and a write there changes nothing
+1 14 FFFFFFFF 0
+0 14 0 0
+5 00001000 20000100 00000000
+// only PADDR[7:2] selects the register
+0 40000204 20000100 0
+0 00000201 00001000 0

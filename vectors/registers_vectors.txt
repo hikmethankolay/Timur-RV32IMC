@@ -1,0 +1,31 @@
+// registers test vectors
+// format: reg_write(bin) rd_addr(hex) rd_data(hex) rs1_addr(hex) rs2_addr(hex) exp_rs1(hex) exp_rs2(hex) wait_type
+// wait_type 0: check 3 ns after applying inputs, no clock edge (asynchronous reads, write-through bypass)
+// wait_type 1: wait for the next rising edge plus 1 ns, then check (synchronous write)
+//
+// initial state: x0 and x1 read 0
+0 00 00000000 00 01 00000000 00000000 0
+// write x1: visible on the edge
+1 01 DEADBEEF 01 00 DEADBEEF 00000000 1
+0 00 00000000 01 01 DEADBEEF DEADBEEF 0
+// write attempt to x0: x0 still reads 0 after the edge
+1 00 CAFEBABE 00 01 00000000 DEADBEEF 1
+0 00 00000000 00 00 00000000 00000000 0
+// reg_write = 0: no write
+0 02 CAFEBABE 02 01 00000000 DEADBEEF 1
+// same-cycle write is visible on both read ports before the edge (bypass)
+1 02 12345678 02 02 12345678 12345678 0
+1 02 12345678 02 01 12345678 DEADBEEF 1
+0 00 00000000 01 02 DEADBEEF 12345678 0
+// bypass on rs2 only; rs1 reads the stored value
+1 05 00000055 01 05 DEADBEEF 00000055 0
+1 05 00000055 05 05 00000055 00000055 1
+// bypass does not apply to x0 even when rd_addr = 0
+1 00 FFFFFFFF 00 00 00000000 00000000 0
+// overwrite: bypass returns the new value, the old one before the write
+1 01 00000001 01 05 00000001 00000055 0
+1 01 00000001 01 05 00000001 00000055 1
+// x31
+1 1F FFFFFFFF 1F 1F FFFFFFFF FFFFFFFF 0
+1 1F FFFFFFFF 1F 1F FFFFFFFF FFFFFFFF 1
+0 00 00000000 1F 02 FFFFFFFF 12345678 0

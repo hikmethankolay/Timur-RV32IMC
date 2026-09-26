@@ -1,0 +1,102 @@
+// uart_apb test vectors, one operation per line (DIVIDER = 433: 434 cycles per bit, 115200 baud at 50 MHz)
+// format: op(dec) a(hex) b(hex) c(hex)
+//   op 0  read       a = PADDR, b = expected PRDATA, c = compare mask
+//   op 1  write      a = PADDR, b = PWDATA
+//   op 2  loopback   a = 1: uart_rx follows uart_tx; 0: uart_rx driven by the testbench (idle high)
+//   op 3  wait       a = cycles
+//   op 4  TX frame   a = byte: the frame starts right after the preceding write; start bit, 8 data bits
+//                    LSB first and stop bit are checked at their centres, every bit lasts 434 cycles and
+//                    tx_busy is high for all 4340 cycles of the frame and low afterwards
+//   op 5  RX frame   a = byte sent on uart_rx by the testbench with a valid stop bit
+//   op 6  glitch     a = cycles uart_rx is held low (shorter than half a bit)
+//   op 7  irq        a = expected irq
+//   op 8  TX idle    a = cycles uart_tx must stay high (no frame)
+//   op 9  RX frame with a bad stop bit (framing error), a = byte
+// Registers: 0x00 DATA, 0x04 STATUS (bit 0 tx_busy, bit 1 rx_valid, bit 2 rx_overrun), 0x08 CTRL
+// (bit 0 rx_enable, bit 1 rx_irq_enable). PREADY = 1 and PSLVERR = 0 are checked in every ACCESS cycle.
+//
+// every register resets to 0: receiver disabled
+0 04 00 FFFFFFFF
+0 08 00 FFFFFFFF
+0 00 00 FFFFFFFF
+7 0 0 0
+// transmit with the receiver disabled: the looped-back frame is ignored
+2 1 0 0
+1 00 55 0
+4 55 0 0
+0 04 00 FFFFFFFF
+// enable the receiver: a looped-back byte is received and rx_valid is set
+1 08 01 0
+0 08 01 FFFFFFFF
+1 00 A3 0
+4 A3 0 0
+3 10 0 0
+0 04 02 FFFFFFFF
+// reading DATA returns the byte and clears rx_valid
+0 00 A3 FFFFFFFF
+0 04 00 FFFFFFFF
+// tx_busy is visible in STATUS during a frame; a write while tx_busy is ignored
+1 00 11 0
+0 04 01 01
+1 00 22 0
+3 1000 0 0
+0 04 01 01
+3 1000 0 0
+3 1000 0 0
+3 1000 0 0
+3 1000 0 0
+0 04 02 FFFFFFFF
+8 1000 0 0
+0 00 11 FFFFFFFF
+// a byte stored (SB) as the replicated value on all lanes: bits [7:0] are sent
+1 00 41414141 0
+4 41 0 0
+3 10 0 0
+0 00 41 FFFFFFFF
+// overrun: a second byte arrives before DATA is read; the new byte is kept,
+// reading DATA clears rx_valid and rx_overrun
+1 00 5A 0
+4 5A 0 0
+1 00 3C 0
+4 3C 0 0
+3 10 0 0
+0 04 06 FFFFFFFF
+0 00 3C FFFFFFFF
+0 04 00 FFFFFFFF
+// receive interrupt: irq = rx_valid AND rx_irq_enable
+1 08 03 0
+0 08 03 FFFFFFFF
+1 00 C7 0
+4 C7 0 0
+3 10 0 0
+7 1 0 0
+0 00 C7 FFFFFFFF
+7 0 0 0
+1 08 01 0
+// external frames on uart_rx: sampled at the bit centres
+2 0 0 0
+5 96 0 0
+3 10 0 0
+0 04 02 FFFFFFFF
+0 00 96 FFFFFFFF
+5 00 0 0
+0 00 00 FFFFFFFF
+5 FF 0 0
+0 00 FF FFFFFFFF
+// a low glitch shorter than half a bit is rejected at the start-bit check
+6 64 0 0
+3 1000 0 0
+0 04 00 FFFFFFFF
+5 0F 0 0
+0 00 0F FFFFFFFF
+// framing error (stop bit 0): the byte is dropped
+9 81 0 0
+3 1000 0 0
+0 04 00 FFFFFFFF
+// receiver disabled again: frames are ignored
+1 08 00 0
+5 77 0 0
+0 04 00 FFFFFFFF
+// only PADDR[7:2] selects the register
+0 40000009 00 FFFFFFFF
+0 4000000C 00 FFFFFFFF

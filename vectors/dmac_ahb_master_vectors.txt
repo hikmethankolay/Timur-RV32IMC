@@ -1,0 +1,91 @@
+// dmac_ahb_master test vectors
+// format: HRESETn(bin) dmac_src dmac_dst dmac_len (hex) dmac_start HGRANT HREADY (bin) HRDATA(hex)
+//         expected: HBUSREQ(bin) HADDR(hex) HTRANS(bin) HWRITE(bin) HWDATA(hex) dmac_busy dmac_done (bin)
+//         wait_type
+// HSIZE = 010 (word) is checked on every line. Each clock cycle is two lines: wait_type 0 checks the
+// cycle's outputs, wait_type 1 clocks with the same inputs (x = don't care).
+// reset
+0 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+0 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// IDLE: no request
+1 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// start, LEN = 2
+1 00001000 20000100 00000002 1 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+1 00001000 20000100 00000002 1 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// RD_ADDR: NONSEQ read of SRC; parameters are latched (inputs change)
+1 DEAD0000 BEEF0000 00000009 0 1 1 00000000  1 00001000 10 0 xxxxxxxx 1 0 0
+1 DEAD0000 BEEF0000 00000009 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// RD_DATA: capture HRDATA
+1 00001000 20000100 00000002 0 1 1 11111111  1 xxxxxxxx 00 0 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 1 1 11111111  x xxxxxxxx xx x xxxxxxxx x x 1
+// WR_ADDR: NONSEQ write of DST
+1 00001000 20000100 00000002 0 1 1 00000000  1 20000100 10 1 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// WR_DATA: HWDATA = captured word, count 1
+1 00001000 20000100 00000002 0 1 1 00000000  1 xxxxxxxx 00 0 11111111 1 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// RD_ADDR of word 1 while the CPU owns the bus: waits with HBUSREQ high
+1 00001000 20000100 00000002 0 0 1 00000000  1 00001004 10 0 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 0 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 0 1 00000000  1 00001004 10 0 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 0 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// granted
+1 00001000 20000100 00000002 0 1 1 00000000  1 00001004 10 0 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// RD_DATA with a wait state from the slave
+1 00001000 20000100 00000002 0 1 0 99999999  1 xxxxxxxx 00 0 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 1 0 99999999  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 1 1 22222222  1 xxxxxxxx 00 0 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 1 1 22222222  x xxxxxxxx xx x xxxxxxxx x x 1
+// WR_ADDR: the CPU takes the bus between the read and the write; the word is kept
+1 00001000 20000100 00000002 0 0 1 00000000  1 20000104 10 1 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 0 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 0 1 00000000  1 20000104 10 1 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 0 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 1 1 00000000  1 20000104 10 1 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// WR_DATA of the last word: count + 1 = LEN -> DONE
+1 00001000 20000100 00000002 0 1 1 00000000  1 xxxxxxxx 00 0 22222222 1 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// DONE: done pulse
+1 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 1 1 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// IDLE
+1 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// start from IDLE with LEN = 1
+1 00001000 20000100 00000001 1 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+1 00001000 20000100 00000001 1 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// start while busy has no effect
+1 00001000 20000100 00000005 1 1 1 00000000  1 00001000 10 0 xxxxxxxx 1 0 0
+1 00001000 20000100 00000005 1 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 1 1 33333333  1 xxxxxxxx 00 0 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 1 1 33333333  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 1 1 00000000  1 20000100 10 1 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 1 1 00000000  1 xxxxxxxx 00 0 33333333 1 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// done
+1 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 1 1 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// LEN = 0: IDLE -> DONE directly, no bus request
+1 00001000 20000100 00000000 1 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+1 00001000 20000100 00000000 1 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// DONE
+1 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 1 1 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// IDLE
+1 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+// reset in the middle of a transfer
+1 00001000 20000100 00000003 1 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+1 00001000 20000100 00000003 1 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 1 1 00000000  1 00001000 10 0 xxxxxxxx 1 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+0 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+0 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1
+1 00001000 20000100 00000002 0 1 1 00000000  0 xxxxxxxx 00 0 xxxxxxxx 0 0 0
+1 00001000 20000100 00000002 0 1 1 00000000  x xxxxxxxx xx x xxxxxxxx x x 1

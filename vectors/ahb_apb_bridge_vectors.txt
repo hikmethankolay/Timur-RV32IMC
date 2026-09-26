@@ -1,0 +1,72 @@
+// ahb_apb_bridge test vectors
+// format: HRESETn HSEL (bin) HADDR(hex) HTRANS(bin) HWRITE(bin) HWDATA(hex) hready_other(bin)
+//         PREADY_UART PREADY_GPIO PREADY_DMAC (bin)
+//         expected: HRDATA(hex) HREADYOUT(bin) PADDR(hex) PWRITE(bin) PWDATA(hex) PENABLE PSEL_UART PSEL_GPIO PSEL_DMAC (bin)
+//         wait_type
+// The bus HREADY is HREADYOUT AND hready_other (hready_other = 0 models another slave's data phase).
+// PRDATA_UART/GPIO/DMAC are fixed at 0000AAAA / 0000BBBB / 0000CCCC.
+// Each clock cycle is two lines: wait_type 0 checks the cycle's outputs, wait_type 1 clocks (x = don't care).
+// reset
+0 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+0 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// IDLE: HREADYOUT = 1, no PSEL
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// address phase to UART_STATUS accepted
+1 1 40000004 10 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 1 40000004 10 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// SETUP: PSEL_UART, PENABLE = 0, HREADYOUT = 0 (one wait state)
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx 0 40000004 0 00000000 0 1 0 0 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// ACCESS: PENABLE = 1, HREADYOUT = PREADY, HRDATA = PRDATA
+1 0 00000000 00 0 00000000 1 1 1 1  0000AAAA 1 40000004 0 00000000 1 1 0 0 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// back to IDLE
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// write to GPIO_OUT
+1 1 40000100 10 1 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 1 40000100 10 1 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// SETUP: PWDATA = HWDATA from the master's data phase
+1 0 00000000 00 0 000002A5 1 1 1 1  xxxxxxxx 0 40000100 1 000002A5 0 0 1 0 0
+1 0 00000000 00 0 000002A5 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// ACCESS; a second write is presented: accepted when PREADY ends ACCESS (back-to-back)
+1 1 40000208 10 1 000002A5 1 1 1 1  0000BBBB 1 40000100 1 000002A5 1 0 1 0 0
+1 1 40000208 10 1 000002A5 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// SETUP of the DMAC write, no IDLE in between
+1 0 00000000 00 0 00000004 1 1 1 1  xxxxxxxx 0 40000208 1 00000004 0 0 0 1 0
+1 0 00000000 00 0 00000004 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// ACCESS with PREADY low: HREADYOUT stays low
+1 0 00000000 00 0 00000004 1 1 1 0  0000CCCC 0 40000208 1 00000004 1 0 0 1 0
+1 0 00000000 00 0 00000004 1 1 1 0  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+1 0 00000000 00 0 00000004 1 1 1 0  0000CCCC 0 40000208 1 00000004 1 0 0 1 0
+1 0 00000000 00 0 00000004 1 1 1 0  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// PREADY high: transfer completes
+1 0 00000000 00 0 00000004 1 1 1 1  0000CCCC 1 40000208 1 00000004 1 0 0 1 0
+1 0 00000000 00 0 00000004 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// idle
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// unmapped APB page 0x03: no PSEL, completes with PRDATA 0
+1 1 40000300 10 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 1 40000300 10 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx 0 xxxxxxxx x 00000000 0 0 0 0 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+1 0 00000000 00 0 00000000 1 1 1 1  00000000 1 40000300 0 00000000 1 0 0 0 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// address phase not accepted: HSEL = 0, HTRANS IDLE, or HREADY = 0 (another slave's data phase)
+1 0 40000000 10 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 0 40000000 10 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+1 1 40000000 00 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 1 40000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+1 1 40000000 10 0 00000000 0 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 1 40000000 10 0 00000000 0 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+// SEQ transfer accepted; read of the DMAC page
+1 1 40000210 11 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 1 40000210 11 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx 0 40000210 0 00000000 0 0 0 1 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+1 0 00000000 00 0 00000000 1 1 1 1  0000CCCC 1 40000210 0 00000000 1 0 0 1 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx 1 xxxxxxxx x 00000000 0 0 0 0 0
+1 0 00000000 00 0 00000000 1 1 1 1  xxxxxxxx x xxxxxxxx x xxxxxxxx x x x x 1

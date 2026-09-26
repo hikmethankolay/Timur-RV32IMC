@@ -1,112 +1,76 @@
 `timescale 1ns/1ps
 //
-// forwarding_unit_tb — vector-driven regression for the forwarding_unit module.
-// Purely combinational: apply the 6 inputs, wait #10, check {forwardA, forwardB}.
-//
-// Vector format (one test per line):
-//   id_ex_rs1 id_ex_rs2 ex_mem_rd ex_mem_regwrite mem_wb_rd mem_wb_regwrite expA expB
-//     - rs1/rs2/ex_rd/wb_rd : 5-bit, hex (2 digits)
-//     - ex_rw/wb_rw         : 1-bit, binary
-//     - expA/expB           : 2-bit, binary
+// forwarding_unit_tb: 10 (EX/MEM) and 01 (WB) forwarding, EX/MEM priority,
+// no forwarding for rd = x0 or RegWrite = 0 (Phase 7).
+// Vector: id_ex_rs1 id_ex_rs2 ex_mem_rd (hex) ex_mem_regwrite(bin)
+//         mem_wb_rd(hex) mem_wb_regwrite(bin) forwardA forwardB (bin)
 //
 module forwarding_unit_tb;
 
-    reg  [4:0] id_ex_rs1;
-    reg  [4:0] id_ex_rs2;
-    reg  [4:0] ex_mem_rd;
-    reg        ex_mem_regwrite;
-    reg  [4:0] mem_wb_rd;
-    reg        mem_wb_regwrite;
-    wire [1:0] forwardA;
-    wire [1:0] forwardB;
+    reg  [4:0] id_ex_rs1, id_ex_rs2, ex_mem_rd, mem_wb_rd;
+    reg        ex_mem_regwrite, mem_wb_regwrite;
+    wire [1:0] forwardA, forwardB;
 
     forwarding_unit dut (
-        .id_ex_rs1      (id_ex_rs1),
-        .id_ex_rs2      (id_ex_rs2),
-        .ex_mem_rd      (ex_mem_rd),
-        .ex_mem_regwrite(ex_mem_regwrite),
-        .mem_wb_rd      (mem_wb_rd),
-        .mem_wb_regwrite(mem_wb_regwrite),
-        .forwardA       (forwardA),
-        .forwardB       (forwardB)
+        .id_ex_rs1       (id_ex_rs1),
+        .id_ex_rs2       (id_ex_rs2),
+        .ex_mem_rd       (ex_mem_rd),
+        .ex_mem_regwrite (ex_mem_regwrite),
+        .mem_wb_rd       (mem_wb_rd),
+        .mem_wb_regwrite (mem_wb_regwrite),
+        .forwardA        (forwardA),
+        .forwardB        (forwardB)
     );
 
-    integer          file, r, slen;
-    reg [8*256-1:0]  line;
-    integer          failed   = 0;
-    integer          total    = 0;
-    integer          test_num = 0;
+    integer         fd, n;
+    integer         total, failed;
+    reg [8*256-1:0] line;
+    reg [1:0]       exp_a, exp_b;
 
-    task run_vectors(input [8*64-1:0] filename);
-        reg [4:0] rs1_tmp, rs2_tmp, exrd_tmp, wbrd_tmp;
-        reg       exrw_tmp, wbrw_tmp;
-        reg [1:0] expA, expB;
-        begin
-            file = $fopen(filename, "r");
-            if (file == 0) begin
-                $display("ERROR: could not open %0s", filename);
-                failed = failed + 1;
-            end else begin
-                while (!$feof(file)) begin
-                    line = 0;
-                    slen = $fgets(line, file);
-                    if (slen > 0) begin
-                        r = $sscanf(line, "%h %h %h %b %h %b %b %b",
-                                    rs1_tmp, rs2_tmp,
-                                    exrd_tmp, exrw_tmp,
-                                    wbrd_tmp, wbrw_tmp,
-                                    expA, expB);
-                        if (r == 8) begin
-                            id_ex_rs1       = rs1_tmp;
-                            id_ex_rs2       = rs2_tmp;
-                            ex_mem_rd       = exrd_tmp;
-                            ex_mem_regwrite = exrw_tmp;
-                            mem_wb_rd       = wbrd_tmp;
-                            mem_wb_regwrite = wbrw_tmp;
-                            #10;
-                            test_num = test_num + 1;
-                            total    = total    + 1;
-                            if (forwardA !== expA || forwardB !== expB) begin
-                                $display("FAIL test %0d: rs1=%h rs2=%h | exrd=%h rw=%b | wbrd=%h rw=%b | got A=%b B=%b | exp A=%b B=%b",
-                                          test_num,
-                                          id_ex_rs1, id_ex_rs2,
-                                          ex_mem_rd, ex_mem_regwrite,
-                                          mem_wb_rd, mem_wb_regwrite,
-                                          forwardA, forwardB, expA, expB);
-                                failed = failed + 1;
-                            end else begin
-                                $display("PASS test %0d: rs1=%h rs2=%h | exrd=%h rw=%b | wbrd=%h rw=%b | A=%b B=%b",
-                                          test_num,
-                                          id_ex_rs1, id_ex_rs2,
-                                          ex_mem_rd, ex_mem_regwrite,
-                                          mem_wb_rd, mem_wb_regwrite,
-                                          forwardA, forwardB);
-                            end
-                        end
-                    end
-                end
-                $fclose(file);
-            end
-        end
-    endtask
+    initial begin : watchdog
+        #100000;
+        $display("FAIL watchdog: no summary after 100 us");
+        $stop;
+    end
 
     initial begin
-        id_ex_rs1       = 5'b0;
-        id_ex_rs2       = 5'b0;
-        ex_mem_rd       = 5'b0;
-        ex_mem_regwrite = 1'b0;
-        mem_wb_rd       = 5'b0;
-        mem_wb_regwrite = 1'b0;
+        {id_ex_rs1, id_ex_rs2, ex_mem_rd, mem_wb_rd} = 20'b0;
+        {ex_mem_regwrite, mem_wb_regwrite} = 2'b0;
+        total = 0;
+        failed = 0;
 
-        run_vectors("tb/vectors/forwarding_unit_vectors.txt");
+        fd = $fopen("vectors/forwarding_unit_vectors.txt", "r");
+        if (fd == 0)
+            $display("FAIL cannot open vectors/forwarding_unit_vectors.txt");
+        else begin
+            while (!$feof(fd)) begin
+                line = 0;
+                n = $fgets(line, fd);
+                if ($sscanf(line, "%h %h %h %b %h %b %b %b", id_ex_rs1, id_ex_rs2, ex_mem_rd,
+                            ex_mem_regwrite, mem_wb_rd, mem_wb_regwrite, exp_a, exp_b) == 8) begin
+                    #10;
+                    total = total + 1;
+                    if (forwardA !== exp_a || forwardB !== exp_b) begin
+                        failed = failed + 1;
+                        $display("FAIL rs1=%h rs2=%h ex_rd=%h/%b wb_rd=%h/%b | got A=%b B=%b | expected A=%b B=%b",
+                                 id_ex_rs1, id_ex_rs2, ex_mem_rd, ex_mem_regwrite, mem_wb_rd, mem_wb_regwrite,
+                                 forwardA, forwardB, exp_a, exp_b);
+                    end else
+                        $display("PASS rs1=%h rs2=%h ex_rd=%h/%b wb_rd=%h/%b | A=%b B=%b",
+                                 id_ex_rs1, id_ex_rs2, ex_mem_rd, ex_mem_regwrite, mem_wb_rd, mem_wb_regwrite,
+                                 forwardA, forwardB);
+                end
+            end
+            $fclose(fd);
+        end
 
-        $display("-----------------------------");
-        if (failed == 0)
+        if (total == 0)
+            $display("FAIL no test vectors were applied");
+        if (failed == 0 && total > 0)
             $display("ALL %0d TESTS PASSED", total);
         else
             $display("%0d / %0d TESTS FAILED", failed, total);
-        $display("-----------------------------");
-        $finish;
+        $stop;
     end
 
 endmodule

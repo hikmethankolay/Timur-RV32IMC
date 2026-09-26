@@ -1,0 +1,21 @@
+// ahb_bus_mux test vectors (combinational: apply, wait 10 ns, compare)
+// format: HMASTER HMASTER_DATA (bin)
+//         CPU:  HADDR(hex) HTRANS(bin) HWRITE(bin) HSIZE(bin) HWDATA(hex)
+//         DMAC: HADDR(hex) HTRANS(bin) HWRITE(bin) HSIZE(bin) HWDATA(hex)
+//         expected: HADDR(hex) HTRANS(bin) HWRITE(bin) HSIZE(bin) HWDATA(hex)
+// CPU owns address and data phase
+0 0  20000010 10 1 000 11111111  00001000 00 0 010 22222222  20000010 10 1 000 11111111
+// CPU owns address and data phase
+0 0  40000104 10 0 001 CAFEBABE  20000100 10 1 010 0BADF00D  40000104 10 0 001 CAFEBABE
+// DMAC owns address and data phase
+1 1  20000010 10 1 000 11111111  00001000 00 0 010 22222222  00001000 00 0 010 22222222
+// DMAC owns address and data phase
+1 1  40000104 10 0 001 CAFEBABE  20000100 10 1 010 0BADF00D  20000100 10 1 010 0BADF00D
+// ownership changed on this edge: address from the DMAC, HWDATA still from the CPU
+1 0  20000010 10 1 000 11111111  00001000 00 0 010 22222222  00001000 00 0 010 11111111
+// ownership changed on this edge: address from the DMAC, HWDATA still from the CPU
+1 0  40000104 10 0 001 CAFEBABE  20000100 10 1 010 0BADF00D  20000100 10 1 010 CAFEBABE
+// address from the CPU, HWDATA from the DMAC's pending write
+0 1  20000010 10 1 000 11111111  00001000 00 0 010 22222222  20000010 10 1 000 22222222
+// address from the CPU, HWDATA from the DMAC's pending write
+0 1  40000104 10 0 001 CAFEBABE  20000100 10 1 010 0BADF00D  40000104 10 0 001 0BADF00D

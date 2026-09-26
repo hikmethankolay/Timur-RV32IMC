@@ -1,146 +1,105 @@
-// ID/EX pipeline register: gate freezes latch during DIV backend stall; flush on branch or ID bubble.
+// ID/EX pipeline register (Phase 6).
+// Priority: reset -> flush (bubble: valid = 0 and every control 0) -> hold
+// (enable = 0) -> capture. The CSR and trap fields are carried for Phase 10.
+// All fields are packed into one vector and unpacked straight after it.
 module id_ex_reg (
-    input         clk_i,
-    input         rst_n_i,
-    input         gate_i,   // 0 = hold EX operands (freeze with multicycle op)
-    input         flush_i,  // 1 = inject bubble into EX (NOP control)
-    // Operand + PC bundle from decode / ID adders
-    input  [31:0] pc_d_in,
-    input  [31:0] pc_plus4_d_in,
-    input  [31:0] btarget_pc_d_in,
-    input  [31:0] rs1_val_d_in,
-    input  [31:0] rs2_val_d_in,
-    input  [31:0] imm32_d_in,
-    input  [4:0]  rs1_adr_d_in,
-    input  [4:0]  rs2_adr_d_in,
-    input  [4:0]  rd_adr_d_in,
-    input  [6:0]  opc7_d_in,
-    input  [4:0]  alu_ctl_d_in,
-    input         alu_a_use_id_d_in,
-    input  [31:0] alu_a_id_d_in,
-    input         alu_imm_b_d_in,
-    input         br_jmp_d_in,
-    input         mem_rd_d_in,
-    input         mem_we_d_in,
-    input         wb_from_ld_d_in,
-    input         rf_we_d_in,
-    input  [2:0]  funct3_d_in,
-    input         csr_we_d_in,
-    input  [1:0]  csr_op_d_in,
-    input  [11:0] csr_adr_d_in,
-    input         trap_ecall_d_in,
-    input         trap_ebreak_d_in,
-    input         trap_mret_d_in,
-    // Latched EX-stage view (suffix _x = enters execute this cycle when gate=1)
-    output reg [31:0] pc_x_out,
-    output reg [31:0] pc_plus4_x_out,
-    output reg [31:0] btarget_pc_x_out,
-    output reg [31:0] rs1_val_x_out,
-    output reg [31:0] rs2_val_x_out,
-    output reg [31:0] imm32_x_out,
-    output reg [4:0]  rs1_adr_x_out,
-    output reg [4:0]  rs2_adr_x_out,
-    output reg [4:0]  rd_adr_x_out,
-    output reg [6:0]  opc7_x_out,
-    output reg [4:0]  alu_ctl_x_out,
-    output reg        alu_a_use_id_x_out,
-    output reg [31:0] alu_a_id_x_out,
-    output reg        alu_imm_b_x_out,
-    output reg        br_jmp_x_out,
-    output reg        mem_rd_x_out,
-    output reg        mem_we_x_out,
-    output reg        wb_from_ld_x_out,
-    output reg        rf_we_x_out,
-    output reg [2:0]  funct3_x_out,
-    output reg        csr_we_x_out,
-    output reg [1:0]  csr_op_x_out,
-    output reg [11:0] csr_adr_x_out,
-    output reg        trap_ecall_x_out,
-    output reg        trap_ebreak_x_out,
-    output reg        trap_mret_x_out
+    input         clk,
+    input         rst_n,
+    input         enable,
+    input         flush,
+
+    input  [31:0] pc_in,
+    input  [31:0] rs1_data_in,
+    input  [31:0] rs2_data_in,
+    input  [31:0] imm_in,
+    input  [4:0]  rs1_addr_in,
+    input  [4:0]  rs2_addr_in,
+    input  [4:0]  rd_addr_in,
+    input  [2:0]  funct3_in,
+    input  [11:0] csr_addr_in,
+    input  [4:0]  ALUControl_in,
+    input  [1:0]  ALUSrcA_in,
+    input         ALUSrcB_in,
+    input         Branch_in,
+    input         Jump_in,
+    input         Jalr_in,
+    input         MemRead_in,
+    input         MemWrite_in,
+    input         MemToReg_in,
+    input         RegWrite_in,
+    input         CSRAccess_in,
+    input  [1:0]  CSROp_in,
+    input         CSRImm_in,
+    input         IsECALL_in,
+    input         IsEBREAK_in,
+    input         IsMRET_in,
+    input         Illegal_in,
+    input         valid_in,
+
+    output [31:0] pc_out,
+    output [31:0] rs1_data_out,
+    output [31:0] rs2_data_out,
+    output [31:0] imm_out,
+    output [4:0]  rs1_addr_out,
+    output [4:0]  rs2_addr_out,
+    output [4:0]  rd_addr_out,
+    output [2:0]  funct3_out,
+    output [11:0] csr_addr_out,
+    output [4:0]  ALUControl_out,
+    output [1:0]  ALUSrcA_out,
+    output        ALUSrcB_out,
+    output        Branch_out,
+    output        Jump_out,
+    output        Jalr_out,
+    output        MemRead_out,
+    output        MemWrite_out,
+    output        MemToReg_out,
+    output        RegWrite_out,
+    output        CSRAccess_out,
+    output [1:0]  CSROp_out,
+    output        CSRImm_out,
+    output        IsECALL_out,
+    output        IsEBREAK_out,
+    output        IsMRET_out,
+    output        Illegal_out,
+    output        valid_out
 );
-    always @(posedge clk_i or negedge rst_n_i) begin
-        if (!rst_n_i) begin
-            pc_x_out           <= 32'b0;
-            pc_plus4_x_out      <= 32'b0;
-            btarget_pc_x_out    <= 32'b0;
-            rs1_val_x_out       <= 32'b0;
-            rs2_val_x_out       <= 32'b0;
-            imm32_x_out         <= 32'b0;
-            rs1_adr_x_out       <= 5'b0;
-            rs2_adr_x_out       <= 5'b0;
-            rd_adr_x_out        <= 5'b0;
-            opc7_x_out          <= 7'b0;
-            alu_ctl_x_out       <= 5'b0;
-            alu_a_use_id_x_out  <= 1'b0;
-            alu_a_id_x_out      <= 32'b0;
-            alu_imm_b_x_out     <= 1'b0;
-            br_jmp_x_out        <= 1'b0;
-            mem_rd_x_out        <= 1'b0;
-            mem_we_x_out        <= 1'b0;
-            wb_from_ld_x_out    <= 1'b0;
-            rf_we_x_out         <= 1'b0;
-            funct3_x_out        <= 3'b0;
-            csr_we_x_out        <= 1'b0;
-            csr_op_x_out        <= 2'b0;
-            csr_adr_x_out       <= 12'b0;
-            trap_ecall_x_out    <= 1'b0;
-            trap_ebreak_x_out   <= 1'b0;
-            trap_mret_x_out     <= 1'b0;
-        end else if (flush_i) begin
-            pc_x_out           <= 32'b0;
-            pc_plus4_x_out      <= 32'b0;
-            btarget_pc_x_out    <= 32'b0;
-            rs1_val_x_out       <= 32'b0;
-            rs2_val_x_out       <= 32'b0;
-            imm32_x_out         <= 32'b0;
-            rs1_adr_x_out       <= 5'b0;
-            rs2_adr_x_out       <= 5'b0;
-            rd_adr_x_out        <= 5'b0;
-            opc7_x_out          <= 7'b0;
-            alu_ctl_x_out       <= 5'b0;
-            alu_a_use_id_x_out  <= 1'b0;
-            alu_a_id_x_out      <= 32'b0;
-            alu_imm_b_x_out     <= 1'b0;
-            br_jmp_x_out        <= 1'b0;
-            mem_rd_x_out        <= 1'b0;
-            mem_we_x_out        <= 1'b0;
-            wb_from_ld_x_out    <= 1'b0;
-            rf_we_x_out         <= 1'b0;
-            funct3_x_out        <= 3'b0;
-            csr_we_x_out        <= 1'b0;
-            csr_op_x_out        <= 2'b0;
-            csr_adr_x_out       <= 12'b0;
-            trap_ecall_x_out    <= 1'b0;
-            trap_ebreak_x_out   <= 1'b0;
-            trap_mret_x_out     <= 1'b0;
-        end else if (gate_i) begin
-            pc_x_out           <= pc_d_in;
-            pc_plus4_x_out      <= pc_plus4_d_in;
-            btarget_pc_x_out    <= btarget_pc_d_in;
-            rs1_val_x_out       <= rs1_val_d_in;
-            rs2_val_x_out       <= rs2_val_d_in;
-            imm32_x_out         <= imm32_d_in;
-            rs1_adr_x_out       <= rs1_adr_d_in;
-            rs2_adr_x_out       <= rs2_adr_d_in;
-            rd_adr_x_out        <= rd_adr_d_in;
-            opc7_x_out          <= opc7_d_in;
-            alu_ctl_x_out       <= alu_ctl_d_in;
-            alu_a_use_id_x_out  <= alu_a_use_id_d_in;
-            alu_a_id_x_out      <= alu_a_id_d_in;
-            alu_imm_b_x_out     <= alu_imm_b_d_in;
-            br_jmp_x_out        <= br_jmp_d_in;
-            mem_rd_x_out        <= mem_rd_d_in;
-            mem_we_x_out        <= mem_we_d_in;
-            wb_from_ld_x_out    <= wb_from_ld_d_in;
-            rf_we_x_out         <= rf_we_d_in;
-            funct3_x_out        <= funct3_d_in;
-            csr_we_x_out        <= csr_we_d_in;
-            csr_op_x_out        <= csr_op_d_in;
-            csr_adr_x_out       <= csr_adr_d_in;
-            trap_ecall_x_out    <= trap_ecall_d_in;
-            trap_ebreak_x_out   <= trap_ebreak_d_in;
-            trap_mret_x_out     <= trap_mret_d_in;
-        end
+
+    localparam W = 32 + 32 + 32 + 32 + 5 + 5 + 5 + 3 + 12   // data and addresses
+                 + 5 + 2 + 1                                // ALU controls
+                 + 3                                        // Branch, Jump, Jalr
+                 + 4                                        // MemRead, MemWrite, MemToReg, RegWrite
+                 + 1 + 2 + 1                                // CSRAccess, CSROp, CSRImm
+                 + 4                                        // IsECALL, IsEBREAK, IsMRET, Illegal
+                 + 1;                                       // valid
+
+    wire [W-1:0] d = {pc_in, rs1_data_in, rs2_data_in, imm_in,
+                      rs1_addr_in, rs2_addr_in, rd_addr_in, funct3_in, csr_addr_in,
+                      ALUControl_in, ALUSrcA_in, ALUSrcB_in,
+                      Branch_in, Jump_in, Jalr_in,
+                      MemRead_in, MemWrite_in, MemToReg_in, RegWrite_in,
+                      CSRAccess_in, CSROp_in, CSRImm_in,
+                      IsECALL_in, IsEBREAK_in, IsMRET_in, Illegal_in,
+                      valid_in};
+
+    reg [W-1:0] q;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            q <= {W{1'b0}};
+        else if (flush)
+            q <= {W{1'b0}};
+        else if (enable)
+            q <= d;
     end
+
+    assign {pc_out, rs1_data_out, rs2_data_out, imm_out,
+            rs1_addr_out, rs2_addr_out, rd_addr_out, funct3_out, csr_addr_out,
+            ALUControl_out, ALUSrcA_out, ALUSrcB_out,
+            Branch_out, Jump_out, Jalr_out,
+            MemRead_out, MemWrite_out, MemToReg_out, RegWrite_out,
+            CSRAccess_out, CSROp_out, CSRImm_out,
+            IsECALL_out, IsEBREAK_out, IsMRET_out, Illegal_out,
+            valid_out} = q;
+
 endmodule
