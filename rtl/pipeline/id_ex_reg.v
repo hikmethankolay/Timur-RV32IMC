@@ -1,6 +1,7 @@
-// ID/EX pipeline register (Phase 6).
+// ID/EX pipeline register (Phase 6; CSR and trap fields for Phase 10,
+// is_compressed for Phase 11).
 // Priority: reset -> flush (bubble: valid = 0 and every control 0) -> hold
-// (enable = 0) -> capture. The CSR and trap fields are carried for Phase 10.
+// (enable = 0) -> capture.
 // All fields are packed into one vector and unpacked straight after it.
 module id_ex_reg (
     input         clk,
@@ -34,6 +35,7 @@ module id_ex_reg (
     input         IsEBREAK_in,
     input         IsMRET_in,
     input         Illegal_in,
+    input         is_compressed_in,
     input         valid_in,
 
     output [31:0] pc_out,
@@ -62,6 +64,7 @@ module id_ex_reg (
     output        IsEBREAK_out,
     output        IsMRET_out,
     output        Illegal_out,
+    output        is_compressed_out,
     output        valid_out
 );
 
@@ -71,6 +74,7 @@ module id_ex_reg (
                  + 4                                        // MemRead, MemWrite, MemToReg, RegWrite
                  + 1 + 2 + 1                                // CSRAccess, CSROp, CSRImm
                  + 4                                        // IsECALL, IsEBREAK, IsMRET, Illegal
+                 + 1                                        // is_compressed
                  + 1;                                       // valid
 
     wire [W-1:0] d = {pc_in, rs1_data_in, rs2_data_in, imm_in,
@@ -80,7 +84,7 @@ module id_ex_reg (
                       MemRead_in, MemWrite_in, MemToReg_in, RegWrite_in,
                       CSRAccess_in, CSROp_in, CSRImm_in,
                       IsECALL_in, IsEBREAK_in, IsMRET_in, Illegal_in,
-                      valid_in};
+                      is_compressed_in, valid_in};
 
     reg [W-1:0] q;
 
@@ -100,6 +104,6 @@ module id_ex_reg (
             MemRead_out, MemWrite_out, MemToReg_out, RegWrite_out,
             CSRAccess_out, CSROp_out, CSRImm_out,
             IsECALL_out, IsEBREAK_out, IsMRET_out, Illegal_out,
-            valid_out} = q;
+            is_compressed_out, valid_out} = q;
 
 endmodule

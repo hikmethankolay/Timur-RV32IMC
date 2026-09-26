@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
-"""Timur SoC system tests: assembler, RV32IM reference model and test writer.
+"""Timur SoC system tests: assembler, RV32IMC reference model and test writer.
 
 Writes, relative to the project root (run it from there):
-  vectors/timur_soc_<name>.hex   ROM images loaded by tb/timur_soc_tb.v
+  vectors/timur_soc_<name>.hex   ROM images (32-bit words) loaded by tb/timur_soc_tb.v
   vectors/timur_soc_vectors.txt  programs and expected results for that testbench
-  rom.hex, rom.mif               default ROM image: the final cross-phase program
-  sw/bringup/*.hex, *.mif        hardware bring-up programs (Phase 9)
+  rom.hex                        default ROM image, 32-bit words (testbenches)
+  rom_lo.hex, rom_hi.hex,        the same image as the two 16-bit ROM banks: the
+  rom_lo.mif, rom_hi.mif         simulation and synthesis initialisation of rom_ahb
+  sw/bringup/*.hex, *_lo.mif, *_hi.mif   hardware bring-up programs (Phase 9)
 
-The reference model executes the programs on the Timur memory map as it stands
-at the end of Phase 9: no CSR file (CSR instructions write 0 to rd), ECALL,
-EBREAK, MRET, WFI, FENCE and illegal encodings retire as NOPs. Programs whose
-results depend on timing (UART busy flags, DMAC polling) carry hand-written
-expectations instead of model results.
+Most programs are assembled by the small assembler below. The Phase 11
+programs, which need real 16-bit encodings, are assembled with the GNU
+toolchain (riscv-none-elf-as on PATH or in .tools/); without it the committed
+images in vectors/ are used, so the expectations can still be regenerated.
+
+The reference model executes the programs on the Timur memory map with the
+machine-mode CSRs and precise traps of Phase 10 and the compressed
+instructions of Phase 11: illegal encodings, ECALL, EBREAK and misaligned
+loads and stores trap to mtvec; MRET returns; WFI and FENCE are NOPs. Values the model cannot know (the cycle and
+instret counters, mip) taint the registers and RAM words derived from them;
+those are left out of the automatic checks and given hand-written ones, as are
+programs whose results depend on timing (UART busy flags, DMAC polling,
+interrupts).
 
 The Phase 7 random program is generated from --seed; the seed is recorded in
 the vector file so a failing run can be reproduced.
@@ -20,9 +30,16 @@ Usage:  python3 sw/gen_soc_tests.py [--seed N] [--length N]
 """
 
 import argparse
+import glob
 import os
 import random
+import re
+import shutil
+import subprocess
 import sys
+import tempfile
+
+import bin2mem
 
 MASK = 0xFFFFFFFF
 DEFAULT_SEED = 20260926
@@ -35,7 +52,13 @@ UART_BIT = 434             # cycles per bit at 50 MHz, 115200 baud
 # ---------------------------------------------------------------------------
 CSRS = {"mstatus": 0x300, "misa": 0x301, "mie": 0x304, "mtvec": 0x305,
         "mscratch": 0x340, "mepc": 0x341, "mcause": 0x342, "mtval": 0x343,
-        "mip": 0x344, "cycle": 0xC00, "time": 0xC01, "instret": 0xC02}
+        "mip": 0x344, "mcycle": 0xB00, "minstret": 0xB02, "mcycleh": 0xB80,
+        "minstreth": 0xB82, "cycle": 0xC00, "time": 0xC01, "instret": 0xC02,
+        "cycleh": 0xC80, "timeh": 0xC81, "instreth": 0xC82, "mvendorid": 0xF11,
+        "marchid": 0xF12, "mimpid": 0xF13, "mhartid": 0xF14}
+CSR_TIMING = {0x344, 0xB00, 0xB02, 0xB80, 0xB82, 0xC00, 0xC01, 0xC02, 0xC80, 0xC81, 0xC82}
+MISA = 0x40001104                      # RV32IMC
+CSR_IMPLEMENTED = set(CSRS.values())
 R_OPS = {"add": (0x00, 0), "sub": (0x20, 0), "sll": (0x00, 1), "slt": (0x00, 2),
          "sltu": (0x00, 3), "xor": (0x00, 4), "srl": (0x00, 5), "sra": (0x20, 5),
          "or": (0x00, 6), "and": (0x00, 7), "mul": (0x01, 0), "mulh": (0x01, 1),
@@ -190,6 +213,96 @@ def assemble(source):
 
 
 # ---------------------------------------------------------------------------
+# RV32C expansion for the model (checked against vectors/decompressor_vectors.txt,
+# which comes from the GNU toolchain)
+# ---------------------------------------------------------------------------
+def decompress(h):
+    """32-bit expansion of the 16-bit instruction h; 0 for illegal and reserved encodings."""
+    q, f3 = h & 3, (h >> 13) & 7
+    rd, rs2 = (h >> 7) & 31, (h >> 2) & 31
+    rdp, rs1p = 8 + ((h >> 2) & 7), 8 + ((h >> 7) & 7)
+
+    def bit(i):
+        return (h >> i) & 1
+
+    def bits(hi, lo):
+        return (h >> lo) & ((1 << (hi - lo + 1)) - 1)
+
+    def sx(v, n):
+        return v - (1 << n) if (v >> (n - 1)) & 1 else v
+
+    if q == 0:
+        mem = bit(5) << 6 | bits(12, 10) << 3 | bit(6) << 2
+        if f3 == 0:
+            nz = bits(10, 7) << 6 | bits(12, 11) << 4 | bit(5) << 3 | bit(6) << 2
+            return enc_i(nz, 2, 0, rdp, 0x13) if nz else 0
+        if f3 == 2:
+            return enc_i(mem, rs1p, 2, rdp, 0x03)
+        if f3 == 6:
+            return enc_s(mem, rdp, rs1p, 2)
+        return 0
+    if q == 1:
+        imm6 = sx(bit(12) << 5 | bits(6, 2), 6)
+        if f3 == 0:
+            return enc_i(imm6, rd, 0, rd, 0x13)
+        if f3 in (1, 5):
+            off = sx(bit(12) << 11 | bit(8) << 10 | bits(10, 9) << 8 | bit(6) << 7 | bit(7) << 6
+                     | bit(2) << 5 | bit(11) << 4 | bits(5, 3) << 1, 12)
+            return enc_j(off, 1 if f3 == 1 else 0)
+        if f3 == 2:
+            return enc_i(imm6, 0, 0, rd, 0x13)
+        if f3 == 3:
+            if rd == 2:
+                nz = sx(bit(12) << 9 | bits(4, 3) << 7 | bit(5) << 6 | bit(2) << 5 | bit(6) << 4, 10)
+                return enc_i(nz, 2, 0, 2, 0x13) if nz else 0
+            nz = bit(12) << 5 | bits(6, 2)
+            return ((sx(nz, 6) << 12) & MASK) | (rd << 7) | 0x37 if nz else 0
+        if f3 == 4:
+            sub, sh = bits(11, 10), bits(6, 2)
+            if sub in (0, 1):
+                return 0 if bit(12) else enc_i((0x400 if sub else 0) | sh, rs1p, 5, rs1p, 0x13)
+            if sub == 2:
+                return enc_i(imm6, rs1p, 7, rs1p, 0x13)
+            if bit(12):
+                return 0
+            f3r, f7 = [(0, 0x20), (4, 0), (6, 0), (7, 0)][bits(6, 5)]
+            return enc_r(f7, rdp, rs1p, f3r, rs1p, 0x33)
+        off = sx(bit(12) << 8 | bits(6, 5) << 6 | bit(2) << 5 | bits(11, 10) << 3 | bits(4, 3) << 1, 9)
+        return enc_b(off, 0, rs1p, 0 if f3 == 6 else 1)
+    if q == 2:
+        if f3 == 0:
+            return 0 if bit(12) else enc_i(bits(6, 2), rd, 1, rd, 0x13)
+        if f3 == 2:
+            off = bits(3, 2) << 6 | bit(12) << 5 | bits(6, 4) << 2
+            return enc_i(off, 2, 2, rd, 0x03) if rd else 0
+        if f3 == 4:
+            if not bit(12):
+                if rs2 == 0:
+                    return enc_i(0, rd, 0, 0, 0x67) if rd else 0
+                return enc_r(0, rs2, 0, 0, rd, 0x33)
+            if rs2 == 0:
+                return 0x00100073 if rd == 0 else enc_i(0, rd, 0, 1, 0x67)
+            return enc_r(0, rs2, rd, 0, rd, 0x33)
+        if f3 == 6:
+            return enc_s(bits(8, 7) << 6 | bits(12, 9) << 2, rs2, 2, 2)
+        return 0
+    return 0
+
+
+def check_decompress():
+    """The model's expansion must match the toolchain for every encoding."""
+    path = "vectors/decompressor_vectors.txt"
+    if not os.path.exists(path):
+        return
+    for line in open(path):
+        f = line.split()
+        if len(f) == 3 and not line.startswith("//"):
+            h, w = int(f[0], 16), int(f[1], 16)
+            if decompress(h) != w:
+                sys.exit("model decompressor: %04X -> %08X, toolchain %08X" % (h, decompress(h), w))
+
+
+# ---------------------------------------------------------------------------
 # Reference model
 # ---------------------------------------------------------------------------
 def s32(v):
@@ -253,21 +366,83 @@ def divide(a, b, op):
     return a // b if op == 5 else a % b
 
 
-class Timur:
-    """Instruction-level model of the Timur SoC at the end of Phase 9."""
+class ModelError(Exception):
+    pass
 
-    def __init__(self, image):
+
+def sources(ins):
+    """Registers an instruction actually reads."""
+    op, f3, r1, r2 = ins & 0x7F, (ins >> 12) & 7, (ins >> 15) & 31, (ins >> 20) & 31
+    if op in (0x33, 0x23, 0x63):
+        return {r1, r2} - {0}
+    if op in (0x13, 0x03, 0x67) or (op == 0x73 and f3 in (1, 2, 3)):
+        return {r1} - {0}
+    return set()
+
+
+class Timur:
+    """Instruction-level model of the Timur SoC (machine mode, precise traps).
+
+    Optional, for the C programs of Phase 12: uart_rx is the byte stream a
+    terminal sends (each byte arrives once the receiver is enabled and the
+    previous byte was read); interrupts=True takes the external interrupt
+    (DMAC done with irq_enable, UART rx_valid with rx_irq_enable) before an
+    instruction whenever mstatus.MIE and mie.MEIE are set; trace=False keeps
+    only the instruction count."""
+
+    def __init__(self, image, uart_rx=b"", interrupts=False, trace=True):
         self.rom = dict(image)
         self.ram = bytearray(0x10000)
         self.ram_written = set()
+        self.ram_taint = set()
         self.x = [0] * 32
+        self.taint = set()
         self.pc = 0
         self.gpio_out = self.gpio_dir = self.uart_ctrl = 0
         self.uart_tx = []
+        self.uart_rx = list(uart_rx)
+        self.rx_valid = self.rx_data = 0
+        self.interrupts, self.keep_trace, self.retired = interrupts, trace, 0
         self.dmac = {"src": 0, "dst": 0, "len": 0, "irq": 0, "done": 0}
         self.trace = []
+        self.traps = []
         self.divs = 0
+        self.mie = self.mpie = self.meie = 0
+        self.mtvec = self.mscratch = self.mepc = self.mcause = self.mtval = 0
 
+    # ---- CSRs --------------------------------------------------------------
+    def csr_read(self, a):
+        if a == 0x344 and self.interrupts:   # mip.MEIP: the OR of the interrupt lines
+            return int(bool(self.irq_line())) << 11
+        return {0x300: (3 << 11) | (self.mpie << 7) | (self.mie << 3), 0x301: MISA,
+                0x304: self.meie << 11, 0x305: self.mtvec, 0x340: self.mscratch,
+                0x341: self.mepc, 0x342: self.mcause, 0x343: self.mtval}.get(a, 0)
+
+    def csr_write(self, a, v):
+        if a == 0x300:
+            self.mie, self.mpie = (v >> 3) & 1, (v >> 7) & 1
+        elif a == 0x304:
+            self.meie = (v >> 11) & 1
+        elif a == 0x305:
+            self.mtvec = v & ~3 & MASK
+        elif a == 0x340:
+            self.mscratch = v
+        elif a == 0x341:
+            self.mepc = v & ~1 & MASK
+        elif a == 0x342:
+            self.mcause = v
+        elif a == 0x343:
+            self.mtval = v
+        # misa, mip, the counters: writes change nothing the model tracks
+
+    def trap(self, cause, tval):
+        self.traps.append((cause, self.pc, tval))
+        self.mepc, self.mcause, self.mtval = self.pc & ~1 & MASK, cause, tval & MASK
+        self.mpie, self.mie = self.mie, 0
+        self.pc = self.mtvec
+        return False
+
+    # ---- memory ------------------------------------------------------------
     def read_word(self, a):
         region = a >> 16
         if region == 0x0000:
@@ -277,14 +452,26 @@ class Timur:
             return int.from_bytes(self.ram[i:i + 4], "little")
         if region == 0x4000:
             page, reg = (a >> 8) & 0xFF, (a >> 2) & 0x3F
-            if page == 0:      # UART: nothing received; the model sends at once (never busy)
-                return {2: self.uart_ctrl}.get(reg, 0)
+            if page == 0:      # UART: the model sends at once (never busy)
+                self.uart_deliver()
+                if reg == 0:
+                    self.rx_valid = 0
+                    return self.rx_data
+                return {1: self.rx_valid << 1, 2: self.uart_ctrl}.get(reg, 0)
             if page == 1:
                 return {0: self.gpio_out, 1: GPIO_IN, 2: self.gpio_dir}.get(reg, 0)
             if page == 2:
                 d = self.dmac
                 return {0: d["src"], 1: d["dst"], 2: d["len"], 3: d["irq"] << 1, 4: d["done"] << 1}.get(reg, 0)
         return 0               # default slave
+
+    def uart_deliver(self):
+        if self.uart_ctrl & 1 and not self.rx_valid and self.uart_rx:
+            self.rx_data, self.rx_valid = self.uart_rx.pop(0), 1
+
+    def irq_line(self):
+        self.uart_deliver()
+        return (self.dmac["irq"] and self.dmac["done"]) or (self.rx_valid and self.uart_ctrl & 2)
 
     def write_ram_word(self, a, data, be):
         i = a & 0xFFFC
@@ -340,17 +527,31 @@ class Timur:
             return half
         return w
 
+    # ---- one instruction ---------------------------------------------------
+    def half(self, a):
+        return (self.rom.get(a & 0xFFFC, 0) >> (16 * ((a >> 1) & 1))) & 0xFFFF
+
     def step(self):
         pc = self.pc
-        ins = self.rom.get(pc & 0xFFFC, 0)
-        self.trace.append(pc)
+        if self.interrupts and self.mie and self.meie and self.irq_line():
+            return self.trap(0x8000000B, 0)
+        low = self.half(pc)
+        if low & 3 != 3:                  # 16-bit instruction: execute its expansion
+            ins, length = decompress(low), 2
+        else:
+            ins, length = low | self.half(pc + 2) << 16, 4
         op, rd, f3 = ins & 0x7F, (ins >> 7) & 31, (ins >> 12) & 7
-        a, b = self.x[(ins >> 15) & 31], self.x[(ins >> 20) & 31]
+        r1 = (ins >> 15) & 31
+        a, b = self.x[r1], self.x[(ins >> 20) & 31]
         f7 = ins >> 25
-        nxt, res = (pc + 4) & MASK, None
+        nxt, res, res_taint = (pc + length) & MASK, None, False
+        tainted = bool(sources(ins) & self.taint)
         if not legal(ins):
-            pass
-        elif op == 0x33:
+            return self.trap(2, 0)
+        if op in (0x03, 0x23, 0x63, 0x67) and tainted and not (op == 0x23 and r1 not in self.taint):
+            raise ModelError("0x%04X: a timing-dependent value controls an address or a branch" % pc)
+        if op == 0x33:
+            res_taint = tainted
             if f7 == 0x01:
                 if f3 == 0:
                     res = (a * b) & MASK
@@ -366,31 +567,71 @@ class Timur:
             else:
                 res = self.alu(f3, a, b, f7 == 0x20)
         elif op == 0x13:
+            res_taint = tainted
             imm = imm_i(ins) & MASK
             if f3 in (1, 5):
                 res = self.alu(f3, a, imm & 31, f7 == 0x20)
             else:
                 res = self.alu(f3, a, imm, False)
         elif op == 0x03:
-            res = self.load((a + imm_i(ins)) & MASK, f3)
+            addr = (a + imm_i(ins)) & MASK
+            if (f3 & 3 == 2 and addr & 3) or (f3 & 3 == 1 and addr & 1):
+                return self.trap(4, addr)
+            res = self.load(addr, f3)
+            res_taint = addr >> 16 == 0x2000 and (addr & 0xFFFC) in self.ram_taint
         elif op == 0x23:
-            self.store((a + imm_s(ins)) & MASK, f3, b)
+            addr = (a + imm_s(ins)) & MASK
+            if (f3 & 3 == 2 and addr & 3) or (f3 & 3 == 1 and addr & 1):
+                return self.trap(6, addr)
+            self.store(addr, f3, b)
+            if addr >> 16 == 0x2000:
+                if ((ins >> 20) & 31) in self.taint:
+                    self.ram_taint.add(addr & 0xFFFC)
+                elif f3 & 3 == 2:
+                    self.ram_taint.discard(addr & 0xFFFC)
         elif op == 0x63:
             take = {0: a == b, 1: a != b, 4: s32(a) < s32(b), 5: s32(a) >= s32(b), 6: a < b, 7: a >= b}[f3]
             if take:
                 nxt = (pc + imm_b(ins)) & MASK
         elif op == 0x6F:
-            res, nxt = (pc + 4) & MASK, (pc + imm_j(ins)) & MASK
+            res, nxt = (pc + length) & MASK, (pc + imm_j(ins)) & MASK
         elif op == 0x67:
-            res, nxt = (pc + 4) & MASK, (a + imm_i(ins)) & MASK & ~1
+            res, nxt = (pc + length) & MASK, (a + imm_i(ins)) & MASK & ~1
         elif op == 0x37:
             res = ins & 0xFFFFF000
         elif op == 0x17:
             res = (pc + (ins & 0xFFFFF000)) & MASK
         elif op == 0x73 and f3 != 0:
-            res = 0                   # CSR read: no CSR file before Phase 10
+            addr, kind, imm_form = ins >> 20, f3 & 3, f3 & 4
+            write = not (kind in (2, 3) and r1 == 0)
+            if addr not in CSR_IMPLEMENTED or (write and addr >> 10 == 3):
+                return self.trap(2, 0)
+            if write and not imm_form and r1 in self.taint:
+                raise ModelError("0x%04X: a timing-dependent value is written to a CSR" % pc)
+            src = r1 if imm_form else a
+            old = self.csr_read(addr)
+            if write:
+                self.csr_write(addr, src if kind == 1 else (old | src) if kind == 2 else (old & ~src & MASK))
+            res, res_taint = old, addr in CSR_TIMING and not (addr == 0x344 and self.interrupts)
+        elif op == 0x73:
+            f12 = ins >> 20
+            if f12 == 0x000:
+                return self.trap(11, 0)
+            if f12 == 0x001:
+                return self.trap(3, pc)
+            if f12 == 0x302:                  # MRET
+                nxt = self.mepc
+                self.mie, self.mpie = self.mpie, 1
+            # WFI: nothing to wait for
         if res is not None and rd:
             self.x[rd] = res & MASK
+            if res_taint:
+                self.taint.add(rd)
+            else:
+                self.taint.discard(rd)
+        if self.keep_trace:
+            self.trace.append(pc)
+        self.retired += 1
         self.pc = nxt
         return ins == 0x0000006F      # JAL x0, 0: halt loop
 
@@ -702,6 +943,248 @@ SYSTEM_EXPECTED = {1: 0x2A5, 2: 0x2A5, 3: GPIO_IN, 4: 0x3FF, 5: 0x3FF, 6: 0xC3, 
 SYSTEM_RAM = dict([(0x20000000, 0x2A5), (0x20000004, 0x2A5), (0x20000008, 0x22222222)] +
                   [(0x20000100 + 4 * i, 0x11111111 * (i + 1)) for i in range(8)])
 
+PHASE10 = """
+# Phase 10: CSR instructions, precise traps, MRET, counters
+        lui   x31, 0x20000         # RAM base
+        addi  x28, x31, 0x200      # trap log: mcause, mepc, mtval for each trap
+        addi  x1, x0, handler
+        csrrw x0, mtvec, x1        # mtvec = handler
+        csrrs x2, mtvec, x0        # read back
+# WRITE, SET, CLEAR and the immediate forms on mscratch
+        addi  x3, x0, 0x5A
+        csrrw x4, mscratch, x3     # old value 0, mscratch = 5A
+        csrrs x5, mscratch, x0     # 5A, no write
+        addi  x6, x0, 0x0F
+        csrrs x7, mscratch, x6     # 5A, mscratch = 5F
+        csrrc x8, mscratch, x6     # 5F, mscratch = 50
+        csrrwi x9, mscratch, 7     # 50, mscratch = 7
+        csrrsi x10, mscratch, 8    # 7, mscratch = F
+        csrrci x11, mscratch, 3    # F, mscratch = C
+        csrrs x12, mscratch, x0    # C
+# the operand arrives by forwarding; the old value is forwarded onwards
+        addi  x15, x0, 0x123
+        csrrw x0, mscratch, x15
+        csrrs x16, mscratch, x0    # 123
+        add   x17, x16, x16        # 246
+# back-to-back CSR instructions on the same CSR behave sequentially
+        csrrwi x0, mscratch, 1
+        csrrsi x13, mscratch, 2    # 1, mscratch = 3
+        csrrs x14, mscratch, x0    # 3
+# WARL fields and identification
+        addi  x18, x0, 0x7FF
+        csrrw x0, mepc, x18        # mepc[1:0] read 0
+        csrrs x18, mepc, x0        # 7FC
+        csrrs x19, misa, x0        # 40001104
+        csrrs x20, mhartid, x0     # 0
+        csrrsi x0, mstatus, 8      # MIE = 1
+        csrrs x21, mstatus, x0     # 1808
+        csrrci x0, mstatus, 8      # MIE = 0
+# counters: csrr of a read-only CSR does not trap; cycle advances by one per
+# cycle, instret by one per retired instruction
+        csrrs x22, cycle, x0
+        csrrs x23, cycle, x0
+        sub   x24, x23, x22        # 1
+        csrrs x25, instret, x0
+        addi  x0, x0, 0
+        addi  x0, x0, 0
+        addi  x0, x0, 0
+        csrrs x26, instret, x0
+        sub   x26, x26, x25        # 4
+# a CSR instruction held in EX by a bus freeze writes once: with HREADY waits
+# the CSRRSI sits in EX while the load's data phase waits
+        lw    x27, 0(x31)
+        addi  x0, x0, 0
+        csrrsi x13, mscratch, 4    # old value 3 (written twice it would read 7)
+        csrrs x14, mscratch, x0    # 7
+# traps: the handler logs mcause, mepc and mtval and returns behind the
+# trapping instruction, which leaves no trace
+        ecall                      # 11
+        ebreak                     # 3, mtval = PC
+        .word 0x00000000           # 2: illegal instruction
+        csrrs x0, 0x7C0, x0        # 2: CSR not implemented
+        csrrw x0, cycle, x1        # 2: write to the read-only space
+        lw    x1, 1(x31)           # 4, mtval = address; x1 keeps its value
+        lh    x1, 3(x31)           # 4
+        lhu   x1, 1(x31)           # 4
+        addi  x27, x31, 2
+        lw    x1, 0(x27)           # 4: misaligned through the base register
+        sw    x3, 0(x27)           # 6
+        lw    x27, 2(x27)          # base + offset aligned: no trap
+        lb    x27, 3(x31)          # bytes never trap
+        sw    x3, 2(x31)           # 6: misaligned store, the RAM is not written
+        sh    x3, 1(x31)           # 6
+        sb    x3, 3(x31)           # RAM word 0 = 5A000000
+        csrrs x29, mstatus, x0     # 1880: MPIE = 1 after MRET
+        csrrs x30, mepc, x0        # behind the last trapping instruction
+halt:   jal   x0, halt
+        .org 0x300
+handler:
+        csrrs x29, mcause, x0
+        sw    x29, 0(x28)
+        csrrs x29, mepc, x0
+        sw    x29, 4(x28)
+        csrrs x30, mtval, x0
+        sw    x30, 8(x28)
+        addi  x28, x28, 12
+        addi  x29, x29, 4          # return behind the trapping instruction
+        csrrw x0, mepc, x29
+        mret
+"""
+
+INTERRUPT = """
+# Phase 10: the DMAC's done interrupt. The DMA finishes while a chain of DIVs
+# occupies EX; the interrupt waits until no DIV is in EX, then enters the
+# handler exactly once.
+        lui   x31, 0x20000         # RAM base
+        lui   x30, 0x40000         # APB base
+        addi  x29, x30, 0x200      # DMAC registers
+        addi  x1, x0, handler
+        csrrw x0, mtvec, x1
+        addi  x1, x0, 1
+        slli  x1, x1, 11
+        csrrs x0, mie, x1          # MEIE = 1
+        csrrsi x0, mstatus, 8      # MIE = 1
+        lui   x2, 0x1
+        sw    x2, 0(x29)           # SRC = 0x1000 (ROM)
+        addi  x3, x31, 0x100
+        sw    x3, 4(x29)           # DST = 0x2000_0100
+        addi  x4, x0, 4
+        sw    x4, 8(x29)           # LEN = 4 words
+        addi  x5, x0, 3
+        sw    x5, 12(x29)          # CTRL: start, irq_enable
+        lui   x6, 0x12345
+        addi  x7, x0, 7
+        div   x8, x6, x7           # the DMA finishes during this chain
+        div   x9, x8, x7
+        div   x10, x9, x7
+        div   x11, x10, x7
+wait:   beq   x20, x0, wait        # the handler sets x20
+        addi  x21, x0, 1
+halt:   jal   x0, halt
+        .org 0x300
+handler:
+        csrrs x22, mcause, x0      # 8000000B
+        csrrs x23, mip, x0         # 800: MEIP
+        sw    x0, 12(x29)          # a CTRL write clears done: the interrupt line drops
+        lw    x24, 16(x29)         # STATUS: 0
+        add   x24, x24, x0
+        csrrs x25, mip, x0         # 0
+        addi  x20, x0, 1
+        addi  x26, x26, 1          # interrupts taken: exactly one
+        mret
+        .org 0x1000
+        .word 0x11111111
+        .word 0x22222222
+        .word 0x33333333
+        .word 0x44444444
+"""
+
+PHASE11 = """
+# Phase 11: every kind of compressed instruction, 32-bit instructions at both
+# alignments (at 2 mod 4 a 32-bit instruction straddles two ROM words),
+# compressed control flow with PC + 2 links, traps from 16-bit instructions.
+# Assembled by GNU as; the c.* mnemonics force the 16-bit forms.
+        .option rvc
+start:  lui    x31, 0x20000             # RAM base
+        addi   x28, x31, 0x200          # trap log: mcause, mepc, mtval
+        lui    x2, 0x20001              # sp = 2000_1000
+        la     x1, handler
+        csrw   mtvec, x1
+# arithmetic on x8-x15, the registers the 3-bit fields reach
+        c.li   x8, 5
+        c.li   x9, -3
+        c.addi x8, 7                    # 12
+        c.lui  x10, 0x12                # 0001_2000
+        c.lui  x11, 0xfffe0             # FFFE_0000
+        c.andi x9, 15                   # 13
+        c.srli x10, 4                   # 0000_1200
+        c.srai x11, 8                   # FFFF_FE00
+        c.slli x8, 3                    # 96
+        c.mv   x12, x8                  # 96
+        c.add  x12, x9                  # 109
+        c.sub  x12, x10                 # 109 - 1200
+        c.li   x13, 0x15
+        c.xor  x13, x8                  # 75
+        c.li   x14, 0x0A
+        c.or   x14, x9                  # 0F
+        c.li   x15, -1
+        c.and  x15, x10                 # 1200
+# stack- and register-relative loads and stores
+        c.addi16sp sp, -64              # sp = 2000_0FC0
+        c.addi4spn x14, sp, 16          # x14 = 2000_0FD0
+        c.swsp x12, 0(sp)
+        c.lwsp x15, 0(sp)
+        c.addi x15, 1                   # load-use with a 16-bit consumer
+        c.sw   x15, 4(x14)
+        c.lw   x13, 4(x14)
+        c.mv   x16, x13
+# 32-bit instructions at 2 mod 4 straddle two ROM words
+        .balign 4
+        c.nop
+        addi   x17, x0, 0x123           # at 2 mod 4
+        lui    x18, 0x54321             # at 2 mod 4
+        c.nop
+        addi   x18, x18, 0x765          # at 0 mod 4
+        lw     x19, 4(x14)
+        addi   x19, x19, 1              # load-use between straddling instructions
+# compressed branches, taken and not taken, at both alignments
+        c.li   x8, 0
+        c.beqz x8, 1f                   # taken
+        c.li   x9, 1                    # skipped
+1:      c.bnez x8, 2f                   # not taken
+        c.li   x9, 2
+2:      c.j    3f
+        c.li   x9, 3                    # skipped
+3:      c.li   x10, 1
+        c.bnez x10, 4f                  # taken
+        c.li   x9, 4                    # skipped
+4:
+# links: PC + 2 for C.JAL and C.JALR, PC + 4 for JAL and JALR
+        c.jal  inc20
+        c.mv   x21, x1
+        jal    x1, inc20
+        c.mv   x22, x1
+        la     x5, inc20
+        c.jalr x5
+        c.mv   x23, x1
+        jalr   x1, 0(x5)
+        c.mv   x24, x1
+# a JALR to a target with bit 1 set is legal with the C extension
+        la     x5, odd_target
+        jalr   x0, 0(x5)
+        c.li   x9, 5                    # skipped
+        .balign 4
+        c.nop
+odd_target:
+        addi   x25, x0, 0x77            # at 2 mod 4
+# traps from 16-bit instructions: the handler steps over 2 bytes
+        c.ebreak                        # 3, mtval = PC
+        .2byte 0x0000                   # 2: the defined illegal encoding
+        .2byte 0x6101                   # 2: C.ADDI16SP with a zero immediate is reserved
+        ecall                           # 11: 32-bit, the handler steps over 4 bytes
+        csrr   x26, misa                # 40001104
+halt:   c.j    halt
+inc20:  c.addi x20, 1
+        c.jr   x1
+        .org   0x600
+handler:
+        csrr   x29, mcause
+        sw     x29, 0(x28)
+        csrr   x29, mepc
+        sw     x29, 4(x28)
+        csrr   x30, mtval
+        sw     x30, 8(x28)
+        addi   x28, x28, 12
+        lhu    x30, 0(x29)              # first halfword of the trapping instruction
+        andi   x30, x30, 3
+        addi   x29, x29, 2
+        addi   x27, x0, 3
+        bne    x30, x27, 5f             # 16-bit: 2 bytes
+        addi   x29, x29, 2              # 32-bit: 4 bytes
+5:      csrw   mepc, x29
+        mret
+"""
+
 FINAL = """
 # Final cross-phase verification program
         lui   x20, 0x20000         # RAM base
@@ -733,7 +1216,7 @@ poll:   lw    x16, 16(x11)         # DMAC_STATUS (APB wait states)
         csrrs x17, cycle, x0       # read-only CSR read, no trap
         addi  x18, x0, 0x100       # handler address
         csrrw x0, mtvec, x18       # mtvec = 0x100
-        ecall                      # trap to 0x100 (Phase 10)
+        ecall                      # trap to 0x100
         addi  x19, x0, 99          # executed after MRET
 halt:   jal   x0, halt
         .org 0x100
@@ -748,16 +1231,17 @@ halt:   jal   x0, halt
         .word 0x33333333
         .word 0x44444444
 """
-# Expected state before Phase 10: there is no CSR file (x17 reads 0 instead of a cycle
-# count) and ECALL does not trap, so the handler at 0x100 never runs (x22 = x23 = 0).
+# Expected state: the ECALL traps to the handler at 0x100 (x22 = mcause = 11,
+# x23 = mepc + 4 = 0x78); x17 holds a cycle count and is checked for non-zero.
 FINAL_EXPECTED = {1: 10, 2: 1, 3: 10, 4: 11, 5: 10, 6: 10, 7: 42, 10: 0x55, 11: 0x40000200,
-                  12: 0x1000, 13: 0x20000100, 14: 4, 15: 1, 16: 0, 17: 0, 18: 0x100, 19: 99,
-                  20: 0x20000000, 21: 0x40000000, 22: 0, 23: 0}
+                  12: 0x1000, 13: 0x20000100, 14: 4, 15: 1, 16: 0, 18: 0x100, 19: 99,
+                  20: 0x20000000, 21: 0x40000000, 22: 11, 23: 0x78}
 FINAL_RAM = dict([(0x20000000, 10)] + [(0x20000100 + 4 * i, 0x11111111 * (i + 1)) for i in range(4)])
 
 
-# Hardware bring-up order (Phase 9). Each is written to sw/bringup/ as .hex and
-# .mif; copy the .mif over rom.mif (and the .hex over rom.hex) and recompile.
+# Hardware bring-up order (Phase 9). Each is written to sw/bringup/ as a 32-bit
+# .hex (testbench) and as the two ROM banks (_lo/_hi .hex and .mif); copy the
+# bank files over rom_lo.* and rom_hi.* and recompile.
 BRINGUP_GPIO = """
 # Bring-up 1, GPIO only: the LEDs mirror the switches; with every switch off
 # they show the pattern 0x2A5
@@ -818,7 +1302,7 @@ halt:   jal   x0, halt
 # ---------------------------------------------------------------------------
 # Random dependency-dense program (Phase 7 checklist)
 # ---------------------------------------------------------------------------
-def random_program(seed, length):
+def random_program(seed, length, gnu=False):
     """Forward-only control flow, so every program terminates.
 
     x31 = RAM base, x30 = APB base, x29 = JALR base, x28 = computed address base,
@@ -828,7 +1312,7 @@ def random_program(seed, length):
     signed-overflow operands.
     """
     rnd = random.Random(seed)
-    out = ["# Phase 7 random program, seed %d" % seed,
+    out = ["# %s random program, seed %d" % ("Phase 11 compressed" if gnu else "Phase 7", seed),
            "        lui   x31, 0x20000", "        lui   x30, 0x40000", "        addi  x28, x31, 0"]
     pool = list(range(1, 21))
     for r in pool:
@@ -940,16 +1424,142 @@ def random_program(seed, length):
         elif k < 0.16:
             skip = rnd.randint(0, 3)
             rd = rnd.choice(pool + [0])
-            out.append("        auipc x29, 0")
-            out.append("        jalr  x%d, %d(x29)" % (rd, 8 + 4 * skip))
+            if gnu:                  # instruction sizes vary: jump to a label
+                labels[0] += 1
+                target = "L%d" % labels[0]
+                out.append("        lui   x29, %%hi(%s)" % target)
+                out.append("        jalr  x%d, %%lo(%s)(x29)" % (rd, target))
+            else:
+                out.append("        auipc x29, 0")
+                out.append("        jalr  x%d, %d(x29)" % (rd, 8 + 4 * skip))
             if rd:
                 wrote(rd)
             for _ in range(skip):
                 simple()
+            if gnu:
+                out.append(target + ":")
         else:
             simple()
         count += 1
     out.append("halt:   jal   x0, halt")
+    return "\n".join(out) + "\n"
+
+
+def random_c_program(seed, length):
+    """Dependency-dense program of 16-bit instructions mixed with 32-bit ones, for GNU as.
+
+    x9 = RAM base and x2 = sp (RAM + 0x800) stay fixed; x8 and x10-x15 carry the data
+    flow of the 3-bit register fields, x1 and x16-x22 that of the full ones. Control
+    flow is forward only (compressed branches and jumps, C.JAL, C.JR/C.JALR through
+    x5), so every program terminates; 32-bit instructions land at both alignments.
+    """
+    rnd = random.Random(seed)
+    D = [8, 10, 11, 12, 13, 14, 15]
+    A = D + [1, 16, 17, 18, 19, 20, 21, 22]
+    out = ["# Phase 11 random program of compressed and 32-bit instructions, seed %d" % seed,
+           "        .option rvc",
+           "        lui   x9, 0x20000",
+           "        lui   x2, 0x20001",
+           "        addi  x2, x2, -0x800",
+           "        lui   x30, 0x40000"]
+    for r in A:
+        v = rnd.getrandbits(32)
+        hi, lo = ((v + 0x800) >> 12) & 0xFFFFF, v & 0xFFF
+        lo = lo - 0x1000 if lo & 0x800 else lo
+        out.append("        lui   x%d, 0x%05X" % (r, hi))
+        out.append("        addi  x%d, x%d, %d" % (r, r, lo))
+    nlab = [0]
+
+    def label():
+        nlab[0] += 1
+        return "C%d" % nlab[0]
+
+    def nz6():
+        return rnd.choice([v for v in range(-32, 32) if v])
+
+    def one():
+        k = rnd.random()
+        d, d2, a, a2 = rnd.choice(D), rnd.choice(D), rnd.choice(A), rnd.choice(A)
+        if k < 0.07:
+            out.append("        c.addi  x%d, %d" % (a, nz6()))
+        elif k < 0.12:
+            out.append("        c.li    x%d, %d" % (a, rnd.randint(-32, 31)))
+        elif k < 0.15:
+            out.append("        c.lui   x%d, 0x%x" % (a, rnd.choice(list(range(1, 32)) + list(range(0xFFFE0, 0x100000)))))
+        elif k < 0.19:
+            out.append("        c.slli  x%d, %d" % (a, rnd.randint(1, 31)))
+        elif k < 0.23:
+            out.append("        c.%s  x%d, %d" % (rnd.choice(["srli", "srai"]), d, rnd.randint(1, 31)))
+        elif k < 0.26:
+            out.append("        c.andi  x%d, %d" % (d, rnd.randint(-32, 31)))
+        elif k < 0.31:
+            out.append("        c.mv    x%d, x%d" % (a, a2))
+        elif k < 0.36:
+            out.append("        c.add   x%d, x%d" % (a, a2))
+        elif k < 0.44:
+            out.append("        c.%s   x%d, x%d" % (rnd.choice(["sub", "xor", "or", "and"]), d, d2))
+        elif k < 0.50:
+            out.append("        c.lw    x%d, %d(x9)" % (d, rnd.randrange(0, 128, 4)))
+        elif k < 0.55:
+            out.append("        c.sw    x%d, %d(x9)" % (d, rnd.randrange(0, 128, 4)))
+        elif k < 0.59:
+            out.append("        c.lwsp  x%d, %d(x2)" % (a, rnd.randrange(0, 256, 4)))
+        elif k < 0.63:
+            out.append("        c.swsp  x%d, %d(x2)" % (a, rnd.randrange(0, 256, 4)))
+        elif k < 0.67:
+            op = rnd.choice(["lb", "lbu", "lh", "lhu"])
+            off = rnd.randrange(0, 128, 2 if op in ("lh", "lhu") else 1)
+            out.append("        %-6s x%d, %d(x9)" % (op, a, off))
+        elif k < 0.70:
+            op = rnd.choice(["sb", "sh"])
+            out.append("        %-6s x%d, %d(x9)" % (op, a, rnd.randrange(0, 128, 2 if op == "sh" else 1)))
+        elif k < 0.76:
+            op = rnd.choice(["mul", "mulh", "mulhsu", "mulhu", "div", "divu", "rem", "remu"])
+            out.append("        %-6s x%d, x%d, x%d" % (op, a, a2, rnd.choice(A)))
+        elif k < 0.82:
+            op = rnd.choice(["add", "sub", "xor", "or", "and", "sll", "srl", "sra", "slt", "sltu"])
+            out.append("        %-6s x%d, x%d, x%d" % (op, a, a2, rnd.choice(A)))
+        elif k < 0.86:
+            op = rnd.choice(["addi", "xori", "ori", "andi", "slti", "sltiu"])
+            out.append("        %-6s x%d, x%d, %d" % (op, a, a2, rnd.randint(-2048, 2047)))
+        elif k < 0.88:
+            out.append("        lw     x%d, %d(x30)" % (a, rnd.choice([0x100, 0x104, 0x108, 0x200, 0x204])))
+        else:
+            out.append("        sw     x%d, %d(x9)" % (a, rnd.randrange(128, 256, 4)))
+
+    count = 0
+    while count < length:
+        k = rnd.random()
+        if k < 0.08:
+            t = label()
+            out.append("        c.%s  x%d, %s" % (rnd.choice(["beqz", "bnez"]), rnd.choice(D), t))
+            for _ in range(rnd.randint(0, 3)):
+                one()
+            out.append(t + ":")
+        elif k < 0.11:
+            t = label()
+            out.append("        %-6s x%d, x%d, %s" % (rnd.choice(["beq", "bne", "blt", "bge", "bltu", "bgeu"]),
+                                                     rnd.choice(A), rnd.choice(A), t))
+            for _ in range(rnd.randint(0, 3)):
+                one()
+            out.append(t + ":")
+        elif k < 0.13:
+            t = label()
+            out.append("        c.%s    %s" % (rnd.choice(["j", "jal"]), t))
+            for _ in range(rnd.randint(0, 3)):
+                one()
+            out.append(t + ":")
+        elif k < 0.15:
+            t = label()
+            out.append("        la     x5, %s" % t)
+            out.append("        c.%s   x5" % rnd.choice(["jr", "jalr"]))
+            for _ in range(rnd.randint(0, 3)):
+                one()
+            out.append(t + ":")
+        else:
+            one()
+        count += 1
+    out.append("halt:   c.j    halt")
     return "\n".join(out) + "\n"
 
 
@@ -971,19 +1581,66 @@ def write_hex(path, image, listing, comments=True):
                 f.write("%08X\n" % w)
 
 
-def write_mif(path, image, title):
-    words = image_words(image)
-    if len(words) > 16384:
-        raise RuntimeError("image exceeds 64 KB")
+def write_banks(prefix, image, title):
+    """<prefix>_lo / _hi .hex and .mif: the two ROM banks (sw/bin2mem.py)."""
+    bin2mem.write_banks(prefix, image_words(image), title)
+
+
+def toolchain_prefix():
+    if shutil.which("riscv-none-elf-as"):
+        return "riscv-none-elf-"
+    for d in sorted(glob.glob(".tools/xpack-riscv-none-elf-gcc-*/bin")):
+        return os.path.join(d, "riscv-none-elf-")
+    return None
+
+
+def _run(cmd):
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode:
+        sys.exit("command failed: %s\n%s" % (" ".join(cmd), r.stderr[:3000]))
+    return r.stdout
+
+
+def gnu_program(name, source):
+    """Assemble with GNU as for rv32imc_zicsr (16-bit forms wherever possible), link at
+    address 0, write vectors/timur_soc_<name>.hex with the labels as comments, and return
+    (image, labels). Without the toolchain the committed file is read back instead."""
+    path = "vectors/timur_soc_%s.hex" % name
+    pre = toolchain_prefix()
+    if pre is None:
+        words, labels = [], {}
+        for line in open(path):
+            m = re.match(r"// label (\S+) ([0-9A-F]{8})", line)
+            if m:
+                labels[m.group(1)] = int(m.group(2), 16)
+            elif line.strip() and not line.startswith("//"):
+                words.append(int(line.split()[0], 16))
+        return {4 * i: w for i, w in enumerate(words)}, labels
+    with tempfile.TemporaryDirectory() as tmp:
+        src, obj = os.path.join(tmp, "p.s"), os.path.join(tmp, "p.o")
+        elf, binary = os.path.join(tmp, "p.elf"), os.path.join(tmp, "p.bin")
+        with open(src, "w") as f:
+            f.write(source)
+        _run([pre + "as", "-march=rv32imc_zicsr", "-mabi=ilp32", "-mno-relax", "-o", obj, src])
+        _run([pre + "ld", "-m", "elf32lriscv", "-Ttext=0", "-e", "0", "-o", elf, obj])
+        _run([pre + "objcopy", "-O", "binary", "-j", ".text", elf, binary])
+        data = open(binary, "rb").read()
+        data += b"\0" * (-len(data) % 4)
+        labels = {}
+        for line in _run([pre + "nm", elf]).splitlines():
+            f = line.split()
+            if len(f) == 3 and f[1] in "tT" and not f[2].startswith((".", "_")):
+                labels[f[2]] = int(f[0], 16)
+        listing = _run([pre + "objdump", "-d", "-M", "no-aliases", elf])
+    image = {4 * i: int.from_bytes(data[4 * i:4 * i + 4], "little") for i in range(len(data) // 4)}
+    halves = sum(1 for l in listing.splitlines() if re.match(r"\s+[0-9a-f]+:\s+[0-9a-f]{4}\s", l))
     with open(path, "w") as f:
-        f.write("-- Timur RV32IMC instruction ROM: %s\n" % title)
-        f.write("-- 16384 x 32-bit words; unused words are 00000000 (illegal instruction)\n\n")
-        f.write("DEPTH = 16384;\nWIDTH = 32;\nADDRESS_RADIX = HEX;\nDATA_RADIX = HEX;\n\nCONTENT BEGIN\n")
-        for i, w in enumerate(words):
-            f.write("    %04X : %08X;\n" % (i, w))
-        if len(words) < 16384:
-            f.write("    [%04X..3FFF] : 00000000;\n" % len(words))
-        f.write("END;\n")
+        f.write("// %s: assembled by GNU as (rv32imc_zicsr), %d 16-bit instructions\n" % (name, halves))
+        for lab in sorted(labels, key=labels.get):
+            f.write("// label %s %08X\n" % (lab, labels[lab]))
+        for w in image_words(image):
+            f.write("%08X\n" % w)
+    return image, labels
 
 
 class Vectors:
@@ -1008,11 +1665,18 @@ class Vectors:
     def add(self, text):
         self.lines.append(text)
 
+    def nonzero(self, regs):
+        for r in regs:
+            self.lines.append("REGNZ %d" % r)
+
 
 def model_checks(vec, model, halt, trace=True):
-    vec.regs({r: model.x[r] for r in range(1, 32)})
-    vec.ram({0x20000000 | a: int.from_bytes(model.ram[a:a + 4], "little") for a in model.ram_written})
-    vec.add("RAMNZ %d" % sum(1 for a in range(0, 0x1000, 4) if any(model.ram[a:a + 4])))
+    """Everything the model knows; tainted registers and RAM words are left out."""
+    vec.regs({r: model.x[r] for r in range(1, 32) if r not in model.taint})
+    vec.ram({0x20000000 | a: int.from_bytes(model.ram[a:a + 4], "little")
+             for a in model.ram_written if a not in model.ram_taint})
+    if not any(a < 0x1000 for a in model.ram_taint):
+        vec.add("RAMNZ %d" % sum(1 for a in range(0, 0x1000, 4) if any(model.ram[a:a + 4])))
     vec.add("LEDS %03X" % model.gpio_out)
     for byte in model.uart_tx:
         vec.add("UART %02X" % byte)
@@ -1030,6 +1694,7 @@ def main():
     ap.add_argument("--length", type=int, default=DEFAULT_LENGTH)
     args = ap.parse_args()
 
+    check_decompress()
     vec = Vectors()
     vec.comment("timur_soc test vectors, generated by sw/gen_soc_tests.py (random seed %d)" % args.seed)
     vec.comment("Directives, one per line:")
@@ -1041,14 +1706,18 @@ def main():
     vec.comment("      After each PROG the testbench also checks: halt reached,")
     vec.comment("      fetch word = ROM[PC] and IF/ID word = ROM[IF/ID pc] every cycle, one multiplier")
     vec.comment("      start and one stall cycle per MUL, exactly one divider start per DIV, one bubble")
-    vec.comment("      per load-use.")
+    vec.comment("      per load-use, no misaligned CPU bus access, no interrupt taken with a MUL or DIV")
+    vec.comment("      in EX.")
     vec.comment("  REG <n> <value>      register x<n> at the end of the run")
+    vec.comment("  REGNZ <n>            register x<n> is not zero (timing-dependent counter values)")
     vec.comment("  RAM <addr> <value>   RAM word")
     vec.comment("  RAMNZ <count>        number of non-zero words in 0x2000_0000 - 0x2000_0FFF")
     vec.comment("  LEDS <value>         gpio_out")
     vec.comment("  UART <byte>          next byte decoded from uart_tx (8N1, 434 cycles per bit)")
     vec.comment("  UARTN <count>        number of bytes decoded from uart_tx")
     vec.comment("  DIVS <count>         divider start pulses")
+    vec.comment("  IRQHELD <count>      the interrupt was pending for at least <count> cycles while a MUL or")
+    vec.comment("                       DIV was in EX (it had to wait)")
     vec.comment("  RETIRED <count>      instructions that left EX, up to and including the first halt")
     vec.comment("  TRACE <pc>           next PC in the order instructions left EX")
     vec.comment("")
@@ -1108,18 +1777,68 @@ def main():
     vec.add("UARTN 2")
     vec.add("DIVS 0")
 
-    # ---- final cross-phase program (also the default rom.hex / rom.mif) ------------------------
+    # ---- Phase 10 --------------------------------------------------------------------------------
+    image, listing, labels = assemble(PHASE10)
+    m = Timur(image).run()
+    got = [(c, e, v) for c, e, v in m.traps]
+    want = [(11,), (3,), (2,), (2,), (2,), (4,), (4,), (4,), (4,), (6,), (6,), (6,)]
+    if [(c,) for c, _, _ in got] != want:
+        sys.exit("model: Phase 10 trap causes %s" % [c for c, _, _ in got])
+    write_hex("vectors/timur_soc_phase10.hex", image, listing)
+    for waits in (0, 1):
+        vec.comment("==== Phase 10: CSR instructions, every trap cause, MRET, counters%s"
+                    % (", with HREADY waits" if waits else ""))
+        vec.prog("vectors/timur_soc_phase10.hex", 4000, labels["halt"], waits)
+        model_checks(vec, m, labels["halt"])
+        vec.comment("     timing-dependent counter values: hand-written checks")
+        vec.regs({24: 1, 26: 4})
+        vec.nonzero([22, 23, 25])
+
+    image, listing, labels = assemble(INTERRUPT)
+    write_hex("vectors/timur_soc_interrupt.hex", image, listing)
+    q = [0x12345000]
+    for _ in range(4):
+        q.append(divide(q[-1], 7, 4))
+    vec.comment("==== Phase 10: external interrupt (DMAC done) held off by a chain of DIVs, taken once")
+    vec.prog("vectors/timur_soc_interrupt.hex", 3000, labels["halt"], 0)
+    vec.regs({8: q[1], 9: q[2], 10: q[3], 11: q[4], 20: 1, 21: 1, 22: 0x8000000B, 23: 0x800,
+              24: 0, 25: 0, 26: 1})
+    vec.ram({0x20000100 + 4 * i: 0x11111111 * (i + 1) for i in range(4)})
+    vec.add("RAMNZ 4")
+    vec.add("DIVS 4")
+    vec.add("IRQHELD 20")
+
+    # ---- Phase 11 --------------------------------------------------------------------------------
+    image, labels = gnu_program("phase11", PHASE11)
+    m = Timur(image).run()
+    if [c for c, _, _ in m.traps] != [3, 2, 2, 11]:
+        sys.exit("model: Phase 11 trap causes %s" % [c for c, _, _ in m.traps])
+    for waits in (0, 1):
+        vec.comment("==== Phase 11: compressed instructions, straddling 32-bit instructions, PC + 2 links, "
+                    "16-bit traps%s" % (", with HREADY waits" if waits else ""))
+        vec.prog("vectors/timur_soc_phase11.hex", 4000, labels["halt"], waits)
+        model_checks(vec, m, labels["halt"])
+
+    image, labels = gnu_program("random_c", random_c_program(args.seed + 1, args.length))
+    m = Timur(image).run()
+    for waits in (0, 1):
+        vec.comment("==== Phase 11 random program of 16-bit and 32-bit instructions, seed %d, %d instructions executed%s"
+                    % (args.seed + 1, len(m.trace), ", with HREADY waits" if waits else ""))
+        vec.prog("vectors/timur_soc_random_c.hex", 40 * len(m.trace) + 2000, labels["halt"], waits)
+        model_checks(vec, m, labels["halt"])
+
+    # ---- final cross-phase program (also the default ROM image) --------------------------------
     image, listing, labels = assemble(FINAL)
     m = Timur(image).run()
     for r, v in FINAL_EXPECTED.items():
         if m.x[r] != v:
             sys.exit("model: final program x%d = %08X, expected %08X" % (r, m.x[r], v))
     write_hex("rom.hex", image, listing, comments=False)
-    write_mif("rom.mif", image, "final cross-phase verification program")
-    vec.comment("==== Final cross-phase program from rom.hex, state before Phase 10:")
-    vec.comment("     x17 = 0 (no CSR file yet), x22 = x23 = 0 (ECALL does not trap yet)")
+    write_banks("rom", image, "final cross-phase verification program")
+    vec.comment("==== Final cross-phase program from rom.hex: ECALL round trip, x17 = cycle count")
     vec.prog("rom.hex", 3000, labels["halt"], 0)
     vec.regs(FINAL_EXPECTED)
+    vec.nonzero([17])
     vec.ram(FINAL_RAM)
     vec.add("RAMNZ %d" % len(FINAL_RAM))
     vec.add("LEDS %03X" % 42)
@@ -1135,7 +1854,7 @@ def main():
     for name, src, title in bringup:
         image, listing, labels = assemble(src)
         write_hex("sw/bringup/%s.hex" % name, image, listing, comments=False)
-        write_mif("sw/bringup/%s.mif" % name, image, "bring-up, " + title)
+        write_banks("sw/bringup/%s" % name, image, "bring-up, " + title)
     vec.comment("==== Hardware bring-up 1: LEDs mirror the switches (endless loop)")
     vec.prog("sw/bringup/bringup_1_gpio.hex", 300, 0xFFFFFFFF, 0)
     vec.add("LEDS %03X" % GPIO_IN)

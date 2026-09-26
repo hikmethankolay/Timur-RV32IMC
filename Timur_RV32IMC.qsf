@@ -172,6 +172,7 @@ set_global_assignment -name VERILOG_FILE rtl/decode/instr_parser.v
 set_global_assignment -name VERILOG_FILE rtl/decode/imm_gen.v
 set_global_assignment -name VERILOG_FILE rtl/decode/alu_decoder.v
 set_global_assignment -name VERILOG_FILE rtl/decode/main_control_unit.v
+set_global_assignment -name VERILOG_FILE rtl/decode/decompressor.v
 set_global_assignment -name VERILOG_FILE rtl/pipeline/if_id_reg.v
 set_global_assignment -name VERILOG_FILE rtl/pipeline/id_ex_reg.v
 set_global_assignment -name VERILOG_FILE rtl/pipeline/ex_mem_reg.v
@@ -180,6 +181,8 @@ set_global_assignment -name VERILOG_FILE rtl/pipeline/forwarding_unit.v
 set_global_assignment -name VERILOG_FILE rtl/pipeline/hazard_detection_unit.v
 set_global_assignment -name VERILOG_FILE rtl/pipeline/store_aligner.v
 set_global_assignment -name VERILOG_FILE rtl/pipeline/load_formatter.v
+set_global_assignment -name VERILOG_FILE rtl/csr/csr_file.v
+set_global_assignment -name VERILOG_FILE rtl/csr/trap_unit.v
 set_global_assignment -name VERILOG_FILE rtl/bus/cpu_ahb_master.v
 set_global_assignment -name VERILOG_FILE rtl/bus/ahb_arbiter.v
 set_global_assignment -name VERILOG_FILE rtl/bus/ahb_bus_mux.v

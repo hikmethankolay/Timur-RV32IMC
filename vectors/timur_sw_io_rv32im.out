@@ -1,0 +1,12 @@
+Timur UART input and interrupts
+two numbers: 12 -30
+  12 + -30 = -18, 12 * -30 = -360, 12 / -30 = 0
+your name: Timur
+  hello, Timur (5 characters)
+a word to reverse: stressed
+  reversed: desserts
+dma: 64 words copied from ROM to RAM correctly, done interrupt taken 1 time(s)
+dma with mstatus.MIE = 0: done, mip.MEIP = 1, interrupts taken so far 1
+  after setting MIE: interrupts taken 2, mip.MEIP = 0, copy correct
+a line received by interrupt: interrupts work
+  16 bytes, 16 receive interrupts

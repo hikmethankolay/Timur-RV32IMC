@@ -1,0 +1,15 @@
+Timur C runtime self-test
+globals      15 checks ok
+stack         7 checks ok
+arithmetic  179 checks ok
+  7 / -2 = -3, 7 % -2 = 1, -7 / 2 = -3, -7 % 2 = -1
+  7 / 0 = -1, 7 % 0 = 7, INT_MIN / -1 = -2147483648, INT_MIN % -1 = 0
+  FFFFFFFF x FFFFFFFF: mul 00000001, mulhu fffffffe, mulh 00000000, mulhsu ffffffff
+  snprintf: "-42|   42|42   |-0042|3000000000|beef|BEEF|00001234|T|str|%|-2147483648"
+C library    19 checks ok
+heap         10 checks ok
+  53 blocks of 1 KB before malloc returned NULL; the stack was untouched
+  written by the ECALL write system call
+ecall         5 checks ok
+CSRs          7 checks ok
+all 242 checks passed

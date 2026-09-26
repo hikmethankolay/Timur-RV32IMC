@@ -1,11 +1,14 @@
 `timescale 1ns/1ps
 //
-// rom_ahb_tb: instruction ROM (Phase 3).
-//   1. The simulation image equals the testbench's own load of rom.hex over
-//      a zero fill, and the first word comes out of the fetch port.
-//   2. With a known pattern in the array: fetch port latency, AHB address
-//      phase registered only with HSEL & HTRANS[1] & HREADY, writes ignored,
-//      both ports independent, HREADYOUT = 1, HRESP = 0.
+// rom_ahb_tb: instruction ROM (Phase 3, split banks from Phase 11).
+//   1. The LO and HI banks hold the low and high halves of the words of
+//      rom.hex over a zero fill, and the first word comes out of the fetch port.
+//   2. With a known pattern in the banks: fetch port latency, 32-bit windows
+//      at word and halfword alignment, AHB address phase registered only with
+//      HSEL & HTRANS[1] & HREADY, writes ignored, both ports independent,
+//      HREADYOUT = 1, HRESP = 0.
+// The testbench plays the fetch logic: for byte address A it presents
+// LO index (A + 2) >> 2, HI index A >> 2 and A[1].
 // Vector: fetch_addr HSEL HTRANS HWRITE HREADY HADDR HWDATA check exp_fetch exp_HRDATA wait_type
 //
 module rom_ahb_tb;
@@ -13,6 +16,7 @@ module rom_ahb_tb;
     reg         clk, rst_n;
     reg  [31:0] fetch_addr;
     wire [31:0] fetch_instr;
+    wire [31:0] fetch_plus2 = fetch_addr + 32'd2;
     reg         HSEL, HWRITE, HREADY;
     reg  [1:0]  HTRANS;
     reg  [2:0]  HSIZE;
@@ -23,8 +27,10 @@ module rom_ahb_tb;
     rom_ahb dut (
         .HCLK        (clk),
         .HRESETn     (rst_n),
-        .fetch_addr  (fetch_addr),
-        .fetch_instr (fetch_instr),
+        .fetch_lo_index (fetch_plus2[15:2]),
+        .fetch_hi_index (fetch_addr[15:2]),
+        .fetch_odd      (fetch_addr[1]),
+        .fetch_window   (fetch_instr),
         .HSEL        (HSEL),
         .HADDR       (HADDR),
         .HTRANS      (HTRANS),
@@ -76,14 +82,14 @@ module rom_ahb_tb;
         $readmemh("rom.hex", image);
         mismatches = 0;
         for (i = 0; i < 16384; i = i + 1)
-            if (dut.mem[i] !== image[i])
+            if (dut.lo[i] !== image[i][15:0] || dut.hi[i] !== image[i][31:16])
                 mismatches = mismatches + 1;
         total = total + 1;
         if (mismatches != 0) begin
             failed = failed + 1;
-            $display("FAIL ROM image: %0d words differ from rom.hex over a zero fill", mismatches);
+            $display("FAIL ROM image: %0d words of rom_lo.hex/rom_hi.hex differ from rom.hex over a zero fill", mismatches);
         end else
-            $display("PASS ROM image equals rom.hex over a zero fill");
+            $display("PASS ROM banks equal rom.hex over a zero fill (LO = low halves, HI = high halves)");
 
         @(posedge clk);
         #1;
@@ -95,8 +101,10 @@ module rom_ahb_tb;
             $display("PASS first word from the fetch port matches rom.hex: %h", fetch_instr);
 
         // ---- 2. vectors on a known pattern -------------------------------
-        for (i = 0; i < 16384; i = i + 1)
-            dut.mem[i] = {2'b01, i[13:0], 2'b10, i[13:0]};
+        for (i = 0; i < 16384; i = i + 1) begin
+            dut.hi[i] = {2'b01, i[13:0]};
+            dut.lo[i] = {2'b10, i[13:0]};
+        end
 
         fd = $fopen("vectors/rom_ahb_vectors.txt", "r");
         if (fd == 0)

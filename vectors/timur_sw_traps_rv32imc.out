@@ -1,0 +1,16 @@
+Exceptions handled by the program
+  csrrw to the read-only cycle CSR mcause 2, mtval = 0, 4-byte instruction: ok
+  custom-0 opcode                  mcause 2, mtval = 0, 4-byte instruction: ok
+  16-bit 0x0000                    mcause 2, mtval = 0, 2-byte instruction: ok
+  ebreak                           mcause 3, mtval = mepc, 4-byte instruction: ok
+  c.ebreak                         mcause 3, mtval = mepc, 2-byte instruction: ok
+  lw  from buffer + 1              mcause 4, mtval = address, 4-byte instruction: ok
+  lh  from buffer + 3              mcause 4, mtval = address, 4-byte instruction: ok
+  lhu from buffer + 1              mcause 4, mtval = address, 4-byte instruction: ok
+  sw  to   buffer + 2              mcause 6, mtval = address, 4-byte instruction: ok
+  sh  to   buffer + 1              mcause 6, mtval = address, 4-byte instruction: ok
+10 exceptions handled; an ECALL still reaches the system calls: yes
+now an exception the program does not handle:
+
+*** unhandled trap: illegal instruction
+    mcause 00000002  mepc 0000042A  mtval 00000000

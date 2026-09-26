@@ -1,0 +1,18 @@
+-- Timur RV32IMC instruction ROM, LO bank (halfwords at byte offset 0 mod 4): bring-up, GPIO: LEDs mirror the switches
+-- 16384 x 16-bit words; unused words are 0000 (illegal instruction)
+
+DEPTH = 16384;
+WIDTH = 16;
+ADDRESS_RADIX = HEX;
+DATA_RADIX = HEX;
+
+CONTENT BEGIN
+    0000 : 0AB7;
+    0001 : 0113;
+    0002 : A083;
+    0003 : 9463;
+    0004 : 0093;
+    0005 : A023;
+    0006 : F06F;
+    [0007..3FFF] : 0000;
+END;

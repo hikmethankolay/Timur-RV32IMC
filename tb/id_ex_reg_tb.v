@@ -2,7 +2,7 @@
 //
 // id_ex_reg_tb: every ID/EX field is carried unchanged (5-bit ALUControl,
 // funct3, controls), hold with enable = 0, flush and reset give a bubble with
-// every control 0 (Phase 6).
+// every control 0 (Phase 6; is_compressed from Phase 11).
 // Vector: rst_n enable flush (bin) in_seed(hex) expect(bin) exp_seed(hex) wait_type
 //
 module id_ex_reg_tb;
@@ -19,7 +19,7 @@ module id_ex_reg_tb;
     reg         MemRead_in, MemWrite_in, MemToReg_in, RegWrite_in;
     reg         CSRAccess_in;
     reg  [1:0]  CSROp_in;
-    reg         CSRImm_in, IsECALL_in, IsEBREAK_in, IsMRET_in, Illegal_in, valid_in;
+    reg         CSRImm_in, IsECALL_in, IsEBREAK_in, IsMRET_in, Illegal_in, is_compressed_in, valid_in;
 
     wire [31:0] pc_out, rs1_data_out, rs2_data_out, imm_out;
     wire [4:0]  rs1_addr_out, rs2_addr_out, rd_addr_out;
@@ -31,7 +31,7 @@ module id_ex_reg_tb;
     wire        MemRead_out, MemWrite_out, MemToReg_out, RegWrite_out;
     wire        CSRAccess_out;
     wire [1:0]  CSROp_out;
-    wire        CSRImm_out, IsECALL_out, IsEBREAK_out, IsMRET_out, Illegal_out, valid_out;
+    wire        CSRImm_out, IsECALL_out, IsEBREAK_out, IsMRET_out, Illegal_out, is_compressed_out, valid_out;
 
     id_ex_reg dut (
         .clk            (clk),
@@ -64,6 +64,7 @@ module id_ex_reg_tb;
         .IsEBREAK_in    (IsEBREAK_in),
         .IsMRET_in      (IsMRET_in),
         .Illegal_in     (Illegal_in),
+        .is_compressed_in (is_compressed_in),
         .valid_in       (valid_in),
         .pc_out         (pc_out),
         .rs1_data_out   (rs1_data_out),
@@ -91,13 +92,14 @@ module id_ex_reg_tb;
         .IsEBREAK_out   (IsEBREAK_out),
         .IsMRET_out     (IsMRET_out),
         .Illegal_out    (Illegal_out),
+        .is_compressed_out (is_compressed_out),
         .valid_out      (valid_out)
     );
 
     always #5 clk = ~clk;
 
     // Field values derived from a seed, packed in port order (182 bits).
-    function [181:0] fields;
+    function [182:0] fields;
         input [31:0] s;
         fields = {s, s ^ 32'h5555AAAA, ~s, {s[15:0], s[31:16]},
                   s[4:0], s[9:5], s[14:10], s[17:15], s[29:18],
@@ -106,24 +108,24 @@ module id_ex_reg_tb;
                   s[6], s[7], s[8], s[9],
                   s[10], s[12:11], s[13],
                   s[14], s[15], s[16], s[17],
-                  s[31]};
+                  s[18] ^ s[0], s[31]};
     endfunction
 
-    wire [181:0] got = {pc_out, rs1_data_out, rs2_data_out, imm_out,
+    wire [182:0] got = {pc_out, rs1_data_out, rs2_data_out, imm_out,
                         rs1_addr_out, rs2_addr_out, rd_addr_out, funct3_out, csr_addr_out,
                         ALUControl_out, ALUSrcA_out, ALUSrcB_out,
                         Branch_out, Jump_out, Jalr_out,
                         MemRead_out, MemWrite_out, MemToReg_out, RegWrite_out,
                         CSRAccess_out, CSROp_out, CSRImm_out,
                         IsECALL_out, IsEBREAK_out, IsMRET_out, Illegal_out,
-                        valid_out};
+                        is_compressed_out, valid_out};
 
     integer         fd, n;
     integer         total, failed;
     reg [8*256-1:0] line;
     reg [31:0]      in_seed, exp_seed;
     reg             expect_fields, wait_type;
-    reg [181:0]     exp;
+    reg [182:0]     exp;
 
     initial begin : watchdog
         repeat (1000) @(posedge clk);
@@ -143,7 +145,7 @@ module id_ex_reg_tb;
          MemRead_in, MemWrite_in, MemToReg_in, RegWrite_in,
          CSRAccess_in, CSROp_in, CSRImm_in,
          IsECALL_in, IsEBREAK_in, IsMRET_in, Illegal_in,
-         valid_in} = 182'b0;
+         is_compressed_in, valid_in} = 183'b0;
         total = 0;
         failed = 0;
         #1;
@@ -164,8 +166,8 @@ module id_ex_reg_tb;
                      MemRead_in, MemWrite_in, MemToReg_in, RegWrite_in,
                      CSRAccess_in, CSROp_in, CSRImm_in,
                      IsECALL_in, IsEBREAK_in, IsMRET_in, Illegal_in,
-                     valid_in} = fields(in_seed);
-                    exp = expect_fields ? fields(exp_seed) : 182'b0;
+                     is_compressed_in, valid_in} = fields(in_seed);
+                    exp = expect_fields ? fields(exp_seed) : 183'b0;
                     if (wait_type == 1'b0)
                         #3;
                     else begin

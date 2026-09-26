@@ -1,6 +1,7 @@
 // rom_ahb test vectors
-// The testbench first checks the ROM image against its own load of rom.hex, then fills
-// the array with the pattern word(i) = {2'b01, i[13:0], 2'b10, i[13:0]} for these vectors.
+// The testbench first checks the ROM banks against its own load of rom.hex, then fills
+// them with HI[i] = {2'b01, i[13:0]}, LO[i] = {2'b10, i[13:0]}, so word(i) =
+// {2'b01, i[13:0], 2'b10, i[13:0]} and the window at 4i + 2 is {LO[i + 1], HI[i]}.
 // format: fetch_addr HSEL HTRANS HWRITE HREADY HADDR HWDATA check exp_fetch_instr exp_HRDATA wait_type
 //   fetch_addr, HADDR, HWDATA, expected values: hex; HSEL, HWRITE, HREADY: bin; HTRANS: 2-bit bin
 //   check: 2-bit bin, bit 0 = compare fetch_instr, bit 1 = compare HRDATA
@@ -14,6 +15,11 @@
 // last word; only bits [15:2] index the array
 0000FFFC 0 00 0 1 00000000 00000000 01 7FFFBFFF 00000000 1
 00010008 0 00 0 1 00000000 00000000 01 40028002 00000000 1
+// halfword-aligned fetch: the window at 4i + 2 is {LO[i + 1], HI[i]}, read in one cycle
+00000002 0 00 0 1 00000000 00000000 01 80014000 00000000 1
+00000006 0 00 0 1 00000000 00000000 01 80024001 00000000 1
+0000FFFE 0 00 0 1 00000000 00000000 01 80007FFF 00000000 1
+00000008 0 00 0 1 00000000 00000000 01 40028002 00000000 1
 // new address, no edge yet: output unchanged
 00000010 0 00 0 1 00000000 00000000 01 40028002 00000000 0
 00000010 0 00 0 1 00000000 00000000 01 40048004 00000000 1
