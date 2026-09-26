@@ -110,3 +110,6 @@ desktop.ini
 /tools/__pycache__
 /sw/__pycache__
 /.claude
+
+# Build guide sources and PDF (private, like the design document)
+docs/build-guide/
