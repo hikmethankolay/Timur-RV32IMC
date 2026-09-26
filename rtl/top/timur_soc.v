@@ -2,8 +2,10 @@
 // Testbenches instantiate this module and drive its clock and reset directly.
 //
 //   CPU     : 5-stage pipeline IF, ID, EX, MEM, WB with full forwarding;
-//             branches, jumps (and in Phase 10 traps) redirect from EX
-//   Fetch   : private port into the ROM (Harvard fetch, never waits)
+//             branches, jumps, MRET and traps redirect from EX; machine-mode
+//             CSRs, precise traps and an external interrupt (Phase 10)
+//   Fetch   : private port into the split-bank ROM (Harvard fetch, never
+//             waits); 16-bit instructions are expanded in IF (Phase 11)
 //   Data bus: AHB-Lite slaves behind a 2-master arbiter (CPU data port with
 //             priority, DMAC), AHB-to-APB bridge for UART, GPIO, DMAC registers
 //
@@ -37,21 +39,34 @@ module timur_soc #(
     wire div_start, div_ack;
     wire take_redirect;
     wire redirect_req;
+    wire trap_req;
+    wire take_trap;
+    // take_redirect OR take_trap, built for timing (see EX). The keep
+    // attributes here and below stop synthesis from merging these nets into
+    // the logic around them, which would put more levels after the late
+    // branch compare.
+    (* keep = 1 *) wire fetch_go;
     wire bus_wait;
     wire mul_in_ex, mul_done;
     wire div_in_ex, div_busy, div_done;
 
     // =====================================================================
-    // IF: next PC and the ROM fetch port
+    // IF: next PC, split-bank ROM fetch, decompressor (Phase 11)
     // =====================================================================
     wire [31:0] if_pc;
+    wire [31:0] if_pc_plus2;
     wire [31:0] if_pc_plus4;
+    wire [31:0] if_pc_seq;           // PC + 2 or PC + 4: length of the instruction in IF
+    wire [31:0] jump_pc;             // mtvec on a trap, else the redirect target
     wire [31:0] pc_next;
-    wire [31:0] fetch_seq;
-    wire [31:0] fetch_hold;
-    wire [31:0] fetch_addr;
-    wire [31:0] fetch_instr;
     wire [31:0] redirect_target;
+    wire [28:0] redirect_index;      // fetch indexes of redirect_target, see below
+    wire [31:0] csr_mtvec;
+    wire [31:0] csr_mepc;
+    wire [31:0] fetch_window;        // 32 bits starting at the PC
+    wire        if_compressed;
+    wire [31:0] if_expanded;
+    wire [31:0] if_instr;
 
     pc u_pc (
         .clk     (clk),
@@ -59,6 +74,15 @@ module timur_soc #(
         .en      (pc_load),
         .pc_next (pc_next),
         .pc      (if_pc)
+    );
+
+    adder_32bit u_pc_plus2 (
+        .a        (if_pc),
+        .b        (32'd2),
+        .sub      (1'b0),
+        .result   (if_pc_plus2),
+        .cout     (),
+        .overflow ()
     );
 
     adder_32bit u_pc_plus4 (
@@ -70,59 +94,127 @@ module timur_soc #(
         .overflow ()
     );
 
-    // Phase 10 adds trap (mtvec) and MRET (mepc) above the redirect.
-    mux2 #(.WIDTH(32)) u_pc_next_mux (
+    // The instruction in IF is 16-bit when its low bits are not 11; IF/ID
+    // only ever receives the 32-bit form.
+    assign if_compressed = (fetch_window[1:0] != 2'b11);
+
+    decompressor u_decompressor (
+        .instr16 (fetch_window[15:0]),
+        .instr32 (if_expanded),
+        .illegal ()                  // an illegal encoding expands to 00000000
+    );
+
+    mux2 #(.WIDTH(32)) u_if_instr (
+        .in0 (fetch_window),
+        .in1 (if_expanded),
+        .sel (if_compressed),
+        .out (if_instr)
+    );
+
+    mux2 #(.WIDTH(32)) u_pc_seq_len (
         .in0 (if_pc_plus4),
-        .in1 (redirect_target),
-        .sel (take_redirect),
+        .in1 (if_pc_plus2),
+        .sel (if_compressed),
+        .out (if_pc_seq)
+    );
+
+    // Next PC. A trap wins over a redirect in the same cycle (an interrupt can
+    // arrive while a branch is in EX): the priority sits on the data side, so
+    // the late select fetch_go (redirect or trap) is applied last.
+    mux2 #(.WIDTH(32)) u_jump_pc (
+        .in0 (redirect_target),
+        .in1 (csr_mtvec),
+        .sel (take_trap),
+        .out (jump_pc)
+    );
+
+    mux2 #(.WIDTH(32)) u_pc_next_mux (
+        .in0 (if_pc_seq),
+        .in1 (jump_pc),
+        .sel (fetch_go),
         .out (pc_next)
     );
 
-    // The ROM registers the same address the PC register does, so the word
-    // on fetch_instr always belongs to the current PC. While the PC holds,
-    // the ROM re-reads the current word; during reset it is
-    // forced to 0 so the first word is ready when reset releases.
-    //   fetch_addr = NOT rst_n ? 0 : (pc_load ? pc_next : pc)
-    // Without a redirect the PC loads exactly when IF/ID does, so the same
-    // function is built with the redirect select last. The redirect is
-    // decided late in EX; this leaves one mux level between it and the ROM
-    // address registers. Phase 10 adds the trap and MRET selects next to it.
-    mux2 #(.WIDTH(32)) u_fetch_seq (
-        .in0 (if_pc),
-        .in1 (if_pc_plus4),
+    // ---------------------------------------------------------------------
+    // ROM fetch indexes. The 32 bits at byte address A are LO[(A + 2) >> 2]
+    // and HI[A >> 2], ordered by A[1]; an index triple is {lo, hi, A[1]}.
+    // The ROM registers the triple of the address the PC register will hold
+    // after the edge, so fetch_window always belongs to the current PC:
+    //   fetch address = NOT rst_n ? 0 : (pc_load ? pc_next : pc)
+    // Without a redirect or trap the PC loads exactly when IF/ID does. Every
+    // candidate address gets its triple before the final select, so no adder
+    // sits after the redirect decision: the sequential triple (and reset) on
+    // one side, the trap or redirect triple on the other, and fetch_go with
+    // one mux level before the ROM address registers.
+    // ---------------------------------------------------------------------
+    wire [13:0] pc_w  = if_pc[15:2];
+    wire [13:0] pc_w1 = pc_w + 14'd1;
+    wire [13:0] pc_w2 = pc_w + 14'd2;
+    wire        pc_b  = if_pc[1];
+
+    wire [28:0] index_hold = {pc_b ? pc_w1 : pc_w, pc_w,               pc_b};    // A = PC
+    wire [28:0] index_pc2  = {pc_w1,               pc_b ? pc_w1 : pc_w, !pc_b};   // A = PC + 2
+    wire [28:0] index_pc4  = {pc_b ? pc_w2 : pc_w1, pc_w1,             pc_b};    // A = PC + 4
+    wire [28:0] index_mtvec = {csr_mtvec[15:2], csr_mtvec[15:2], 1'b0};
+    wire [28:0] index_len, index_seq, index_fetch;
+    (* keep = 1 *) wire [28:0] index_pre;
+    (* keep = 1 *) wire [28:0] index_jump;
+
+    mux2 #(.WIDTH(29)) u_index_len (
+        .in0 (index_pc4),
+        .in1 (index_pc2),
+        .sel (if_compressed),
+        .out (index_len)
+    );
+
+    mux2 #(.WIDTH(29)) u_index_seq (
+        .in0 (index_hold),
+        .in1 (index_len),
         .sel (if_id_enable),
-        .out (fetch_seq)
+        .out (index_seq)
     );
 
-    mux2 #(.WIDTH(32)) u_fetch_hold (
-        .in0 (fetch_seq),
-        .in1 (redirect_target),
-        .sel (take_redirect),
-        .out (fetch_hold)
-    );
-
-    mux2 #(.WIDTH(32)) u_fetch_reset (
-        .in0 (32'b0),
-        .in1 (fetch_hold),
+    // During reset the ROM reads address 0, so the first word is ready when
+    // reset releases (fetch_go is 0 during reset).
+    mux2 #(.WIDTH(29)) u_index_reset (
+        .in0 (29'b0),
+        .in1 (index_seq),
         .sel (rst_n),
-        .out (fetch_addr)
+        .out (index_pre)
+    );
+
+    mux2 #(.WIDTH(29)) u_index_jump (
+        .in0 (redirect_index),
+        .in1 (index_mtvec),
+        .sel (take_trap),
+        .out (index_jump)
+    );
+
+    mux2 #(.WIDTH(29)) u_index_fetch (
+        .in0 (index_pre),
+        .in1 (index_jump),
+        .sel (fetch_go),
+        .out (index_fetch)
     );
 
     wire [31:0] if_id_pc;
     wire [31:0] if_id_instr;
+    wire        if_id_compressed;
     wire        if_id_valid;
 
     if_id_reg u_if_id (
-        .clk       (clk),
-        .rst_n     (rst_n),
-        .enable    (if_id_enable),
-        .flush     (if_id_flush),
-        .pc_in     (if_pc),
-        .instr_in  (fetch_instr),
-        .valid_in  (1'b1),
-        .pc_out    (if_id_pc),
-        .instr_out (if_id_instr),
-        .valid_out (if_id_valid)
+        .clk               (clk),
+        .rst_n             (rst_n),
+        .enable            (if_id_enable),
+        .flush             (if_id_flush),
+        .pc_in             (if_pc),
+        .instr_in          (if_instr),
+        .is_compressed_in  (if_compressed),
+        .valid_in          (1'b1),
+        .pc_out            (if_id_pc),
+        .instr_out         (if_id_instr),
+        .is_compressed_out (if_id_compressed),
+        .valid_out         (if_id_valid)
     );
 
     // =====================================================================
@@ -250,6 +342,7 @@ module timur_soc #(
     wire        id_ex_isebreak;
     wire        id_ex_ismret;
     wire        id_ex_illegal;
+    wire        id_ex_compressed;
     wire        id_ex_valid;
 
     id_ex_reg u_id_ex (
@@ -283,6 +376,7 @@ module timur_soc #(
         .IsEBREAK_in    (id_isebreak),
         .IsMRET_in      (id_ismret),
         .Illegal_in     (id_illegal),
+        .is_compressed_in (if_id_compressed),
         .valid_in       (if_id_valid),
         .pc_out         (id_ex_pc),
         .rs1_data_out   (id_ex_rs1_data),
@@ -310,6 +404,7 @@ module timur_soc #(
         .IsEBREAK_out   (id_ex_isebreak),
         .IsMRET_out     (id_ex_ismret),
         .Illegal_out    (id_ex_illegal),
+        .is_compressed_out (id_ex_compressed),
         .valid_out      (id_ex_valid)
     );
 
@@ -327,14 +422,14 @@ module timur_soc #(
     wire [31:0] alu_a;
     wire [31:0] alu_b;
     wire [31:0] alu_result;
-    wire [31:0] cmp_diff;
-    wire        cmp_equal;
+    (* keep = 1 *) wire cmp_equal;
     wire        cmp_cout;
-    wire        cmp_overflow;
-    wire        branch_taken;
+    (* keep = 1 *) wire cmp_less;
+    wire        taken_if_eq, taken_if_lt, taken_if_gt;
     wire [31:0] branch_target;
     wire [31:0] jalr_sum;
     wire [31:0] jalr_target;
+    wire [31:0] transfer_target;
     wire [31:0] link_addr;
     wire [31:0] ex_result;
 
@@ -406,30 +501,48 @@ module timur_soc #(
     );
 
     // Branch compare and jump targets have their own adders on the forwarded
-    // operands. The redirect ends at the ROM fetch address register, so it is
+    // operands. The redirect ends at the ROM fetch address registers, so it is
     // the longest path in EX; taking it through the ALU would add the operand
     // select and the full result mux.
-    // rs1 - rs2 for the evaluator; a - b = 0 exactly when a = b, so the
-    // equality compare stands in for the zero test and does not wait for the
-    // carry chain.
+    // One subtraction gives "less" for every branch: inverting both operand
+    // MSBs turns the unsigned compare into a signed one (BLT, BGE have
+    // funct3[1] = 0). The equality compare does not wait for the carry chain.
+    wire        cmp_signed = !id_ex_funct3[1];
+
     adder_32bit u_branch_cmp (
-        .a        (ex_rs1),
-        .b        (ex_rs2),
+        .a        ({ex_rs1[31] ^ cmp_signed, ex_rs1[30:0]}),
+        .b        ({ex_rs2[31] ^ cmp_signed, ex_rs2[30:0]}),
         .sub      (1'b1),
-        .result   (cmp_diff),
+        .result   (),
         .cout     (cmp_cout),
-        .overflow (cmp_overflow)
+        .overflow ()
     );
 
+    assign cmp_less  = !cmp_cout;                  // borrow: rs1 < rs2
     assign cmp_equal = (ex_rs1 == ex_rs2);
 
-    branch_condition_evaluator u_branch_eval (
-        .zero           (cmp_equal),
-        .alu_result_msb (cmp_diff[31]),
-        .overflow       (cmp_overflow),
-        .cout           (cmp_cout),
-        .BranchType     (id_ex_funct3),
-        .BranchTaken    (branch_taken)
+    // The branch type is known at the start of EX, the compare results only
+    // late. The decision is therefore evaluated in advance for each possible
+    // compare result (equal; less; greater) and the results only select.
+    branch_condition_evaluator u_taken_if_eq (
+        .equal       (1'b1),
+        .less        (1'b0),
+        .BranchType  (id_ex_funct3),
+        .BranchTaken (taken_if_eq)
+    );
+
+    branch_condition_evaluator u_taken_if_lt (
+        .equal       (1'b0),
+        .less        (1'b1),
+        .BranchType  (id_ex_funct3),
+        .BranchTaken (taken_if_lt)
+    );
+
+    branch_condition_evaluator u_taken_if_gt (
+        .equal       (1'b0),
+        .less        (1'b0),
+        .BranchType  (id_ex_funct3),
+        .BranchTaken (taken_if_gt)
     );
 
     // Branch and JAL target: PC + imm
@@ -442,9 +555,10 @@ module timur_soc #(
         .overflow ()
     );
 
+    // Link value: PC + 2 for C.JAL and C.JALR, PC + 4 otherwise.
     adder_32bit u_link_addr (
         .a        (id_ex_pc),
-        .b        (32'd4),
+        .b        (id_ex_compressed ? 32'd2 : 32'd4),
         .sub      (1'b0),
         .result   (link_addr),
         .cout     (),
@@ -461,20 +575,137 @@ module timur_soc #(
         .overflow ()
     );
 
-    assign jalr_target  = {jalr_sum[31:1], 1'b0};
-    assign redirect_req = (id_ex_branch && branch_taken) || id_ex_jump || id_ex_jalr;
+    assign jalr_target = {jalr_sum[31:1], 1'b0};
 
-    mux2 #(.WIDTH(32)) u_redirect_target (
+    // Redirects from EX: taken branch, JAL, JALR and MRET (PC <- mepc).
+    wire always_redirect = id_ex_jump || id_ex_jalr || id_ex_ismret;
+    wire redirect_if_eq  = always_redirect || (id_ex_branch && taken_if_eq);
+    wire redirect_if_lt  = always_redirect || (id_ex_branch && taken_if_lt);
+    wire redirect_if_gt  = always_redirect || (id_ex_branch && taken_if_gt);
+
+    assign redirect_req = cmp_equal ? redirect_if_eq : (cmp_less ? redirect_if_lt : redirect_if_gt);
+
+    // fetch_go = take_redirect OR take_trap for the PC and fetch multiplexers,
+    // with the bus freeze and the trap (both decided earlier) folded into the
+    // per-result terms, so the compare results are the last two levels.
+    (* keep = 1 *) wire go_if_eq = !bus_wait && (redirect_if_eq || trap_req);
+    (* keep = 1 *) wire go_if_lt = !bus_wait && (redirect_if_lt || trap_req);
+    (* keep = 1 *) wire go_if_gt = !bus_wait && (redirect_if_gt || trap_req);
+
+    assign fetch_go = cmp_equal ? go_if_eq : (cmp_less ? go_if_lt : go_if_gt);
+
+    // Fetch index triples of the three targets (see IF), each from its own
+    // adder: the LO index of an address A is (A + 2) >> 2. For JALR,
+    // ((rs1 + imm) & ~1) + 2 and rs1 + imm + 2 agree in bits [15:2].
+    wire [15:0] imm_plus2    = id_ex_imm[15:0] + 16'd2;
+    wire [15:0] branch_plus2 = id_ex_pc[15:0] + imm_plus2;
+    wire [15:0] jalr_plus2   = ex_rs1[15:0] + imm_plus2;
+    wire [15:0] mepc_plus2   = csr_mepc[15:0] + 16'd2;
+    wire [28:0] index_branch = {branch_plus2[15:2], branch_target[15:2], branch_target[1]};
+    wire [28:0] index_jalr   = {jalr_plus2[15:2], jalr_target[15:2], jalr_target[1]};
+    wire [28:0] index_mepc   = {mepc_plus2[15:2], csr_mepc[15:2], csr_mepc[1]};
+    wire [28:0] index_transfer;
+
+    mux2 #(.WIDTH(29)) u_index_transfer (
+        .in0 (index_branch),
+        .in1 (index_jalr),
+        .sel (id_ex_jalr),
+        .out (index_transfer)
+    );
+
+    mux2 #(.WIDTH(29)) u_index_redirect (
+        .in0 (index_transfer),
+        .in1 (index_mepc),
+        .sel (id_ex_ismret),
+        .out (redirect_index)
+    );
+
+    mux2 #(.WIDTH(32)) u_transfer_target (
         .in0 (branch_target),
         .in1 (jalr_target),
         .sel (id_ex_jalr),
+        .out (transfer_target)
+    );
+
+    mux2 #(.WIDTH(32)) u_redirect_target (
+        .in0 (transfer_target),
+        .in1 (csr_mepc),
+        .sel (id_ex_ismret),
         .out (redirect_target)
     );
 
-    // EX result: JAL/JALR -> PC + 4; CSR access -> old CSR value (csr_file,
-    // Phase 10; reads 0 until then); else the ALU result.
-    wire [31:0] csr_rdata = 32'b0;
+    // ---------------------------------------------------------------------
+    // CSR access and traps (Phase 10). A CSR instruction reads the old value
+    // and writes the new one in the cycle it leaves EX: once, even across a
+    // bus freeze, and never when it is killed by a trap. SET and CLEAR with
+    // rs1 = x0 (or uimm = 0) write nothing, so csrr of a read-only CSR does
+    // not trap.
+    // ---------------------------------------------------------------------
+    wire [31:0] csr_rdata;
+    wire [31:0] csr_wdata;
+    wire        csr_illegal;
+    wire        csr_write_attempt;
+    wire        csr_we;
+    wire        csr_irq_pending;
+    wire [31:0] trap_cause;
+    wire [31:0] trap_val;
+    wire        uart_irq;
+    wire        dmac_irq;
+    wire [1:0]  mem_addr_lo;
 
+    assign csr_wdata         = id_ex_csrimm ? {27'b0, id_ex_rs1} : ex_rs1;
+    assign csr_write_attempt = id_ex_csraccess && !(id_ex_csrop != 2'b00 && id_ex_rs1 == 5'b00000);
+    assign csr_we            = csr_write_attempt && id_ex_valid && ex_mem_enable && !ex_mem_flush;
+
+    csr_file u_csr (
+        .clk               (clk),
+        .rst_n             (rst_n),
+        .csr_addr          (id_ex_csr_addr),
+        .csr_op            (id_ex_csrop),
+        .csr_wdata         (csr_wdata),
+        .csr_write_attempt (csr_write_attempt),
+        .csr_we            (csr_we),
+        .csr_rdata         (csr_rdata),
+        .csr_illegal       (csr_illegal),
+        .trap_take         (take_trap),
+        .trap_cause        (trap_cause),
+        .trap_epc          (id_ex_pc),
+        .trap_val          (trap_val),
+        .mret_take         (take_redirect && id_ex_ismret && !take_trap),
+        .retire            (mem_wb_valid && mem_wb_enable),
+        .irq_lines         ({dmac_irq, uart_irq}),
+        .mtvec_out         (csr_mtvec),
+        .mepc_out          (csr_mepc),
+        .irq_pending       (csr_irq_pending)
+    );
+
+    // Low address bits of a load or store, from their own 2-bit adder: the
+    // misalignment check feeds the trap decision, which feeds the fetch
+    // address, so it does not wait for the ALU result mux.
+    assign mem_addr_lo = ex_rs1[1:0] + id_ex_imm[1:0];
+
+    trap_unit u_trap (
+        .valid           (id_ex_valid),
+        .pc              (id_ex_pc),
+        .illegal         (id_ex_illegal),
+        .is_ecall        (id_ex_isecall),
+        .is_ebreak       (id_ex_isebreak),
+        .csr_access      (id_ex_csraccess),
+        .csr_illegal     (csr_illegal),
+        .mem_read        (id_ex_memread),
+        .mem_write       (id_ex_memwrite),
+        .funct3          (id_ex_funct3),
+        .mem_addr_lo     (mem_addr_lo),
+        .mem_addr        (alu_result),
+        .irq_pending     (csr_irq_pending),
+        .irq_allowed     (!(mul_in_ex || div_in_ex)),
+        .trap_req        (trap_req),
+        .trap_cause      (trap_cause),
+        .trap_val        (trap_val)
+    );
+
+    // EX result: JAL/JALR -> PC + 4; CSR access -> old CSR value; else the
+    // ALU result.
     assign ex_result = (id_ex_jump || id_ex_jalr) ? link_addr :
                        id_ex_csraccess            ? csr_rdata :
                                                     alu_result;
@@ -626,7 +857,7 @@ module timur_soc #(
         .div_done      (div_done),
         .bus_wait      (bus_wait),
         .redirect_req  (redirect_req),
-        .trap_req      (1'b0),          // Phase 10
+        .trap_req      (trap_req),
         .pc_load       (pc_load),
         .if_id_enable  (if_id_enable),
         .if_id_flush   (if_id_flush),
@@ -640,7 +871,7 @@ module timur_soc #(
         .div_start     (div_start),
         .div_ack       (div_ack),
         .take_redirect (take_redirect),
-        .take_trap     ()
+        .take_trap     (take_trap)
     );
 
     // =====================================================================
@@ -743,8 +974,10 @@ module timur_soc #(
     rom_ahb u_rom (
         .HCLK        (clk),
         .HRESETn     (rst_n),
-        .fetch_addr  (fetch_addr),
-        .fetch_instr (fetch_instr),
+        .fetch_lo_index (index_fetch[28:15]),
+        .fetch_hi_index (index_fetch[14:1]),
+        .fetch_odd      (index_fetch[0]),
+        .fetch_window   (fetch_window),
         .HSEL        (hsel_rom),
         .HADDR       (haddr),
         .HTRANS      (htrans),
@@ -830,7 +1063,7 @@ module timur_soc #(
         .PSLVERR (),
         .uart_tx (uart_tx),
         .uart_rx (uart_rx),
-        .irq     ()                 // Phase 10: MEIP source
+        .irq     (uart_irq)
     );
 
     gpio_apb u_gpio (
@@ -865,7 +1098,7 @@ module timur_soc #(
         .dmac_start (dmac_start),
         .dmac_busy  (dmac_busy),
         .dmac_done  (dmac_done),
-        .irq        ()              // Phase 10: MEIP source
+        .irq        (dmac_irq)
     );
 
 endmodule

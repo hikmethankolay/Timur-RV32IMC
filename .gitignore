@@ -109,7 +109,13 @@ desktop.ini
 *.pdf
 /tools/__pycache__
 /sw/__pycache__
+
+# C programs built by sw/build.py (the test images are committed in vectors/)
+sw/build/
 /.claude
 
 # Build guide sources and PDF (private, like the design document)
 docs/build-guide/
+
+# Local toolchains (RISC-V GCC), not part of the project
+.tools/

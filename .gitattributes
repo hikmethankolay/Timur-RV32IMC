@@ -1,0 +1,5 @@
+# Expected UART output and console input of the C programs: compared byte for
+# byte by tb/timur_sw_tb.v, including the CR of every CR LF, so never convert
+# line endings.
+vectors/*.out -text
+vectors/*.in  -text

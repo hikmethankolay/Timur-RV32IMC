@@ -1,22 +1,20 @@
 `timescale 1ns/1ps
 //
-// branch_condition_evaluator_tb: all six branch conditions and the reserved
-// funct3 values (Phase 2).
-// Vector: zero msb overflow cout (bin) BranchType(bin) BranchTaken(bin).
+// branch_condition_evaluator_tb: all six branch conditions for every
+// combination of the compare results, and the reserved funct3 values (Phase 2).
+// Vector: equal less (bin) BranchType(bin) BranchTaken(bin).
 //
 module branch_condition_evaluator_tb;
 
-    reg        zero, alu_result_msb, overflow, cout;
+    reg        equal, less;
     reg  [2:0] BranchType;
     wire       BranchTaken;
 
     branch_condition_evaluator dut (
-        .zero           (zero),
-        .alu_result_msb (alu_result_msb),
-        .overflow       (overflow),
-        .cout           (cout),
-        .BranchType     (BranchType),
-        .BranchTaken    (BranchTaken)
+        .equal       (equal),
+        .less        (less),
+        .BranchType  (BranchType),
+        .BranchTaken (BranchTaken)
     );
 
     integer         fd, n;
@@ -31,7 +29,7 @@ module branch_condition_evaluator_tb;
     end
 
     initial begin
-        {zero, alu_result_msb, overflow, cout} = 4'b0;
+        {equal, less} = 2'b0;
         BranchType = 3'b0;
         total = 0;
         failed = 0;
@@ -43,17 +41,16 @@ module branch_condition_evaluator_tb;
             while (!$feof(fd)) begin
                 line = 0;
                 n = $fgets(line, fd);
-                if ($sscanf(line, "%b %b %b %b %b %b", zero, alu_result_msb, overflow, cout,
-                            BranchType, exp_taken) == 6) begin
+                if ($sscanf(line, "%b %b %b %b", equal, less, BranchType, exp_taken) == 4) begin
                     #10;
                     total = total + 1;
                     if (BranchTaken !== exp_taken) begin
                         failed = failed + 1;
-                        $display("FAIL z=%b msb=%b v=%b c=%b funct3=%b | got=%b expected=%b",
-                                 zero, alu_result_msb, overflow, cout, BranchType, BranchTaken, exp_taken);
+                        $display("FAIL equal=%b less=%b funct3=%b | got=%b expected=%b",
+                                 equal, less, BranchType, BranchTaken, exp_taken);
                     end else
-                        $display("PASS z=%b msb=%b v=%b c=%b funct3=%b | taken=%b",
-                                 zero, alu_result_msb, overflow, cout, BranchType, BranchTaken);
+                        $display("PASS equal=%b less=%b funct3=%b | taken=%b",
+                                 equal, less, BranchType, BranchTaken);
                 end
             end
             $fclose(fd);

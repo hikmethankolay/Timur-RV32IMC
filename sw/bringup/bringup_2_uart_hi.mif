@@ -1,0 +1,18 @@
+-- Timur RV32IMC instruction ROM, HI bank (halfwords at byte offset 2 mod 4): bring-up, UART: 'U' in a loop
+-- 16384 x 16-bit words; unused words are 0000 (illegal instruction)
+
+DEPTH = 16384;
+WIDTH = 16;
+ADDRESS_RADIX = HEX;
+DATA_RADIX = HEX;
+
+CONTENT BEGIN
+    0000 : 4000;
+    0001 : 0550;
+    0002 : 004A;
+    0003 : 0011;
+    0004 : FE01;
+    0005 : 001A;
+    0006 : FF1F;
+    [0007..3FFF] : 0000;
+END;
