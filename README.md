@@ -364,7 +364,7 @@ Double-click `run_tests.bat` or run it from a terminal. It changes to the projec
 
 Paths inside testbenches (`vectors/…`, `rom_lo.hex`) are relative to the project root. `timur_sw_tb` runs about 2 million cycles and takes the longest.
 
-With Icarus Verilog, compile each testbench with the RTL (and `tb/timur_soc_tb.v` for `timur_sw_tb`) from the project root:
+On Linux, `./run_tests.sh` does the same with Icarus Verilog (`sudo dnf install iverilog`): it compiles each testbench with the RTL (without `cpu_pll` and the board wrapper, which need the Altera megafunction library; `timur_sw_tb` also gets `tb/timur_soc_tb.v`), keeps its output in `logs/<testbench>.log`, applies the same pass rule and prints a summary. `./run_tests.sh alu_tb timur_soc_tb` runs only those. A single testbench by hand:
 
 ```bash
 RTL=$(ls rtl/*/*.v | grep -v -e cpu_pll -e _bb.v -e Timur_RV32IMC.v)
@@ -458,6 +458,8 @@ The ROM contents come from `rom_lo.mif` and `rom_hi.mif` in the project root. Ha
 
 `python3 sw/gen_soc_tests.py` restores the shipped ROM image.
 
+A new ROM image does not need a full compilation: after one full compilation in the project folder, **Processing → Update Memory Initialization File** followed by **Processing → Start → Start Assembler** rebuilds the `.sof` and `.pof` with the new `rom_lo.mif`/`rom_hi.mif` in a few seconds (from a terminal: `quartus_cdb Timur_RV32IMC -c Timur_RV32IMC --update_mif`, then `quartus_asm Timur_RV32IMC -c Timur_RV32IMC`). Timing does not change, since only memory contents do. `sw/program_board.sh` does all of it and programs the board: it swaps the ROM contents into the last compilation (or runs a full compilation when there is none, or when a file in `rtl/`, the `.qsf` or the `.sdc` is newer than the last fit, and stops on negative slack), then programs the `.sof` over JTAG; `--flash` programs the `.pof` into the configuration flash instead, so the design survives power-off.
+
 ---
 
 ## C Software Layer
@@ -471,6 +473,7 @@ The ROM contents come from `rom_lo.mif` and `rom_hi.mif` in the project root. Ha
 | `sw/trap.c` | Trap dispatch: ECALL system calls, `irq_handler`, `exception_handler`, the report of unhandled traps |
 | `sw/build.py` | Compile, link, check and convert a program |
 | `sw/bin2mem.py` | Binary-to-memory converter |
+| `sw/run_model.py` | Run a built program on the reference model; write a vector file to run it on the RTL |
 
 **Memory layout.** ROM (`0x0000_0000`, 64 KB): `.text` from address 0 (`_start` first), `.rodata`/`.srodata`, `.init_array`, then the load image of `.data`. RAM (`0x2000_0000`, 64 KB): `.data`/`.sdata` (copied at boot), `.sbss`/`.bss` (cleared at boot), the heap from `_end` up to `_heap_end`, and the stack (`__stack_size` bytes below `_stack_top` = `0x2001_0000`). `gp` points at the small data plus `0x800`. The script asserts that the image fits in the ROM and that `.data` and `.bss` leave room for the stack.
 
@@ -485,7 +488,16 @@ The ROM contents come from `rom_lo.mif` and `rom_hi.mif` in the project root. Ha
 - Any other exception: `exception_handler(frame, mcause, &mepc, mtval)`; returning 1 resumes at the (updated) `mepc`.
 - Without a handler, the runtime prints `*** unhandled trap: <cause>` with `mcause`, `mepc` and `mtval` over the UART and exits with `0x100 | cause` (LEDs `0x300 | cause`).
 
-**Building.** `python3 sw/build.py [--march rv32im_zicsr|rv32imc_zicsr] [-O2] [--install] program.c [more.c …]` compiles with `-march=… -mabi=ilp32 -O2 -ffunction-sections -fdata-sections -nostartfiles -T sw/linker.ld --specs=nano.specs -Wl,--gc-sections -Wl,-Map=…`, links through the `gcc` driver, and writes `sw/build/<name>/` (`.elf`, `.map`, `.lst`, `.bin`, `.hex` and the `_lo`/`_hi` banks). It stops if the C library is not the one for the chosen ISA (`-print-multi-directory` must print `rv32im/ilp32` or `rv32imc/ilp32`, never the default, which contains A-extension instructions), if `.text` does not start at 0, if `.data` does not run in RAM and load from ROM, or if the binary exceeds 64 KB. `--install` also writes `rom.hex` and `rom_lo`/`rom_hi` `.hex`/`.mif` in the project root. The default ISA is `rv32imc_zicsr`; `hello.c` is 6.2 KB of ROM with it and 9.3 KB without the C extension.
+**Building.** `python3 sw/build.py [--march rv32im_zicsr|rv32imc_zicsr] [-O2] [--install] program.c [more.c …]` compiles with `-march=… -mabi=ilp32 -O2 -ffunction-sections -fdata-sections -nostartfiles -T sw/linker.ld --specs=nano.specs -Wl,--gc-sections -Wl,-Map=…`, links through the `gcc` driver, and writes `sw/build/<name>/` (`.elf`, `.map`, `.lst`, `.bin`, `.hex` and the `_lo`/`_hi` banks). It stops if the C library is not the one for the chosen ISA (`-print-multi-directory` must print `rv32im/ilp32` or `rv32imc/ilp32`, never the default, which contains A-extension instructions), if `.text` does not start at 0, if `.data` does not run in RAM and load from ROM, or if the binary exceeds 64 KB. `--install` also writes `rom.hex` and `rom_lo`/`rom_hi` `.hex`/`.mif` in the project root. `--stack-size N` changes the stack reserved below the end of RAM (default 8192 bytes), and `--extra=OPTION` passes one more option to gcc after the sources: `--extra=-lm` for the maths library, `--extra=-Wl,-u,_printf_float` for `%f` in `printf` (Timur has no FPU; floating point runs in software). The default ISA is `rv32imc_zicsr`; `hello.c` is 6.2 KB of ROM with it and 9.3 KB without the C extension.
+
+**Trying a program.** `python3 sw/run_model.py sw/build/<name>/<name>.elf [--input 'text\r']` runs the image on the reference model and prints its UART output, the instruction count, the LEDs and how it ended. `--vectors FILE` also writes a vector file for `tb/timur_soc_tb.v`: for a program that ends and prints nothing timing-dependent, the RTL run must reproduce the model's output byte for byte; for any other program the RTL runs it for `--cycles` cycles and shows its output (`UARTSHOW`). Run it with
+
+```bash
+iverilog -g2001 -s timur_soc_tb -o sim.vvp -Ptimur_soc_tb.UART_DIVIDER=15 \
+    -Ptimur_soc_tb.VECTORS='"FILE"' tb/timur_soc_tb.v $RTL && vvp -n sim.vvp
+```
+
+The model cannot know the cycle counters and stops where one decides a branch; `--fake-time` makes them count instructions so that delay loops end.
 
 **Converter.** `python3 sw/bin2mem.py program.bin [-o PREFIX]` writes `PREFIX.hex` (32-bit words) and the two 16-bit banks `PREFIX_lo`/`PREFIX_hi` as `.hex` and `.mif` (16384 × 16, unused entries `0000`, which decode as an illegal instruction).
 
@@ -532,14 +544,15 @@ Timur-RV32IMC/
 ├── vectors/          # <module>_vectors.txt, program images, expected UART output (.out) and input (.in)
 ├── sw/
 │   ├── timur.h, linker.ld, crt0.S, syscalls.c, trap.c   # C runtime
-│   ├── build.py, bin2mem.py                             # build flow, binary-to-memory converter
+│   ├── build.py, bin2mem.py, run_model.py               # build flow, converter, model runner
+│   ├── program_board.sh                                 # ROM image -> programming files -> board
 │   ├── tests/        # C test programs
 │   ├── bringup/      # hardware bring-up programs (.hex and _lo/_hi banks)
 │   └── gen_soc_tests.py, gen_sw_tests.py, gen_unit_vectors.py, gen_decompressor_vectors.py
 ├── rom.hex           # default ROM image (final cross-phase program), 32-bit words
 ├── rom_lo.hex, rom_hi.hex, rom_lo.mif, rom_hi.mif      # the same image as the two ROM banks
 ├── ram.mif           # zero-filled RAM image (not used: the RAM has no initialisation file)
-├── run_tests.tcl, run_tests.bat
+├── run_tests.tcl, run_tests.bat   # ModelSim regression; run_tests.sh: the same with Icarus
 ├── Timur_RV32IMC.qpf, Timur_RV32IMC.qsf, Timur_RV32IMC.sdc
 └── README.md
 ```

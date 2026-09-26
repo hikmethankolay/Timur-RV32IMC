@@ -8,7 +8,8 @@
 // directives that follow (registers, RAM, LEDs, UART bytes or text, divider
 // starts, the order in which instructions left EX). A UARTIN directive before
 // a PROG gives the program input on uart_rx: each byte is sent once the
-// receiver is enabled and the previous byte has been read.
+// receiver is enabled and the previous byte has been read. UARTSHOW only
+// prints what the program sent (for programs whose output nothing predicts).
 // Parameters: VECTORS (the vector file) and UART_DIVIDER (the SoC's UART,
 // f_clk / baud - 1). tb/timur_sw_tb.v reuses this testbench for the C
 // programs of Phase 12 with a faster UART.
@@ -462,6 +463,12 @@ module timur_soc_tb;
                         end
                         $fclose(tfd);
                     end
+                end
+
+                else if (kw == "UARTSHOW") begin
+                    print_uart;
+                    result(1'b1);
+                    $display("PASS UARTSHOW: %0d bytes sent on uart_tx (shown above, not checked)", uart_count);
                 end
 
                 else if (kw == "UARTTEXT") begin

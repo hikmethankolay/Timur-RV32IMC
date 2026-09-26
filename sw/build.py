@@ -15,8 +15,12 @@ Checks: the C library matches the ISA (never the default rv32imac library,
 which contains A-extension instructions), .text starts at 0, .data runs in
 RAM and loads from ROM, and nothing else with contents lies outside the ROM.
 
-Usage:  python3 sw/build.py [--march rv32imc_zicsr] [-O2] [--name NAME]
-                            [--out DIR] [--install] source.c [more sources]
+Usage:  python3 sw/build.py [--march rv32imc_zicsr] [-O2] [--name NAME] [--out DIR]
+                            [--stack-size BYTES] [--extra=OPTION ...] [--install]
+                            source.c [more sources]
+--extra passes one more option to gcc, after the sources: --extra=-lm links the maths
+library, --extra=-Wl,-u,_printf_float enables %f in printf, --extra=-DDEBUG defines a
+macro.
 The toolchain is xPack riscv-none-elf-gcc (on PATH or unpacked in .tools/).
 """
 
@@ -122,9 +126,10 @@ def build(sources, march="rv32imc_zicsr", out_dir=None, name=None, opt="-O2", ti
     elf, binary = base + ".elf", base + ".bin"
 
     libdir = check_multilib(pre, march)
-    run([pre + "gcc"] + cflags(march, opt) + list(extra) +
+    run([pre + "gcc"] + cflags(march, opt) +
         ["-nostartfiles", "-T", os.path.join(SW, "linker.ld"), "--specs=nano.specs",
-         "-Wl,--gc-sections", "-Wl,-Map=" + base + ".map", "-o", elf] + RUNTIME + list(sources))
+         "-Wl,--gc-sections", "-Wl,-Map=" + base + ".map", "-o", elf] + RUNTIME + list(sources) +
+        list(extra))          # after the sources, so that libraries such as -lm resolve
     secs = sections(pre, elf)
     check_layout(secs)
     with open(base + ".lst", "w") as f:
@@ -144,11 +149,18 @@ def main():
     ap.add_argument("-O", dest="opt", default="2", help="optimisation level (default 2)")
     ap.add_argument("--name", help="output name (default: the first source's name)")
     ap.add_argument("--out", help="output directory (default: sw/build/<name>)")
+    ap.add_argument("--stack-size", type=int,
+                    help="bytes reserved for the stack below the end of RAM (default 8192)")
+    ap.add_argument("--extra", action="append", default=[], metavar="OPTION",
+                    help="one more gcc option, written as --extra=OPTION (repeatable)")
     ap.add_argument("--install", action="store_true",
                     help="also write rom.hex and rom_lo/_hi .hex/.mif in the project root")
     args = ap.parse_args()
     try:
-        r = build(args.sources, args.march, args.out, args.name, "-O" + args.opt)
+        extra = list(args.extra)
+        if args.stack_size:
+            extra.append("-Wl,--defsym=__stack_size=%d" % args.stack_size)
+        r = build(args.sources, args.march, args.out, args.name, "-O" + args.opt, extra=extra)
     except (BuildError, bin2mem.ConvertError) as e:
         sys.exit("build: %s" % e)
 
@@ -166,7 +178,9 @@ def main():
     if args.install:
         bin2mem.convert(open(r["bin"], "rb").read(), os.path.join(ROOT, "rom"),
                         "%s (%s)" % (r["name"], args.march))
-        print("  installed as rom.hex, rom_lo/_hi .hex/.mif in %s: recompile in Quartus" % ROOT)
+        print("  installed as rom.hex, rom_lo/_hi .hex/.mif in %s" % ROOT)
+        print("  Quartus: Processing > Update Memory Initialization File, then Processing > Start >"
+              " Start Assembler (or a full compilation); then program the .sof")
 
 
 if __name__ == "__main__":
