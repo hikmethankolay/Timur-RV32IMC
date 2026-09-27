@@ -120,3 +120,5 @@ docs/build-guide/
 # Local toolchains (RISC-V GCC), not part of the project
 .tools/
 /docs
+CLAUDE.md
+/graphify-out
