@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build a C program for Timur: compile, link, check the layout, convert to ROM images.
 
-Compiles the program with the runtime (crt0.S, syscalls.c, trap.c) and the
-memory layout linker.ld, then writes into the output directory (default
-sw/build/<name>/):
+Compiles the program with the runtime (sw/runtime: crt0.S, trap_entry.S, uart.c,
+syscalls.c, trap.c) and the memory layout sw/runtime/linker.ld, then writes into
+the output directory (default sw/build/<name>/):
   <name>.elf, <name>.map, <name>.lst   program, link map, disassembly
   <name>.bin                           raw ROM binary (objcopy -O binary)
   <name>.hex, <name>_lo/_hi .hex/.mif  ROM images (sw/bin2mem.py)
@@ -15,9 +15,12 @@ Checks: the C library matches the ISA (never the default rv32imac library,
 which contains A-extension instructions), .text starts at 0, .data runs in
 RAM and loads from ROM, and nothing else with contents lies outside the ROM.
 
+The runtime is compiled with strict warnings as errors; --strict does the same for
+the program's own sources.
+
 Usage:  python3 sw/build.py [--march rv32imc_zicsr] [-O2] [--name NAME] [--out DIR]
                             [--stack-size BYTES] [--extra=OPTION ...] [--install]
-                            source.c [more sources]
+                            [--strict] source.c [more sources]
 --extra passes one more option to gcc, after the sources: --extra=-lm links the maths
 library, --extra=-Wl,-u,_printf_float enables %f in printf, --extra=-DDEBUG defines a
 macro.
@@ -68,6 +71,10 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="one more gcc option, written as --extra=OPTION (repeatable)",
     )  # fmt: skip
     parser.add_argument(
+        "--strict", action="store_true",
+        help="compile the sources with the runtime's warnings, as errors",
+    )  # fmt: skip
+    parser.add_argument(
         "--install", action="store_true",
         help="also write rom.hex and rom_lo/_hi .hex/.mif in the project root",
     )  # fmt: skip
@@ -103,8 +110,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.stack_size:
         extra.append("-Wl,--defsym=__stack_size=%d" % args.stack_size)
     result = builder.build(
-        args.sources, args.march, args.out, args.name, "-O" + args.opt, extra=extra, project=project
-    )
+        args.sources, args.march, args.out, args.name, "-O" + args.opt, extra=extra,
+        strict=args.strict, project=project,
+    )  # fmt: skip
     print_summary(result)
     if args.install:
         builder.install(result, project)

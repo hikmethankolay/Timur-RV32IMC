@@ -39,6 +39,7 @@
     - [Regenerating vectors and images](#regenerating-vectors-and-images)
   - [Building \& Programming](#building--programming)
   - [C Software Layer](#c-software-layer)
+  - [Development and Checks](#development-and-checks)
   - [Development Phases](#development-phases)
   - [Directory Structure](#directory-structure)
   - [License](#license)
@@ -239,7 +240,7 @@ The datapath lives in **`timur_soc`**:
 
 ### Phase 12 — C Software Layer
 
-- **`sw/linker.ld`, `sw/crt0.S`, `sw/syscalls.c`, `sw/trap.c`, `sw/timur.h`** — memory layout, startup code, newlib system calls on the UART, trap handler, register definitions.
+- **`sw/runtime/`** — the C runtime: memory layout (`linker.ld`), startup code (`crt0.S`), trap entry (`trap_entry.S`), UART driver (`uart.c`), newlib system calls (`syscalls.c`), trap dispatch (`trap.c`); headers in `sw/runtime/include/` (`timur.h`, `timur_defs.h`).
 - **`sw/build.py`** — compile, link, check and convert a C program; **`sw/bin2mem.py`** — the binary-to-memory converter. See [C Software Layer](#c-software-layer).
 - **`sw/tests/`** — C programs run on the SoC by `tb/timur_sw_tb.v`.
 
@@ -343,7 +344,8 @@ With `irq_enable` set, the DMAC requests the machine external interrupt while do
 | Simulation | ModelSim-Intel FPGA Starter Edition 2020.1 (standalone), driven by `run_tests.tcl`; Questa-Altera FPGA Starter Edition or Icarus Verilog 13 are acceptable replacements |
 | PLL | ALTPLL via the IP Catalog (`cpu_pll.v` + `cpu_pll.qip`) |
 | Memory initialisation | `rom_lo.mif` / `rom_hi.mif` (synthesis), `rom_lo.hex` / `rom_hi.hex` (simulation) and `rom.hex` (32-bit words, testbenches), all from the same program |
-| Test programs | Python 3: `sw/gen_soc_tests.py` (assembler, RV32IMC reference model, vector writer), `sw/gen_sw_tests.py` (C programs), `sw/gen_unit_vectors.py` (CSR file, trap unit), `sw/gen_decompressor_vectors.py` (decompressor) |
+| Test programs | Python 3.10+, standard library only: `sw/gen_soc_tests.py` (system tests), `sw/gen_sw_tests.py` (C programs), `sw/gen_unit_vectors.py` (CSR file, trap unit), `sw/gen_decompressor_vectors.py` (decompressor), on the package `sw/timur_tools/` (assembler, RV32IMC reference model, vector writer) |
+| Checks | ruff, mypy, pytest, clang-format, clang-tidy, cppcheck, shellcheck (`requirements-dev.txt`), GCC `-fanalyzer`; see [Development and Checks](#development-and-checks) |
 | Software | xPack `riscv-none-elf-gcc` 14.2.0-3 (GCC 14.2, newlib-nano) |
 | On-chip debug | Signal Tap Logic Analyzer |
 
@@ -353,7 +355,7 @@ With `irq_enable` set, the DMAC requests the machine external interrupt while do
 
 ### Running all tests
 
-Double-click `run_tests.bat` or run it from a terminal. It changes to the project folder and starts `C:\intelFPGA\20.1\modelsim_ase\win32aloem\vsim.exe -c -do run_tests.tcl`, which:
+Double-click `run_tests.bat` or run it from a terminal. It changes to the project folder and starts `C:\intelFPGA\20.1\modelsim_ase\win32aloem\vsim.exe -c -do run_tests.tcl` (set `VSIM` to use another `vsim.exe`), which:
 
 1. collects `rtl/*.v` and `rtl/*/*.v` (dropping every `*_bb.v`) and `tb/*_tb.v`;
 2. deletes, recreates and maps the `work` library;
@@ -364,7 +366,7 @@ Double-click `run_tests.bat` or run it from a terminal. It changes to the projec
 
 Paths inside testbenches (`vectors/…`, `rom_lo.hex`) are relative to the project root. `timur_sw_tb` runs about 2 million cycles and takes the longest.
 
-On Linux, `./run_tests.sh` does the same with Icarus Verilog (`sudo dnf install iverilog`): it compiles each testbench with the RTL (without `cpu_pll` and the board wrapper, which need the Altera megafunction library; `timur_sw_tb` also gets `tb/timur_soc_tb.v`), keeps its output in `logs/<testbench>.log`, applies the same pass rule and prints a summary. `./run_tests.sh alu_tb timur_soc_tb` runs only those. A single testbench by hand:
+On Linux, `./run_tests.sh` (or `make sim`) does the same with Icarus Verilog (`sudo dnf install iverilog`, or set `IVERILOG` and `VVP`): it compiles each testbench with the RTL (without `cpu_pll` and the board wrapper, which need the Altera megafunction library; `timur_sw_tb` also gets `tb/timur_soc_tb.v`), keeps its output in `logs/<testbench>.log`, applies the same pass rule and prints a summary. `./run_tests.sh alu_tb timur_soc_tb` runs only those. A single testbench by hand:
 
 ```bash
 RTL=$(ls rtl/*/*.v | grep -v -e cpu_pll -e _bb.v -e Timur_RV32IMC.v)
@@ -396,7 +398,7 @@ iverilog -g2001 -s timur_sw_tb  -o sim.vvp tb/timur_sw_tb.v tb/timur_soc_tb.v $R
 | `rom.hex` | The final cross-phase program (the default ROM image) |
 | `sw/bringup/bringup_*.hex` | The three hardware bring-up programs (see [Building & Programming](#building--programming)) |
 
-Every cycle of every program the testbench also checks that the fetch window holds the 32 bits at the PC and that IF/ID holds the instruction at its PC (the expansion of a 16-bit instruction, from a reference decompressor), that each MUL gets one multiplier start and one stall cycle, that each DIV gets exactly one divider start, that each load-use costs exactly one bubble, that no misaligned access reaches the bus and that no interrupt is taken with a MUL or DIV in EX. Expected registers, RAM words and the order in which instructions leave EX come from the reference model in `sw/gen_soc_tests.py`; values that depend on timing (counters, UART and DMAC polling, interrupts) are left out of the model's checks and have hand-written ones. Add `+trace` to the simulator command line to print PC, instruction and x1–x14 every cycle.
+Every cycle of every program the testbench also checks that the fetch window holds the 32 bits at the PC and that IF/ID holds the instruction at its PC (the expansion of a 16-bit instruction, from a reference decompressor), that each MUL gets one multiplier start and one stall cycle, that each DIV gets exactly one divider start, that each load-use costs exactly one bubble, that no misaligned access reaches the bus and that no interrupt is taken with a MUL or DIV in EX. The programs are the assembly sources in `sw/programs/`. Expected registers, RAM words and the order in which instructions leave EX come from the reference model in `sw/timur_tools/model.py`; values that depend on timing (counters, UART and DMAC polling, interrupts) are left out of the model's checks and have hand-written ones. Add `+trace` to the simulator command line to print PC, instruction and x1–x14 every cycle.
 
 ### C programs
 
@@ -405,13 +407,13 @@ Every cycle of every program the testbench also checks that the fetch window hol
 | Program | Covers |
 | ------- | ------ |
 | `hello.c` | `printf`, a CSR read, the switches |
-| `selftest.c` | `.data`/`.sdata` initial values, `.bss`/`.sbss` zeroed, `.rodata` through the ROM's AHB port, a constructor; recursion and stack frames; `+ - * / %` including negative operands, division by zero and `INT_MIN / -1`, MULH/MULHU/MULHSU, 64-bit arithmetic and shifts; `snprintf`, `sscanf`, `strtol`, string functions, `qsort`; `malloc`/`calloc`/`realloc`, heap exhaustion returning `NULL` below the stack; ECALL system calls and register preservation; CSRs. 242 checks against values computed by the compiler or defined by the M extension, also run with HREADY waits |
+| `selftest.c` | `.data`/`.sdata` initial values, `.bss`/`.sbss` zeroed, `.rodata` through the ROM's AHB port, a constructor; recursion and stack frames; `+ - * / %` including negative operands, division by zero and `INT_MIN / -1`, MULH/MULHU/MULHSU, 64-bit arithmetic and shifts; `snprintf`, `sscanf`, `strtol`, string functions, `qsort`; `malloc`/`calloc`/`realloc`, heap exhaustion returning `NULL` below the stack; ECALL system calls and register preservation; CSRs; the runtime's limits (ECALL arguments outside ROM/RAM or too long, file descriptors other than the console, `sbrk` beyond the heap). 255 checks against values computed by the compiler or defined by the M extension, also run with HREADY waits |
 | `traps.c` | Exceptions handled by the program — illegal 32- and 16-bit instructions, EBREAK and C.EBREAK, misaligned LW/LH/LHU/SW/SH — with `mcause`, `mepc` and `mtval` checked, then the runtime's report of an unhandled one (LEDs `0x302`) |
 | `io.c` | Console input through `fgets`, `sscanf` and `getchar`; DMA copy from ROM with the done interrupt; a masked interrupt pending in `mip.MEIP` until `MIE` is set; a line received by the UART receive interrupt. The testbench types the input on `uart_rx` |
 
 ### Regenerating vectors and images
 
-From the project root:
+From any directory (the scripts find the project they are in; `--root DIR` or `TIMUR_ROOT` selects another), or all four with `make regen`:
 
 ```bash
 python3 sw/gen_soc_tests.py              # system tests, rom.* (default seed 20260926); --seed N for another random program
@@ -420,7 +422,7 @@ python3 sw/gen_unit_vectors.py           # csr_file and trap_unit vectors
 python3 sw/gen_decompressor_vectors.py   # all 16-bit encodings, expanded by the GNU toolchain
 ```
 
-`gen_decompressor_vectors.py` needs the RISC-V toolchain. `gen_soc_tests.py` needs it for the Phase 11 programs and `gen_sw_tests.py` for the C programs; without it they reuse the committed images and still regenerate the expectations.
+The generated files are deterministic: `tests/host/test_golden.py` regenerates them and compares them byte for byte with the committed ones. Images compiled from C are only byte-identical with the compiler release they were built with, xPack GCC 14.2.0-3; another release produces other, equally valid images, and `gen_sw_tests.py` warns about it. `gen_decompressor_vectors.py` needs the RISC-V toolchain. `gen_soc_tests.py` needs it for the Phase 11 programs and `gen_sw_tests.py` for the C programs; without it they reuse the committed images and still regenerate the expectations.
 
 ---
 
@@ -454,7 +456,7 @@ The ROM contents come from `rom_lo.mif` and `rom_hi.mif` in the project root. Ha
 | 3 | `sw/bringup/bringup_3_dma_lo/_hi.mif` | DMA copies four ROM words to RAM; the LEDs show the checksum's low bits `0x2AA` |
 | 4 | `rom_lo.mif` / `rom_hi.mif` as shipped | Final cross-phase program: LEDs show 42 (`0b00_0010_1010`), one `U` on the UART |
 | 5 | `python3 sw/build.py --install sw/tests/hello.c` | `Hello from Timur RV32IMC!`, `misa`, the switch value; then LEDR9 lights (exit code 0) |
-| 6 | `python3 sw/build.py --install sw/tests/selftest.c` (or `io.c`, which asks for input) | `all 242 checks passed`; LEDs `0x200` |
+| 6 | `python3 sw/build.py --install sw/tests/selftest.c` (or `io.c`, which asks for input) | `all 255 checks passed`; LEDs `0x200` |
 
 `python3 sw/gen_soc_tests.py` restores the shipped ROM image.
 
@@ -466,29 +468,33 @@ A new ROM image does not need a full compilation: after one full compilation in 
 
 | File | Role |
 | ---- | ---- |
-| `sw/timur.h` | Peripheral registers, CSR access macros, trap interface, raw UART helpers |
-| `sw/linker.ld` | Memory layout (below); `__stack_size` (default 8 KB) can be changed with `-Wl,--defsym=__stack_size=N` |
-| `sw/crt0.S` | Startup code, `_halt`, and `trap_entry` (saves the caller-saved registers, calls `timur_trap`, MRET) |
-| `sw/syscalls.c` | newlib system calls: the UART is `stdin`, `stdout` and `stderr`; heap for `malloc`; `_exit` |
-| `sw/trap.c` | Trap dispatch: ECALL system calls, `irq_handler`, `exception_handler`, the report of unhandled traps |
+| `sw/runtime/include/timur.h` | The interface for programs: peripheral registers, CSR access macros, trap interface, system calls, raw UART driver (Doxygen comments) |
+| `sw/runtime/include/timur_defs.h` | Memory map, register offsets and bits, CSR fields, trap causes, trap-frame layout: plain `#define`s shared by C and assembly |
+| `sw/runtime/include/timur_runtime.h` | Internal: one prototype for each newlib stub, the linker-script symbols |
+| `sw/runtime/linker.ld` | Memory layout (below); `__stack_size` (default 8 KB) can be changed with `-Wl,--defsym=__stack_size=N` |
+| `sw/runtime/crt0.S` | Startup code and `_halt` |
+| `sw/runtime/trap_entry.S` | `trap_entry`: saves the caller-saved registers, calls `timur_trap`, MRET |
+| `sw/runtime/uart.c` | Raw, polled UART driver (`uart_putc`, `uart_getc`, `uart_puts`, `uart_puthex`) |
+| `sw/runtime/syscalls.c` | newlib system calls: the UART is `stdin`, `stdout` and `stderr`; heap for `malloc`; `_exit` |
+| `sw/runtime/trap.c` | Trap dispatch: ECALL system calls, `irq_handler`, `exception_handler`, the report of unhandled traps |
 | `sw/build.py` | Compile, link, check and convert a program |
 | `sw/bin2mem.py` | Binary-to-memory converter |
 | `sw/run_model.py` | Run a built program on the reference model; write a vector file to run it on the RTL |
 
 **Memory layout.** ROM (`0x0000_0000`, 64 KB): `.text` from address 0 (`_start` first), `.rodata`/`.srodata`, `.init_array`, then the load image of `.data`. RAM (`0x2000_0000`, 64 KB): `.data`/`.sdata` (copied at boot), `.sbss`/`.bss` (cleared at boot), the heap from `_end` up to `_heap_end`, and the stack (`__stack_size` bytes below `_stack_top` = `0x2001_0000`). `gp` points at the small data plus `0x800`. The script asserts that the image fits in the ROM and that `.data` and `.bss` leave room for the stack.
 
-**Startup (`crt0.S`).** Load `gp` (with linker relaxation off for that instruction), set `sp`, point `mtvec` at the 4-byte-aligned `trap_entry`, copy `.data` from ROM to RAM a word at a time, clear `.bss`, run the constructors, call `main(0, NULL)` and pass its result to `exit`, which flushes `stdout` and ends in `_exit`.
+**Startup (`crt0.S`).** Load `gp` (with linker relaxation off for that instruction), set `sp`, point `mtvec` at the 4-byte-aligned `trap_entry`, copy `.data` from ROM to RAM a word at a time, clear `.bss`, run the constructors, call `main(0, NULL)` and pass its result to `exit`, which flushes `stdout` and ends in `_exit` (should `exit` return, `_start` jumps to `_halt`).
 
-**Console.** `_write` waits for `tx_busy` to clear before each byte and turns `\n` into `\r\n`; `_read` enables the receiver, waits for each byte, turns `\r` into `\n` and returns at the end of a line. `stdout` is line buffered. `_sbrk` fails with `ENOMEM` instead of growing into the stack. `_exit(code)` shows `0x200 | code` on the LEDs (LEDR9 = the program has ended) and stops in `_halt`, a jump to itself.
+**Console.** `_write` waits for `tx_busy` to clear before each byte and turns `\n` into `\r\n`; `_read` enables the receiver, waits for each byte, turns `\r` into `\n` and returns at the end of a line. Both wait without a timeout. `stdout` is line buffered. The console (file descriptors 0–2) is the only file: other descriptors fail with `EBADF`, and a negative length with `EINVAL`. `_sbrk` fails with `ENOMEM` instead of growing into the stack or below the start of the heap. `_exit(code)` shows `0x200 | code` on the LEDs (LEDR9 = the program has ended) and stops in `_halt`, a jump to itself.
 
 **Traps.** `trap_entry` saves `ra`, `t0`–`t6` and `a0`–`a7` on the stack and calls `timur_trap` with interrupts disabled (the hardware cleared `MIE`):
 
-- ECALL: system call `a7` with arguments `a0`–`a2` — 63 `read`, 64 `write`, 93 `exit`, anything else returns `-ENOSYS`. The result goes into the saved `a0` and `mepc` advances by 4. `timur_ecall()` in `timur.h` makes the call from C.
+- ECALL: system call `a7` with arguments `a0`–`a2` — 63 `read`, 64 `write`, 93 `exit`, anything else returns `-ENOSYS`. The arguments are checked first: a wrong file descriptor returns `-EBADF`, a length above `0x7FFFFFFF` `-EINVAL`, and a buffer that does not lie entirely in ROM or RAM (`write`) or in RAM (`read`) `-EFAULT`. The result goes into the saved `a0` and `mepc` advances by 4. `timur_ecall()` in `timur.h` makes the call from C.
 - External interrupt: `irq_handler(mcause)`, which the program defines and which must clear the source (read UART_DATA, write DMAC_CTRL).
 - Any other exception: `exception_handler(frame, mcause, &mepc, mtval)`; returning 1 resumes at the (updated) `mepc`.
 - Without a handler, the runtime prints `*** unhandled trap: <cause>` with `mcause`, `mepc` and `mtval` over the UART and exits with `0x100 | cause` (LEDs `0x300 | cause`).
 
-**Building.** `python3 sw/build.py [--march rv32im_zicsr|rv32imc_zicsr] [-O2] [--install] program.c [more.c …]` compiles with `-march=… -mabi=ilp32 -O2 -ffunction-sections -fdata-sections -nostartfiles -T sw/linker.ld --specs=nano.specs -Wl,--gc-sections -Wl,-Map=…`, links through the `gcc` driver, and writes `sw/build/<name>/` (`.elf`, `.map`, `.lst`, `.bin`, `.hex` and the `_lo`/`_hi` banks). It stops if the C library is not the one for the chosen ISA (`-print-multi-directory` must print `rv32im/ilp32` or `rv32imc/ilp32`, never the default, which contains A-extension instructions), if `.text` does not start at 0, if `.data` does not run in RAM and load from ROM, or if the binary exceeds 64 KB. `--install` also writes `rom.hex` and `rom_lo`/`rom_hi` `.hex`/`.mif` in the project root. `--stack-size N` changes the stack reserved below the end of RAM (default 8192 bytes), and `--extra=OPTION` passes one more option to gcc after the sources: `--extra=-lm` for the maths library, `--extra=-Wl,-u,_printf_float` for `%f` in `printf` (Timur has no FPU; floating point runs in software). The default ISA is `rv32imc_zicsr`; `hello.c` is 6.2 KB of ROM with it and 9.3 KB without the C extension.
+**Building.** `python3 sw/build.py [--march rv32im_zicsr|rv32imc_zicsr] [-O2] [--install] program.c [more.c …]` compiles with `-march=… -mabi=ilp32 -O2 -std=gnu11 --specs=nano.specs -ffunction-sections -fdata-sections -I sw/runtime/include`, links with `-nostartfiles -T sw/runtime/linker.ld -Wl,--gc-sections -Wl,-Map=…` through the `gcc` driver, and writes `sw/build/<name>/` (`.elf`, `.map`, `.lst`, `.bin`, `.hex` and the `_lo`/`_hi` banks). It stops if the C library is not the one for the chosen ISA (`-print-multi-directory` must print `rv32im/ilp32` or `rv32imc/ilp32`, never the default, which contains A-extension instructions), if `.text` does not start at 0, if `.data` does not run in RAM and load from ROM, or if the binary exceeds 64 KB. `--install` also writes `rom.hex` and `rom_lo`/`rom_hi` `.hex`/`.mif` in the project root. `--stack-size N` changes the stack reserved below the end of RAM (default 8192 bytes), and `--extra=OPTION` passes one more option to gcc after the sources: `--extra=-lm` for the maths library, `--extra=-Wl,-u,_printf_float` for `%f` in `printf` (Timur has no FPU; floating point runs in software). The runtime itself is compiled with a strict warning set (`-Wconversion`, `-Wshadow`, `-Wcast-qual`, `-Wmissing-prototypes` and more) as errors and assembled with `--fatal-warnings`; programs get `-Wall -Wextra`, and the test programs in `sw/tests/` are built with the runtime's warnings as errors. `-ffile-prefix-map` keeps the checkout location out of the program, so a build does not depend on where the project lives. The toolchain is taken from `TIMUR_TOOLCHAIN_PREFIX` (for example `/opt/riscv/bin/riscv-none-elf-`), `PATH`, or the newest release unpacked in `.tools/`. The default ISA is `rv32imc_zicsr`; `hello.c` is 6.3 KB of ROM with it and 9.5 KB without the C extension.
 
 **Trying a program.** `python3 sw/run_model.py sw/build/<name>/<name>.elf [--input 'text\r']` runs the image on the reference model and prints its UART output, the instruction count, the LEDs and how it ended. `--vectors FILE` also writes a vector file for `tb/timur_soc_tb.v`: for a program that ends and prints nothing timing-dependent, the RTL run must reproduce the model's output byte for byte; for any other program the RTL runs it for `--cycles` cycles and shows its output (`UARTSHOW`). Run it with
 
@@ -500,6 +506,41 @@ iverilog -g2001 -s timur_soc_tb -o sim.vvp -Ptimur_soc_tb.UART_DIVIDER=15 \
 The model cannot know the cycle counters and stops where one decides a branch; `--fake-time` makes them count instructions so that delay loops end.
 
 **Converter.** `python3 sw/bin2mem.py program.bin [-o PREFIX]` writes `PREFIX.hex` (32-bit words) and the two 16-bit banks `PREFIX_lo`/`PREFIX_hi` as `.hex` and `.mif` (16384 × 16, unused entries `0000`, which decode as an illegal instruction).
+
+**Hardware assumptions of the runtime.** One hart in machine mode (no PMP, no user mode); a 50 MHz clock; peripheral registers are 32 bits wide, accessed as words, and a store writes the whole register (APB has no byte strobes); the UART runs at 115200 8N1 with one byte of buffering in each direction, so a byte takes 4340 clock cycles and the console functions poll; traps do not nest (the hardware clears `mstatus.MIE`, and the runtime never sets it inside a handler), so `mepc`, `mcause` and `mtval` need no saving, and a trap needs 64 bytes of the interrupted stack plus what the C handlers use.
+
+---
+
+## Development and Checks
+
+The C runtime, the assembly programs and the Python tools are checked by one set of commands. Set up once (Python 3.10 or newer; the tools themselves need only the standard library):
+
+```bash
+make venv            # .venv with ruff, mypy, pytest, clang-format, clang-tidy, cppcheck, shellcheck
+```
+
+| Command | What it does |
+| ------- | ------------ |
+| `make check` | `lint`, `typecheck` and `test`: everything that needs no simulator |
+| `make lint` | `ruff check` and `ruff format --check` (Python), `clang-format --dry-run` (`sw/runtime`), `shellcheck` |
+| `make format` | Apply `ruff format` and `clang-format` |
+| `make typecheck` | `mypy --strict` on `sw/` and `tests/host/` |
+| `make test` | `pytest tests/host`: unit tests of the assembler, the RVC expansion, the model, the image files, the builder and the CLIs, the cross-language constant check, and the golden-file test that regenerates every vector file and image and compares it byte for byte |
+| `make coverage` | The same with a coverage report; fails below 90 % (currently 98 %) |
+| `make analyze` | `sw/analyze.py`: GCC `-fanalyzer` with the strict warnings on the runtime and the test programs, the assembler with `--fatal-warnings`, `clang-tidy` (`.clang-tidy`) and `cppcheck` on the runtime |
+| `make regen` | Run the four generators |
+| `make sim` | `./run_tests.sh`: the RTL regression with Icarus Verilog |
+| `make all` | `check`, `analyze` and `sim` |
+
+`.github/workflows/ci.yml` runs the same targets with the pinned xPack GCC release. After changing code, keep the generated files in the same commit as the change that alters them.
+
+**Layout of the Python tools.** The scripts in `sw/` are thin entry points (`main(argv) -> int`, `argparse`, `--root`, `--verbose`); the reusable code is the package `sw/timur_tools/`: `paths`, `memmap` (the Python copy of `timur_defs.h`), `toolchain`, `romimage`, `builder`, `isa`, `asm`, `rvc`, `model`, `randprog`, `vectors`, `cli`. Library code raises `TimurError` subclasses; only the entry points turn them into a one-line message and exit status 1 (argument errors exit with 2). Diagnostics go to stderr, results and program output to stdout.
+
+**One set of hardware constants.** `sw/runtime/include/timur_defs.h` (C and assembly), `sw/runtime/linker.ld` and `sw/timur_tools/memmap.py` hold the same memory map, register layout and trap causes; `tests/host/test_memmap.py` checks that they agree with each other and with the RTL's address decoder and UART divider.
+
+**Environment variables.** `TIMUR_ROOT` (project for the generators), `TIMUR_TOOLCHAIN_PREFIX` (RISC-V toolchain), `IVERILOG` and `VVP` (`run_tests.sh`), `VSIM` (`run_tests.bat`), `QUARTUS_BIN` (`program_board.sh`).
+
+**C coding rules (MISRA-C inspired).** Fixed-width types for everything that touches hardware; `volatile` only through `TIMUR_REG`; no dynamic allocation in the runtime; every external function has one prototype in a header; the runtime compiles without warnings under the strict set. Deliberate deviations: GNU C (`-std=gnu11`) for inline assembly, statement expressions in `csr_read` and explicit register variables in `timur_ecall`; function-like macros for register and CSR access; the reserved names newlib requires (`_write`, `_sbrk`, …) and `_halt`; weak default handlers that programs override; `switch` cases that end in a `noreturn` call instead of `break`; the unbounded polling loops of the console. `.clang-tidy` lists the checks that are disabled and why.
 
 ---
 
@@ -543,16 +584,22 @@ Timur-RV32IMC/
 ├── tb/               # <module>_tb.v, one per module; timur_sw_tb.v (C programs)
 ├── vectors/          # <module>_vectors.txt, program images, expected UART output (.out) and input (.in)
 ├── sw/
-│   ├── timur.h, linker.ld, crt0.S, syscalls.c, trap.c   # C runtime
-│   ├── build.py, bin2mem.py, run_model.py               # build flow, converter, model runner
-│   ├── program_board.sh                                 # ROM image -> programming files -> board
+│   ├── runtime/      # C runtime: linker.ld, crt0.S, trap_entry.S, uart.c, syscalls.c, trap.c
+│   │   └── include/  # timur.h (programs), timur_defs.h (C and assembly), timur_runtime.h
 │   ├── tests/        # C test programs
-│   ├── bringup/      # hardware bring-up programs (.hex and _lo/_hi banks)
-│   └── gen_soc_tests.py, gen_sw_tests.py, gen_unit_vectors.py, gen_decompressor_vectors.py
+│   ├── programs/     # directed and bring-up assembly test programs (.s)
+│   ├── timur_tools/  # Python package: assembler, reference model, builder, image files, ...
+│   ├── build.py, bin2mem.py, run_model.py, analyze.py   # build flow, converter, model runner, static analysis
+│   ├── gen_soc_tests.py, gen_sw_tests.py, gen_unit_vectors.py, gen_decompressor_vectors.py
+│   ├── program_board.sh                                 # ROM image -> programming files -> board
+│   └── bringup/      # hardware bring-up programs (.hex and _lo/_hi banks)
+├── tests/host/       # pytest tests of the Python tools and the golden files
 ├── rom.hex           # default ROM image (final cross-phase program), 32-bit words
 ├── rom_lo.hex, rom_hi.hex, rom_lo.mif, rom_hi.mif      # the same image as the two ROM banks
 ├── ram.mif           # zero-filled RAM image (not used: the RAM has no initialisation file)
 ├── run_tests.tcl, run_tests.bat   # ModelSim regression; run_tests.sh: the same with Icarus
+├── Makefile, pyproject.toml, requirements-dev.txt, .clang-format, .clang-tidy   # checks
+├── .github/workflows/ci.yml
 ├── Timur_RV32IMC.qpf, Timur_RV32IMC.qsf, Timur_RV32IMC.sdc
 └── README.md
 ```
