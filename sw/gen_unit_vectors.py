@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Vector files for the Phase 10 unit testbenches, from reference models.
 
-Writes, relative to the project root (run it from there):
+Writes, relative to the project root:
   vectors/csr_file_vectors.txt    tb/csr_file_tb.v
   vectors/trap_unit_vectors.txt   tb/trap_unit_tb.v
 
@@ -10,155 +10,222 @@ of the build guide; they are written independently of the RTL, so a mistake
 has to be made twice to go unnoticed. Random sections use a fixed seed, so the
 files are reproducible.
 
-Usage:  python3 sw/gen_unit_vectors.py
+Usage:  python3 sw/gen_unit_vectors.py [--root DIR]
 """
 
-import random
+from __future__ import annotations
 
-MASK = 0xFFFFFFFF
+import argparse
+import random
+import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+from timur_tools import cli, memmap, paths
+from timur_tools.isa import MASK
+from timur_tools.paths import Project
+from timur_tools.romimage import write_lines
+
 SEED = 20260927
+COUNTER_MASK = (1 << 64) - 1
+
+CSR_VECTOR_FILE = paths.VECTORS + "/csr_file_vectors.txt"
+TRAP_VECTOR_FILE = paths.VECTORS + "/trap_unit_vectors.txt"
 
 # ---------------------------------------------------------------------------
 # CSR file
 # ---------------------------------------------------------------------------
-MSTATUS, MISA, MIE, MTVEC, MSCRATCH, MEPC, MCAUSE, MTVAL, MIP = (
-    0x300, 0x301, 0x304, 0x305, 0x340, 0x341, 0x342, 0x343, 0x344)
-MCYCLE, MINSTRET, MCYCLEH, MINSTRETH = 0xB00, 0xB02, 0xB80, 0xB82
-CYCLE, TIME, INSTRET, CYCLEH, TIMEH, INSTRETH = 0xC00, 0xC01, 0xC02, 0xC80, 0xC81, 0xC82
-IDS = (0xF11, 0xF12, 0xF13, 0xF14)
-IMPLEMENTED = {MSTATUS, MISA, MIE, MTVEC, MSCRATCH, MEPC, MCAUSE, MTVAL, MIP, MCYCLE, MINSTRET,
-               MCYCLEH, MINSTRETH, CYCLE, TIME, INSTRET, CYCLEH, TIMEH, INSTRETH} | set(IDS)
-MISA_VALUE = 0x40001104
+MSTATUS, MISA, MIE, MTVEC = memmap.CSR_MSTATUS, memmap.CSR_MISA, memmap.CSR_MIE, memmap.CSR_MTVEC
+MSCRATCH, MEPC, MCAUSE = memmap.CSR_MSCRATCH, memmap.CSR_MEPC, memmap.CSR_MCAUSE
+MTVAL, MIP = memmap.CSR_MTVAL, memmap.CSR_MIP
+MCYCLE, MINSTRET = memmap.CSR_MCYCLE, memmap.CSR_MINSTRET
+MCYCLEH, MINSTRETH = memmap.CSR_MCYCLEH, memmap.CSR_MINSTRETH
+CYCLE, TIME, INSTRET = memmap.CSR_CYCLE, memmap.CSR_TIME, memmap.CSR_INSTRET
+CYCLEH, TIMEH, INSTRETH = memmap.CSR_CYCLEH, memmap.CSR_TIMEH, memmap.CSR_INSTRETH
+IDS = (memmap.CSR_MVENDORID, memmap.CSR_MARCHID, memmap.CSR_MIMPID, memmap.CSR_MHARTID)
+IMPLEMENTED = memmap.CSR_IMPLEMENTED
+UNIMPLEMENTED = (0x000, 0x001, 0x302, 0x303, 0x7C0, 0xB01, 0xB03, 0xC03, 0xF15, 0xFFF, 0x7B0)
+
+# csr_op of the CSR file
 WRITE, SET, CLEAR = 0, 1, 2
 
 
+@dataclass(frozen=True)
+class CsrInputs:
+    """Inputs of csr_file for one clock cycle (names as in rtl/csr/csr_file.v)."""
+
+    rst_n: int = 1
+    addr: int = 0
+    op: int = WRITE
+    wdata: int = 0
+    attempt: int = 0  # the instruction is a CSR access (legality is checked)
+    we: int = 0  # the access writes
+    trap: int = 0
+    cause: int = 0
+    epc: int = 0
+    val: int = 0
+    mret: int = 0
+    retire: int = 0
+    irq: int = 0  # two interrupt lines
+
+    def as_vector(self) -> str:
+        """The input columns of a vector line."""
+        return "%d %03X %d%d %08X %d %d %d %08X %08X %08X %d %d %d%d" % (
+            self.rst_n, self.addr, self.op >> 1, self.op & 1, self.wdata, self.attempt,
+            self.we, self.trap, self.cause, self.epc, self.val, self.mret, self.retire,
+            self.irq >> 1, self.irq & 1,
+        )  # fmt: skip
+
+
 class CsrModel:
-    def __init__(self):
+    """The machine-mode CSRs of the build guide, cycle by cycle."""
+
+    def __init__(self) -> None:
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
+        """Reset values: everything 0 (mstatus.MPP reads 11 regardless)."""
         self.mie = self.mpie = self.meie = 0
         self.mtvec = self.mscratch = self.mepc = self.mcause = self.mtval = 0
         self.mcycle = self.minstret = 0
 
-    def read(self, addr, irq):
-        meip = int(irq != 0)
+    def read(self, addr: int, irq: int) -> int:
+        """csr_rdata for an address (0 for unimplemented ones)."""
         values = {
-            MSTATUS: (3 << 11) | (self.mpie << 7) | (self.mie << 3),
-            MISA: MISA_VALUE,
+            MSTATUS: memmap.MSTATUS_MPP_MACHINE | (self.mpie << 7) | (self.mie << 3),
+            MISA: memmap.MISA_VALUE,
             MIE: self.meie << 11,
             MTVEC: self.mtvec,
             MSCRATCH: self.mscratch,
             MEPC: self.mepc,
             MCAUSE: self.mcause,
             MTVAL: self.mtval,
-            MIP: meip << 11,
-            MCYCLE: self.mcycle & MASK, CYCLE: self.mcycle & MASK, TIME: self.mcycle & MASK,
-            MCYCLEH: self.mcycle >> 32, CYCLEH: self.mcycle >> 32, TIMEH: self.mcycle >> 32,
-            MINSTRET: self.minstret & MASK, INSTRET: self.minstret & MASK,
-            MINSTRETH: self.minstret >> 32, INSTRETH: self.minstret >> 32,
+            MIP: int(irq != 0) << 11,  # MEIP: the OR of the interrupt lines
+            MCYCLE: self.mcycle & MASK,
+            CYCLE: self.mcycle & MASK,
+            TIME: self.mcycle & MASK,
+            MCYCLEH: self.mcycle >> 32,
+            CYCLEH: self.mcycle >> 32,
+            TIMEH: self.mcycle >> 32,
+            MINSTRET: self.minstret & MASK,
+            INSTRET: self.minstret & MASK,
+            MINSTRETH: self.minstret >> 32,
+            INSTRETH: self.minstret >> 32,
         }
-        for a in IDS:
-            values[a] = 0
+        for addr_id in IDS:
+            values[addr_id] = 0
         return values.get(addr, 0)
 
-    def outputs(self, v):
-        """Combinational outputs for the inputs of vector v."""
-        rdata = self.read(v["addr"], v["irq"])
-        illegal = int(v["addr"] not in IMPLEMENTED or (v["attempt"] and (v["addr"] >> 10) == 3))
-        irq_pending = int(self.mie and self.meie and v["irq"] != 0)
+    def outputs(self, inputs: CsrInputs) -> tuple[int, int, int, int, int]:
+        """Combinational outputs: rdata, illegal, mtvec, mepc, irq_pending."""
+        rdata = self.read(inputs.addr, inputs.irq)
+        writes_read_only = inputs.attempt and (inputs.addr >> 10) == memmap.CSR_READ_ONLY_SPACE
+        illegal = int(inputs.addr not in IMPLEMENTED or bool(writes_read_only))
+        irq_pending = int(bool(self.mie and self.meie and inputs.irq != 0))
         return rdata, illegal, self.mtvec, self.mepc, irq_pending
 
-    def clock(self, v):
-        if not v["rst_n"]:
+    def clock(self, inputs: CsrInputs) -> None:
+        """The rising clock edge."""
+        if not inputs.rst_n:
             self.reset()
             return
-        old = self.read(v["addr"], v["irq"])
-        new = {WRITE: v["wdata"], SET: old | v["wdata"], CLEAR: old & ~v["wdata"] & MASK}.get(v["op"], v["wdata"])
-        a, we = v["addr"], v["we"]
-        if v["trap"]:
-            self.mepc = v["epc"] & ~1 & MASK
-            self.mcause, self.mtval = v["cause"], v["val"]
+        old = self.read(inputs.addr, inputs.irq)
+        new = {
+            WRITE: inputs.wdata,
+            SET: old | inputs.wdata,
+            CLEAR: old & ~inputs.wdata & MASK,
+        }.get(inputs.op, inputs.wdata)
+        addr, we = inputs.addr, inputs.we
+        if inputs.trap:  # a trap wins over a CSR write in the same cycle
+            self.mepc = inputs.epc & ~1 & MASK
+            self.mcause, self.mtval = inputs.cause, inputs.val
             self.mpie, self.mie = self.mie, 0
-        elif v["mret"]:
+        elif inputs.mret:  # so does MRET
             self.mie, self.mpie = self.mpie, 1
         elif we:
-            if a == MSTATUS:
-                self.mie, self.mpie = (new >> 3) & 1, (new >> 7) & 1
-            elif a == MIE:
-                self.meie = (new >> 11) & 1
-            elif a == MTVEC:
-                self.mtvec = new & ~3 & MASK
-            elif a == MSCRATCH:
-                self.mscratch = new
-            elif a == MEPC:
-                self.mepc = new & ~1 & MASK
-            elif a == MCAUSE:
-                self.mcause = new
-            elif a == MTVAL:
-                self.mtval = new
-        if we and a in (MCYCLE, MCYCLEH):
-            self.mcycle = ((self.mcycle >> 32) << 32 | new) if a == MCYCLE else (new << 32 | (self.mcycle & MASK))
+            self._write(addr, new)
+        if we and addr in (MCYCLE, MCYCLEH):  # a write replaces the increment
+            if addr == MCYCLE:
+                self.mcycle = (self.mcycle >> 32) << 32 | new
+            else:
+                self.mcycle = new << 32 | (self.mcycle & MASK)
         else:
-            self.mcycle = (self.mcycle + 1) & ((1 << 64) - 1)
-        if we and a in (MINSTRET, MINSTRETH):
-            self.minstret = ((self.minstret >> 32) << 32 | new) if a == MINSTRET else (new << 32 | (self.minstret & MASK))
-        elif v["retire"]:
-            self.minstret = (self.minstret + 1) & ((1 << 64) - 1)
+            self.mcycle = (self.mcycle + 1) & COUNTER_MASK
+        if we and addr in (MINSTRET, MINSTRETH):
+            if addr == MINSTRET:
+                self.minstret = (self.minstret >> 32) << 32 | new
+            else:
+                self.minstret = new << 32 | (self.minstret & MASK)
+        elif inputs.retire:
+            self.minstret = (self.minstret + 1) & COUNTER_MASK
+
+    def _write(self, addr: int, new: int) -> None:
+        if addr == MSTATUS:
+            self.mie, self.mpie = (new >> 3) & 1, (new >> 7) & 1
+        elif addr == MIE:
+            self.meie = (new >> 11) & 1
+        elif addr == MTVEC:
+            self.mtvec = new & ~3 & MASK
+        elif addr == MSCRATCH:
+            self.mscratch = new
+        elif addr == MEPC:
+            self.mepc = new & ~1 & MASK
+        elif addr == MCAUSE:
+            self.mcause = new
+        elif addr == MTVAL:
+            self.mtval = new
 
 
-def csr_vector(**kw):
-    v = dict(rst_n=1, addr=0, op=WRITE, wdata=0, attempt=0, we=0, trap=0, cause=0, epc=0, val=0,
-             mret=0, retire=0, irq=0)
-    v.update(kw)
-    return v
+def csr_vectors() -> list[str]:
+    """The csr_file vector lines: directed sections, then a random sequence."""
+    model = CsrModel()
+    lines: list[str] = []
 
-
-def csr_vectors():
-    m = CsrModel()
-    lines = []
-
-    def cycle(comment=None, **kw):
-        v = csr_vector(**kw)
+    def cycle(comment: str | None = None, **fields: int) -> None:
+        inputs = CsrInputs(**fields)
         if comment:
             lines.append("// " + comment)
-        ins = "%d %03X %d%d %08X %d %d %d %08X %08X %08X %d %d %d%d" % (
-            v["rst_n"], v["addr"], v["op"] >> 1, v["op"] & 1, v["wdata"], v["attempt"], v["we"],
-            v["trap"], v["cause"], v["epc"], v["val"], v["mret"], v["retire"], v["irq"] >> 1, v["irq"] & 1)
-        if v["rst_n"]:
-            rdata, illegal, mtvec, mepc, irqp = m.outputs(v)
-            lines.append("%s  %08X %d %08X %08X %d 0" % (ins, rdata, illegal, mtvec, mepc, irqp))
+        columns = inputs.as_vector()
+        if inputs.rst_n:
+            rdata, illegal, mtvec, mepc, irq_pending = model.outputs(inputs)
+            lines.append(
+                "%s  %08X %d %08X %08X %d 0" % (columns, rdata, illegal, mtvec, mepc, irq_pending)
+            )
         else:
-            lines.append("%s  xxxxxxxx x xxxxxxxx xxxxxxxx x 0" % ins)
-        m.clock(v)
-        lines.append("%s  xxxxxxxx x xxxxxxxx xxxxxxxx x 1" % ins)
+            lines.append("%s  xxxxxxxx x xxxxxxxx xxxxxxxx x 0" % columns)
+        model.clock(inputs)
+        lines.append("%s  xxxxxxxx x xxxxxxxx xxxxxxxx x 1" % columns)
 
-    def read(addr, comment=None, irq=0):
+    def read(addr: int, comment: str | None = None, irq: int = 0) -> None:
         cycle(comment, addr=addr, irq=irq)
 
-    def write(addr, value, op=WRITE, comment=None, we=1):
+    def write(
+        addr: int, value: int, op: int = WRITE, comment: str | None = None, we: int = 1
+    ) -> None:
         cycle(comment, addr=addr, op=op, wdata=value, attempt=1, we=we)
 
     cycle("reset", rst_n=0)
     cycle(rst_n=0)
     read(MSTATUS, "reset values: mstatus = MPP 11 only; misa; everything else 0")
-    for a in (MISA, MIE, MTVEC, MSCRATCH, MEPC, MCAUSE, MTVAL, MIP) + IDS:
-        read(a)
+    for addr in (MISA, MIE, MTVEC, MSCRATCH, MEPC, MCAUSE, MTVAL, MIP, *IDS):
+        read(addr)
     read(MCYCLE, "mcycle counts every cycle after reset; minstret counts nothing yet")
     read(MCYCLE)
     read(MINSTRET)
     read(MCYCLEH)
 
     lines.append("// WRITE, SET, CLEAR on every writable CSR; unused bits read 0")
-    for a, pattern in ((MSTATUS, MASK), (MIE, MASK), (MTVEC, MASK), (MSCRATCH, 0xA5A55A5A), (MEPC, 0x12345677),
-                       (MCAUSE, 0x8000000B), (MTVAL, 0xDEADBEEF)):
-        write(a, pattern)
-        read(a)
-        write(a, 0x00F0F00F, SET)
-        read(a)
-        write(a, 0xFFFF0000, CLEAR)
-        read(a)
-        write(a, 0)
+    for addr, pattern in (
+        (MSTATUS, MASK), (MIE, MASK), (MTVEC, MASK), (MSCRATCH, 0xA5A55A5A),
+        (MEPC, 0x12345677), (MCAUSE, 0x8000000B), (MTVAL, 0xDEADBEEF),
+    ):  # fmt: skip
+        write(addr, pattern)
+        read(addr)
+        write(addr, 0x00F0F00F, SET)
+        read(addr)
+        write(addr, 0xFFFF0000, CLEAR)
+        read(addr)
+        write(addr, 0)
     write(MSTATUS, 0x88, comment="mstatus: MIE and MPIE are the only writable bits")
     read(MSTATUS)
     write(MSTATUS, 0x80, CLEAR)
@@ -175,12 +242,12 @@ def csr_vectors():
     read(MIP, irq=3)
 
     lines.append("// read-only space [11:10] = 11: a write attempt is illegal, a plain read is not")
-    for a in (CYCLE, INSTRETH, 0xF14):
-        cycle(addr=a, op=SET, wdata=0, attempt=0)
-        cycle(addr=a, op=WRITE, wdata=0x55, attempt=1, we=0)
+    for addr in (CYCLE, INSTRETH, memmap.CSR_MHARTID):
+        cycle(addr=addr, op=SET, wdata=0, attempt=0)
+        cycle(addr=addr, op=WRITE, wdata=0x55, attempt=1, we=0)
     lines.append("// unimplemented addresses are illegal and read 0")
-    for a in (0x000, 0x001, 0x302, 0x303, 0x7C0, 0xB01, 0xB03, 0xC03, 0xF15, 0xFFF, 0x7B0):
-        read(a)
+    for addr in UNIMPLEMENTED:
+        read(addr)
     lines.append("// attempt without we: legality only, no write")
     write(MSCRATCH, 0x11111111)
     write(MSCRATCH, 0x22222222, we=0)
@@ -220,7 +287,9 @@ def csr_vectors():
             for irq in (0, 1, 2):
                 read(MSTATUS, irq=irq)
 
-    lines.append("// counters: writes to either half replace it and suppress the increment in that cycle")
+    lines.append(
+        "// counters: writes to either half replace it and suppress the increment in that cycle"
+    )
     write(MCYCLE, 0xFFFFFFFE)
     read(MCYCLE)
     read(MCYCLE)
@@ -246,77 +315,103 @@ def csr_vectors():
 
     lines.append("// random sequence")
     rnd = random.Random(SEED)
-    addrs = sorted(IMPLEMENTED) + [0x000, 0x302, 0x7C0, 0xC03]
+    addrs = [*sorted(IMPLEMENTED), 0x000, 0x302, 0x7C0, 0xC03]
     for _ in range(600):
         kind = rnd.random()
         addr = rnd.choice(addrs)
         op = rnd.choice([WRITE, SET, CLEAR])
         wdata = rnd.choice([rnd.getrandbits(32), 0, MASK, 1 << rnd.randrange(32)])
         attempt = int(rnd.random() < 0.6)
-        we = int(attempt and rnd.random() < 0.8 and addr in IMPLEMENTED and (addr >> 10) != 3)
+        writable = addr in IMPLEMENTED and (addr >> 10) != memmap.CSR_READ_ONLY_SPACE
+        we = int(attempt and rnd.random() < 0.8 and writable)
         trap = int(kind < 0.05)
         mret = int(0.05 <= kind < 0.09)
-        cycle(addr=addr, op=op, wdata=wdata, attempt=attempt, we=we, trap=trap,
-              cause=rnd.choice([0, 2, 3, 4, 6, 11, 0x8000000B]), epc=rnd.getrandbits(32),
-              val=rnd.getrandbits(32), mret=mret, retire=int(rnd.random() < 0.5), irq=rnd.randrange(4))
+        cycle(
+            addr=addr, op=op, wdata=wdata, attempt=attempt, we=we, trap=trap,
+            cause=rnd.choice([0, 2, 3, 4, 6, 11, memmap.CAUSE_EXTERNAL_INTERRUPT]),
+            epc=rnd.getrandbits(32), val=rnd.getrandbits(32), mret=mret,
+            retire=int(rnd.random() < 0.5), irq=rnd.randrange(4),
+        )  # fmt: skip
     return lines
 
 
-def write_csr_vectors():
-    head = [
-        "// csr_file test vectors (generated by sw/gen_unit_vectors.py)",
-        "// format: rst_n addr(hex) op(bin) wdata(hex) attempt we trap_take trap_cause(hex) trap_epc(hex)",
-        "//         trap_val(hex) mret_take retire irq_lines(bin)",
-        "//         expected: csr_rdata(hex) csr_illegal mtvec_out(hex) mepc_out(hex) irq_pending, then wait_type",
-        "// Each clock cycle is two lines: wait_type 0 checks the combinational outputs for the",
-        "// cycle's inputs, wait_type 1 applies the rising edge with the same inputs (x = don't care).",
-        "// op: 00 WRITE, 01 SET, 10 CLEAR. mcycle counts every edge after reset.",
-    ]
-    with open("vectors/csr_file_vectors.txt", "w") as f:
-        f.write("\n".join(head + csr_vectors()) + "\n")
+CSR_HEADER = [
+    "// csr_file test vectors (generated by sw/gen_unit_vectors.py)",
+    "// format: rst_n addr(hex) op(bin) wdata(hex) attempt we trap_take trap_cause(hex) trap_epc(hex)",  # noqa: E501
+    "//         trap_val(hex) mret_take retire irq_lines(bin)",
+    "//         expected: csr_rdata(hex) csr_illegal mtvec_out(hex) mepc_out(hex) irq_pending, then wait_type",  # noqa: E501
+    "// Each clock cycle is two lines: wait_type 0 checks the combinational outputs for the",
+    "// cycle's inputs, wait_type 1 applies the rising edge with the same inputs (x = don't care).",
+    "// op: 00 WRITE, 01 SET, 10 CLEAR. mcycle counts every edge after reset.",
+]  # fmt: skip
 
 
 # ---------------------------------------------------------------------------
 # Trap unit
 # ---------------------------------------------------------------------------
-def trap_model(v):
-    """(trap_req, cause, mtval) for the instruction described by v."""
-    f3 = v["funct3"] & 3
-    lo = v["addr_lo"]
-    misaligned = (f3 == 2 and lo != 0) or (f3 == 1 and lo & 1)
-    if not v["valid"]:
-        return 0, None, None
-    if v["irq"] and v["irq_ok"]:
-        return 1, 0x8000000B, 0
-    if v["illegal"] or (v["csr"] and v["csr_illegal"]):
-        return 1, 2, 0
-    if v["ebreak"]:
-        return 1, 3, v["pc"]
-    if v["ecall"]:
-        return 1, 11, 0
-    if v["rd"] and misaligned:
-        return 1, 4, v["addr"]
-    if v["wr"] and misaligned:
-        return 1, 6, v["addr"]
-    return 0, None, None
+@dataclass(frozen=True)
+class TrapInputs:
+    """Inputs of trap_unit for one instruction (names as in rtl/csr/trap_unit.v)."""
+
+    valid: int = 1
+    pc: int = 0x100
+    illegal: int = 0
+    ecall: int = 0
+    ebreak: int = 0
+    csr: int = 0
+    csr_illegal: int = 0
+    rd: int = 0  # mem_read
+    wr: int = 0  # mem_write
+    funct3: int = 2
+    addr_lo: int = 0  # the low address bits from the fast adder
+    addr: int = 0x20000000
+    irq: int = 0
+    irq_ok: int = 1
+
+    def as_vector(self) -> str:
+        """The input columns of a vector line."""
+        return "%d %08X %d %d %d %d %d %d %d %d%d%d %d%d %08X %d %d" % (
+            self.valid, self.pc, self.illegal, self.ecall, self.ebreak, self.csr,
+            self.csr_illegal, self.rd, self.wr, self.funct3 >> 2, (self.funct3 >> 1) & 1,
+            self.funct3 & 1, self.addr_lo >> 1, self.addr_lo & 1, self.addr, self.irq,
+            self.irq_ok,
+        )  # fmt: skip
 
 
-def trap_vectors():
+def trap_model(inputs: TrapInputs) -> tuple[int, int] | None:
+    """(cause, mtval) of the trap the instruction described by inputs raises, or None."""
+    size = inputs.funct3 & 3
+    low = inputs.addr_lo
+    misaligned = (size == 2 and low != 0) or (size == 1 and low & 1)
+    if not inputs.valid:
+        return None
+    if inputs.irq and inputs.irq_ok:
+        return memmap.CAUSE_EXTERNAL_INTERRUPT, 0
+    if inputs.illegal or (inputs.csr and inputs.csr_illegal):
+        return memmap.CAUSE_ILLEGAL_INSTRUCTION, 0
+    if inputs.ebreak:
+        return memmap.CAUSE_BREAKPOINT, inputs.pc
+    if inputs.ecall:
+        return memmap.CAUSE_ECALL_M, 0
+    if inputs.rd and misaligned:
+        return memmap.CAUSE_LOAD_MISALIGNED, inputs.addr
+    if inputs.wr and misaligned:
+        return memmap.CAUSE_STORE_MISALIGNED, inputs.addr
+    return None
+
+
+def trap_vectors() -> list[str]:
+    """The trap_unit vector lines: directed cases, then random ones."""
     rnd = random.Random(SEED + 1)
-    lines = []
+    lines: list[str] = []
 
-    def vec(comment=None, **kw):
-        v = dict(valid=1, pc=0x100, illegal=0, ecall=0, ebreak=0, csr=0, csr_illegal=0, rd=0, wr=0,
-                 funct3=2, addr_lo=0, addr=0x20000000, irq=0, irq_ok=1)
-        v.update(kw)
+    def vec(comment: str | None = None, **fields: int) -> None:
+        inputs = TrapInputs(**fields)
         if comment:
             lines.append("// " + comment)
-        req, cause, val = trap_model(v)
-        exp = "%d %s %s" % (req, "%08X" % cause if req else "xxxxxxxx", "%08X" % val if req else "xxxxxxxx")
-        lines.append("%d %08X %d %d %d %d %d %d %d %d%d%d %d%d %08X %d %d  %s" % (
-            v["valid"], v["pc"], v["illegal"], v["ecall"], v["ebreak"], v["csr"], v["csr_illegal"],
-            v["rd"], v["wr"], v["funct3"] >> 2, (v["funct3"] >> 1) & 1, v["funct3"] & 1,
-            v["addr_lo"] >> 1, v["addr_lo"] & 1, v["addr"], v["irq"], v["irq_ok"], exp))
+        trap = trap_model(inputs)
+        expected = "1 %08X %08X" % trap if trap else "0 xxxxxxxx xxxxxxxx"
+        lines.append("%s  %s" % (inputs.as_vector(), expected))
 
     vec("no trap: an ordinary instruction")
     vec("bubble: nothing traps, whatever the controls say", valid=0, ecall=1, irq=1)
@@ -325,14 +420,19 @@ def trap_vectors():
     vec("csr_illegal without a CSR access does not trap", csr=0, csr_illegal=1)
     vec("EBREAK, cause 3, mtval = PC", ebreak=1, pc=0x1234)
     vec("ECALL, cause 11 (machine mode, never 8)", ecall=1)
-    lines.append("// loads and stores: word needs addr[1:0] = 0, halfword addr[0] = 0, bytes never trap")
+    lines.append(
+        "// loads and stores: word needs addr[1:0] = 0, halfword addr[0] = 0, bytes never trap"
+    )
     for rd, wr in ((1, 0), (0, 1)):
-        for f3 in (0, 1, 2, 4, 5):
-            if wr and f3 > 2:
+        for funct3 in (0, 1, 2, 4, 5):
+            if wr and funct3 > 2:
                 continue
-            for lo in range(4):
-                vec(rd=rd, wr=wr, funct3=f3, addr_lo=lo, addr=0x20000100 | lo)
-    vec("the misalignment check uses addr_lo, the fast adder output", rd=1, funct3=2, addr_lo=1, addr=0x20000100)
+            for low in range(4):
+                vec(rd=rd, wr=wr, funct3=funct3, addr_lo=low, addr=0x20000100 | low)
+    vec(
+        "the misalignment check uses addr_lo, the fast adder output",
+        rd=1, funct3=2, addr_lo=1, addr=0x20000100,
+    )  # fmt: skip
     vec(rd=1, funct3=2, addr_lo=0, addr=0x20000101)
     lines.append("// interrupt: taken when allowed, before any exception of the same instruction")
     vec(irq=1)
@@ -344,26 +444,41 @@ def trap_vectors():
     vec(valid=0, irq=1)
     lines.append("// random")
     for _ in range(400):
-        vec(valid=int(rnd.random() < 0.9), pc=rnd.getrandbits(32) & ~1, illegal=int(rnd.random() < 0.1),
-            ecall=int(rnd.random() < 0.1), ebreak=int(rnd.random() < 0.1), csr=int(rnd.random() < 0.2),
-            csr_illegal=int(rnd.random() < 0.3), rd=int(rnd.random() < 0.3), wr=int(rnd.random() < 0.3),
-            funct3=rnd.choice([0, 1, 2, 4, 5]), addr_lo=rnd.randrange(4), addr=rnd.getrandbits(32),
-            irq=int(rnd.random() < 0.2), irq_ok=int(rnd.random() < 0.7))
+        vec(
+            valid=int(rnd.random() < 0.9), pc=rnd.getrandbits(32) & ~1,
+            illegal=int(rnd.random() < 0.1), ecall=int(rnd.random() < 0.1),
+            ebreak=int(rnd.random() < 0.1), csr=int(rnd.random() < 0.2),
+            csr_illegal=int(rnd.random() < 0.3), rd=int(rnd.random() < 0.3),
+            wr=int(rnd.random() < 0.3), funct3=rnd.choice([0, 1, 2, 4, 5]),
+            addr_lo=rnd.randrange(4), addr=rnd.getrandbits(32), irq=int(rnd.random() < 0.2),
+            irq_ok=int(rnd.random() < 0.7),
+        )  # fmt: skip
     return lines
 
 
-def write_trap_vectors():
-    head = [
-        "// trap_unit test vectors (generated by sw/gen_unit_vectors.py)",
-        "// format: valid pc(hex) illegal is_ecall is_ebreak csr_access csr_illegal mem_read mem_write",
-        "//         funct3(bin) mem_addr_lo(bin) mem_addr(hex) irq_pending irq_allowed",
-        "//         expected: trap_req trap_cause(hex) trap_val(hex)   (x = don't care)",
-        "// Combinational: apply, wait 10 ns, compare.",
-    ]
-    with open("vectors/trap_unit_vectors.txt", "w") as f:
-        f.write("\n".join(head + trap_vectors()) + "\n")
+TRAP_HEADER = [
+    "// trap_unit test vectors (generated by sw/gen_unit_vectors.py)",
+    "// format: valid pc(hex) illegal is_ecall is_ebreak csr_access csr_illegal mem_read mem_write",
+    "//         funct3(bin) mem_addr_lo(bin) mem_addr(hex) irq_pending irq_allowed",
+    "//         expected: trap_req trap_cause(hex) trap_val(hex)   (x = don't care)",
+    "// Combinational: apply, wait 10 ns, compare.",
+]
+
+
+def generate(project: Project) -> None:
+    """Write both vector files."""
+    write_lines(project.path(CSR_VECTOR_FILE), CSR_HEADER + csr_vectors())
+    write_lines(project.path(TRAP_VECTOR_FILE), TRAP_HEADER + trap_vectors())
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Generate the unit-test vectors; returns the exit status."""
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    cli.add_common_arguments(parser)
+    args = parser.parse_args(argv)
+    generate(cli.project_from(args))
+    return 0
 
 
 if __name__ == "__main__":
-    write_csr_vectors()
-    write_trap_vectors()
+    sys.exit(cli.run(main, "gen_unit_vectors"))

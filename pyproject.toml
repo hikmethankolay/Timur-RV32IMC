@@ -33,6 +33,10 @@ ignore = [
     "UP031",
 ]
 
+[tool.ruff.lint.isort]
+known-first-party = ["timur_tools"]
+known-local-folder = ["conftest"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/host/*" = ["N802"]
 

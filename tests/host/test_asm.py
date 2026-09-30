@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+
 from timur_tools.asm import AsmError, assemble
 
 from conftest import REPO, TOOLCHAIN_BIN, needs_toolchain
