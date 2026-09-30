@@ -87,6 +87,8 @@ void timur_trap(struct trap_frame *frame)
         csr_write(mepc, mepc + ECALL_LENGTH);
     } else if (mcause & MCAUSE_INTERRUPT) {
         irq_handler(mcause);
+        /* The weak exception_handler below returns 0, which a program's own replaces. */
+        /* cppcheck-suppress knownConditionTrueFalse */
     } else if (exception_handler(frame, mcause, &mepc, mtval)) {
         csr_write(mepc, mepc);
     } else {

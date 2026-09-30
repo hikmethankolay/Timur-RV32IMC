@@ -1,0 +1,65 @@
+# Checks of the software layer and the RTL regression, on every push and pull request.
+# The same checks run locally with `make all` (see the README, "Development").
+name: checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # The committed images in vectors/ were built with this compiler release;
+  # tests/host/test_golden.py compares them byte for byte only with it.
+  XPACK_GCC_VERSION: 14.2.0-3
+  XPACK_GCC_SHA256: f574415b63f12b09bdd3475223ab492a465d23810646c90c13a4c3b676c83503
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python development tools
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt
+
+      - name: RISC-V GNU toolchain (xPack)
+        run: |
+          release="xpack-riscv-none-elf-gcc-${XPACK_GCC_VERSION}-linux-x64.tar.gz"
+          url="https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${XPACK_GCC_VERSION}"
+          mkdir -p .tools
+          curl -fsSL -o "/tmp/$release" "$url/$release"
+          echo "$XPACK_GCC_SHA256  /tmp/$release" | sha256sum -c
+          tar -xzf "/tmp/$release" -C .tools
+
+      - name: Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+
+      - name: Lint (ruff, clang-format, shellcheck)
+        run: make lint
+
+      - name: Type check (mypy)
+        run: make typecheck
+
+      - name: Host tests with coverage (pytest)
+        run: make coverage
+
+      - name: Static analysis of the C runtime
+        run: make analyze
+
+      - name: RTL regression (Icarus Verilog)
+        run: make sim
+
+      - name: Test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: logs/

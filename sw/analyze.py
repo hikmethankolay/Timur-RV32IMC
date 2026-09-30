@@ -97,7 +97,11 @@ def cppcheck(project: Project, tool: str) -> bool:
         tool, "--std=c11", "--enable=warning,style,performance,portability",
         "--error-exitcode=1", "--inline-suppr", "--quiet",
         "--suppress=missingIncludeSystem", "-I", str(project.include),
-        "-D__riscv", "-D__riscv_xlen=32", *map(str, runtime),
+        "-D__riscv", "-D__riscv_xlen=32",
+        # cppcheck cannot parse GNU explicit register variables
+        # (register long a0 __asm__("a0")), used by timur_ecall
+        "-D__asm__(x)=",
+        *map(str, runtime),
     ]  # fmt: skip
     return _run_host_tool(command)
 
