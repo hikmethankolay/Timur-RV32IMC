@@ -35,9 +35,10 @@ import argparse
 import codecs
 import os
 import sys
+from pathlib import Path
 
-import build
 import gen_soc_tests as soc
+from timur_tools import builder, paths, toolchain
 
 UART_BIT = 16            # with UART_DIVIDER = 15
 COUNTERS_LO = {0xB00, 0xB02, 0xC00, 0xC01, 0xC02}
@@ -77,10 +78,10 @@ def main():
     args = ap.parse_args()
 
     hex_path = os.path.splitext(args.elf)[0] + ".hex"
-    pre = build.toolchain_prefix()
+    pre = toolchain.find_toolchain(paths.default_root())
     if pre is None:
         sys.exit("run_model: riscv-none-elf-nm not found (PATH or .tools/)")
-    halt = build.symbols(pre, args.elf).get("_halt")
+    halt = builder.read_symbols(pre, Path(args.elf)).get("_halt")
     words = load_words(hex_path)
     uart_in = codecs.escape_decode(args.input.encode())[0]
 

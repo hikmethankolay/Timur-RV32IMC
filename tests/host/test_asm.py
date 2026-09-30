@@ -6,8 +6,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from conftest import REPO, TOOLCHAIN_BIN, needs_toolchain
 from timur_tools.asm import AsmError, assemble
+
+from conftest import REPO, TOOLCHAIN_BIN, needs_toolchain
 
 # Reference encodings of the Phase 5 program, from the build guide.
 PHASE5_WORDS = [

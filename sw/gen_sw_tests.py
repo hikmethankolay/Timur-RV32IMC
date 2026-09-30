@@ -25,9 +25,10 @@ import os
 import re
 import sys
 import tempfile
+from pathlib import Path
 
-import build
 import gen_soc_tests as soc
+from timur_tools import builder, paths, toolchain
 
 ISAS = ("rv32im_zicsr", "rv32imc_zicsr")
 UART_BIT = 16            # tb/timur_sw_tb.v: UART_DIVIDER = 15
@@ -61,7 +62,7 @@ def build_image(name, isa):
     """Build sw/tests/<name>.c; write and return (words, symbols). Without the toolchain,
     read the committed image back."""
     path = image_path(name, isa)
-    if build.toolchain_prefix() is None:
+    if toolchain.find_toolchain(paths.default_root()) is None:
         words, syms = [], {}
         for line in open(path):
             m = re.match(r"// symbol (\S+) ([0-9A-F]{8})", line)
@@ -71,16 +72,16 @@ def build_image(name, isa):
                 words.append(int(line.split()[0], 16))
         return words, syms
     with tempfile.TemporaryDirectory() as tmp:
-        r = build.build([os.path.join("sw", "tests", name + ".c")], isa, tmp, name)
-    syms = {s: r["symbols"][s] for s in SYMBOLS}
+        r = builder.build([os.path.join("sw", "tests", name + ".c")], isa, Path(tmp), name)
+    syms = {s: r.symbols[s] for s in SYMBOLS}
     with open(path, "w") as f:
         f.write("// %s (%s): sw/tests/%s.c with the runtime, built by sw/build.py, %d bytes\n"
-                % (name, isa, name, r["bytes"]))
+                % (name, isa, name, r.size_bytes))
         for s in SYMBOLS:
             f.write("// symbol %s %08X\n" % (s, syms[s]))
-        for w in r["words"]:
+        for w in r.words:
             f.write("%08X\n" % w)
-    return r["words"], syms
+    return r.words, syms
 
 
 def run_model(words, uart_in):

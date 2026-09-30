@@ -38,8 +38,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
-import bin2mem
+from timur_tools import romimage
 
 MASK = 0xFFFFFFFF
 DEFAULT_SEED = 20260926
@@ -1583,7 +1584,7 @@ def write_hex(path, image, listing, comments=True):
 
 def write_banks(prefix, image, title):
     """<prefix>_lo / _hi .hex and .mif: the two ROM banks (sw/bin2mem.py)."""
-    bin2mem.write_banks(prefix, image_words(image), title)
+    romimage.write_banks(Path(prefix), image_words(image), title)
 
 
 def toolchain_prefix():

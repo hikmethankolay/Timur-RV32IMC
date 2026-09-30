@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from conftest import REPO, assert_matches_repository, needs_toolchain, run_script
 
 HELLO = str(REPO / "sw" / "tests" / "hello.c")

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from conftest import REPO
-from timur_tools import memmap
 from timur_tools.asm import assemble
 from timur_tools.isa import MASK
 from timur_tools.model import HaltNotReached, TimingDependent, TimurModel, divide
 from timur_tools.rvc import decompress
+
+from conftest import REPO
+from timur_tools import memmap
 
 PREAMBLE = """
         lui   x31, 0x20000         # RAM base

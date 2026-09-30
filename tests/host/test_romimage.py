@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from timur_tools import memmap
 from timur_tools.romimage import (
     ConvertError,
