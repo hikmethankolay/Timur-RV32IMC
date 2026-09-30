@@ -18,10 +18,12 @@ PHASE5_WORDS = [
     0x0000006F,
 ]  # fmt: skip
 
-# Programs the mini assembler and GNU as must encode identically. The others
-# use constructs GNU as rejects or encodes through relocations.
-GNU_COMPATIBLE = ["phase5", "phase6", "phase7", "system", "final", "bringup_1_gpio",
-                  "bringup_2_uart", "bringup_3_dma"]  # fmt: skip
+# Programs the mini assembler and GNU as must encode identically. GNU as rejects
+# the others: a label as an ADDI immediate (phase10, interrupt) and a label
+# difference as a JALR offset (phase7).
+GNU_COMPATIBLE = [
+    "phase5", "phase6", "system", "final", "bringup_1_gpio", "bringup_2_uart", "bringup_3_dma",
+]  # fmt: skip
 
 
 def program_source(name: str) -> str:

@@ -2,7 +2,7 @@
 """Run a C program on the Timur reference model, and optionally prepare an RTL run.
 
 Takes the .elf that sw/build.py wrote (the ROM image is the .hex next to it), runs the
-image on the instruction-level model of sw/gen_soc_tests.py with interrupts and console
+image on the instruction-level model (sw/timur_tools/model.py) with interrupts and console
 input modelled, and prints the program's UART output, the number of instructions, the
 LEDs at the end and how the program ended. The model runs about 300,000 instructions per
 second, so this is the quickest way to try a program.
@@ -31,128 +31,186 @@ Usage:  python3 sw/run_model.py PROGRAM.elf [--input TEXT] [--max N] [--fake-tim
         --input takes Python escapes: --input '12 30\\rTimur\\r' types two lines.
 """
 
+from __future__ import annotations
+
 import argparse
-import codecs
 import os
 import sys
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
-import gen_soc_tests as soc
-from timur_tools import builder, paths, toolchain
+from timur_tools import builder, cli, memmap, romimage
+from timur_tools.errors import TimurError
+from timur_tools.model import TimingDependentError, TimurModel
+from timur_tools.toolchain import require_toolchain
+from timur_tools.vectors import NO_HALT, prog_cycle_budget
 
-UART_BIT = 16            # with UART_DIVIDER = 15
-COUNTERS_LO = {0xB00, 0xB02, 0xC00, 0xC01, 0xC02}
-COUNTERS_HI = {0xB80, 0xB82, 0xC80, 0xC81, 0xC82}
-
-
-class FakeTime(soc.Timur):
-    """The counters count executed instructions, and are not marked timing-dependent."""
-    read_time = False
-
-    def csr_read(self, a):
-        if a in COUNTERS_LO or a in COUNTERS_HI:
-            self.read_time = True
-            return (self.retired >> (32 if a in COUNTERS_HI else 0)) & soc.MASK
-        return soc.Timur.csr_read(self, a)
+UART_CYCLES_PER_BIT = memmap.TB_SW_UART_CYCLES_PER_BIT  # with UART_DIVIDER = 15
+DEFAULT_MAX_INSTRUCTIONS = 20_000_000
+DEFAULT_RTL_CYCLES = 2_000_000
+EXIT_CODE_LEDS = 0x200  # _exit shows 0x200 | code on the LEDs
+EXIT_CODE_MASK = 0x1FF
 
 
-def load_words(path):
-    words = []
-    for line in open(path):
-        line = line.strip()
-        if line and not line.startswith("//"):
-            words.append(int(line.split()[0], 16))
-    return words
+@dataclass(frozen=True)
+class Outcome:
+    """How a run on the model ended."""
+
+    ended: bool  # reached a jump-to-self
+    timing: str | None  # why the model had to stop, if it could not predict the program
+    halt: int | None  # address of _halt
+
+    @property
+    def at_halt(self) -> bool:
+        """The program ended normally, at _halt."""
+        return self.ended and self.halt is not None
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("elf", help="program built by sw/build.py (the .hex next to it is the image)")
-    ap.add_argument("--input", default="", help="console input, with Python escapes such as \\r")
-    ap.add_argument("--max", type=int, default=20000000, help="instructions to run at most")
-    ap.add_argument("--fake-time", action="store_true",
-                    help="let the cycle counters count instructions, so delay loops end")
-    ap.add_argument("--vectors", help="write a vector file for tb/timur_soc_tb.v")
-    ap.add_argument("--cycles", type=int, default=2000000,
-                    help="RTL run length for a program that does not end (default 2000000)")
-    args = ap.parse_args()
-
-    hex_path = os.path.splitext(args.elf)[0] + ".hex"
-    pre = toolchain.find_toolchain(paths.default_root())
-    if pre is None:
-        sys.exit("run_model: riscv-none-elf-nm not found (PATH or .tools/)")
-    halt = builder.read_symbols(pre, Path(args.elf)).get("_halt")
-    words = load_words(hex_path)
-    uart_in = codecs.escape_decode(args.input.encode())[0]
-
-    if args.fake_time:
-        soc.CSR_TIMING = set()
-    model = FakeTime if args.fake_time else soc.Timur
-    m = model({4 * i: w for i, w in enumerate(words)}, uart_rx=uart_in, interrupts=True, trace=False)
-    ended, timing = False, None
+def parse_console_input(text: str) -> bytes:
+    """--input with Python escapes (\\r, \\n, \\x41, \\101, \\\\) as the bytes to send;
+    other characters are sent as UTF-8."""
     try:
-        for _ in range(args.max):
-            if m.step():
-                ended = True
-                break
-    except soc.ModelError as e:
-        timing = str(e)
+        return text.encode("utf-8").decode("unicode_escape").encode("latin-1")
+    except UnicodeError as error:
+        raise TimurError("--input: %s" % error) from error
 
-    out = bytes(m.uart_tx)
+
+def run(model: TimurModel, limit: int, halt: int | None) -> Outcome:
+    """Run at most limit instructions."""
+    try:
+        for _ in range(limit):
+            if model.step():
+                return Outcome(True, None, halt if model.pc == halt else None)
+    except TimingDependentError as error:
+        return Outcome(False, str(error), None)
+    return Outcome(False, None, None)
+
+
+def print_report(model: TimurModel, outcome: Outcome) -> None:
+    """The program's output and how it ended."""
+    out = bytes(model.uart_tx)
     sys.stdout.write(out.decode("latin-1").replace("\r\n", "\n"))
     if out and not out.endswith(b"\n"):
         sys.stdout.write("\n")
     print("-" * 72)
-    if timing:
-        print("stopped: %s; the model cannot predict this program (run it on the RTL or the board)" % timing)
-    elif ended and m.pc == halt:
-        print("ended at _halt (%08X) after %d instructions" % (halt, m.retired))
-    elif ended:
-        print("stopped at a jump to itself at %08X after %d instructions (an endless loop in the program)"
-              % (m.pc, m.retired))
+    if outcome.timing:
+        print(
+            "stopped: %s; the model cannot predict this program (run it on the RTL or the board)"
+            % outcome.timing
+        )
+    elif outcome.at_halt:
+        print("ended at _halt (%08X) after %d instructions" % (model.pc, model.retired))
+    elif outcome.ended:
+        print(
+            "stopped at a jump to itself at %08X after %d instructions (an endless loop in the "
+            "program)" % (model.pc, model.retired)
+        )
     else:
-        print("still running after %d instructions (PC %08X): an endless loop, or raise --max" % (m.retired, m.pc))
-    print("LEDs %03X%s" % (m.gpio_out, "  (0x200 | exit code %d)" % (m.gpio_out & 0x1FF)
-                           if ended and m.pc == halt and m.gpio_out & 0x200 else ""))
-    if m.traps:
-        causes = {}
-        for cause, _, _ in m.traps:
-            causes[cause] = causes.get(cause, 0) + 1
-        print("traps: " + ", ".join("%d x mcause %X" % (n, c) for c, n in sorted(causes.items())))
-    if m.uart_rx or m.rx_valid:
-        print("unread console input: %d bytes" % (len(m.uart_rx) + m.rx_valid))
+        print(
+            "still running after %d instructions (PC %08X): an endless loop, or raise --max"
+            % (model.retired, model.pc)
+        )
+    exit_code = ""
+    if outcome.at_halt and model.gpio_out & EXIT_CODE_LEDS:
+        exit_code = "  (0x200 | exit code %d)" % (model.gpio_out & EXIT_CODE_MASK)
+    print("LEDs %03X%s" % (model.gpio_out, exit_code))
+    if model.traps:
+        causes = Counter(cause for cause, _, _ in model.traps)
+        print("traps: " + ", ".join("%d x mcause %X" % (causes[c], c) for c in sorted(causes)))
+    if model.uart_rx or model.rx_valid:
+        print("unread console input: %d bytes" % (len(model.uart_rx) + model.rx_valid))
 
+
+def write_vector_file(
+    args: argparse.Namespace, hex_path: str, uart_in: bytes, model: TimurModel, outcome: Outcome
+) -> None:
+    """A vector file for tb/timur_soc_tb.v: with the expected output if the model's run
+    predicts the RTL's, otherwise one that only shows what the RTL prints."""
+    # the address the RTL run must halt at, if the model's run predicts it
+    exact_halt = outcome.halt if outcome.at_halt and not model.read_time else None
+    vectors = args.vectors
+    # the names go into the vector file as the user spelled them
+    base = os.path.splitext(vectors)[0]  # noqa: PTH122
+    out_path, in_path = base + ".out", base + ".in"
+    for path in (hex_path, out_path, in_path, vectors):
+        if len(path) > memmap.TB_PATH_LIMIT:
+            raise TimurError(
+                "path %s is longer than the testbench's %d characters"
+                % (path, memmap.TB_PATH_LIMIT)
+            )
+    lines = [
+        "// %s: written by sw/run_model.py for tb/timur_soc_tb.v with UART_DIVIDER = 15" % args.elf
+    ]
+    if uart_in:
+        Path(in_path).write_bytes(uart_in)
+        lines.append("UARTIN %s" % in_path)
+    if exact_halt is not None:
+        out = bytes(model.uart_tx)
+        Path(out_path).write_bytes(out)
+        cycles = prog_cycle_budget(model.retired, len(out), len(uart_in), UART_CYCLES_PER_BIT)
+        lines.append("PROG %s %d %08X 0" % (hex_path, cycles, exact_halt))
+        lines.append("UARTTEXT %s" % out_path)
+        lines.append("LEDS %03X" % model.gpio_out)
+        lines.append("DIVS %d" % model.divs)
+    else:
+        lines.append("PROG %s %d %08X 0" % (hex_path, args.cycles, NO_HALT))
+        lines.append("UARTSHOW")
+    romimage.write_lines(Path(vectors), lines)
+    if exact_halt is not None:
+        print("wrote %s: the RTL run must print exactly %s" % (vectors, out_path))
+    else:
+        print(
+            "wrote %s: the RTL runs the program for %d cycles and shows its output (no expected"
+            " output: the program does not end, or its output depends on timing)"
+            % (vectors, args.cycles)
+        )
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run one program on the model; returns the exit status."""
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    parser.add_argument(
+        "elf", type=Path, help="program built by sw/build.py (the .hex next to it is the image)"
+    )
+    parser.add_argument(
+        "--input", default="", help="console input, with Python escapes such as \\r"
+    )
+    parser.add_argument(
+        "--max", type=cli.positive_int, default=DEFAULT_MAX_INSTRUCTIONS,
+        help="instructions to run at most (default %d)" % DEFAULT_MAX_INSTRUCTIONS,
+    )  # fmt: skip
+    parser.add_argument(
+        "--fake-time", action="store_true",
+        help="let the cycle counters count instructions, so delay loops end",
+    )  # fmt: skip
+    parser.add_argument("--vectors", help="write a vector file for tb/timur_soc_tb.v")
+    parser.add_argument(
+        "--cycles", type=cli.positive_int, default=DEFAULT_RTL_CYCLES,
+        help="RTL run length for a program that does not end (default %d)" % DEFAULT_RTL_CYCLES,
+    )  # fmt: skip
+    cli.add_common_arguments(parser)
+    args = parser.parse_args(argv)
+    project = cli.project_from(args)
+
+    if not args.elf.is_file():
+        raise TimurError("%s does not exist (build the program with sw/build.py)" % args.elf)
+    hex_path = os.path.splitext(str(args.elf))[0] + ".hex"  # noqa: PTH122 (as spelled)
+    toolchain = require_toolchain(project.root)
+    halt = builder.read_symbols(toolchain, args.elf).get("_halt")
+    image = romimage.read_word_hex(Path(hex_path))
+    uart_in = parse_console_input(args.input)
+
+    model = TimurModel(
+        image.memory(), uart_rx=uart_in, interrupts=True, trace=False, fake_time=args.fake_time
+    )
+    outcome = run(model, args.max, halt)
+    print_report(model, outcome)
     if args.vectors:
-        exact = ended and m.pc == halt and not timing and not getattr(m, "read_time", False)
-        base = os.path.splitext(args.vectors)[0]
-        out_path, in_path = base + ".out", base + ".in"
-        for p in (hex_path, out_path, in_path, args.vectors):
-            if len(p) >= 64:
-                sys.exit("run_model: path %s is longer than the testbench's 63 characters" % p)
-        with open(args.vectors, "w") as f:
-            f.write("// %s: written by sw/run_model.py for tb/timur_soc_tb.v with UART_DIVIDER = 15\n" % args.elf)
-            if uart_in:
-                with open(in_path, "wb") as g:
-                    g.write(uart_in)
-                f.write("UARTIN %s\n" % in_path)
-            if exact:
-                with open(out_path, "wb") as g:
-                    g.write(out)
-                cycles = 20 * m.retired + 3 * 10 * UART_BIT * (len(out) + 3 * len(uart_in)) + 20000
-                f.write("PROG %s %d %08X 0\n" % (hex_path, cycles, halt))
-                f.write("UARTTEXT %s\n" % out_path)
-                f.write("LEDS %03X\n" % m.gpio_out)
-                f.write("DIVS %d\n" % m.divs)
-            else:
-                f.write("PROG %s %d FFFFFFFF 0\n" % (hex_path, args.cycles))
-                f.write("UARTSHOW\n")
-        if exact:
-            print("wrote %s: the RTL run must print exactly %s" % (args.vectors, out_path))
-        else:
-            print("wrote %s: the RTL runs the program for %d cycles and shows its output (no expected"
-                  " output: the program does not end, or its output depends on timing)"
-                  % (args.vectors, args.cycles))
+        write_vector_file(args, hex_path, uart_in, model, outcome)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(cli.run(main, "run_model"))

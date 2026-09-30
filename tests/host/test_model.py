@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from timur_tools.asm import assemble
-from timur_tools.isa import MASK
-from timur_tools.model import HaltNotReached, TimingDependent, TimurModel, divide
-from timur_tools.rvc import decompress
 
 from conftest import REPO
 from timur_tools import memmap
+from timur_tools.asm import assemble
+from timur_tools.isa import MASK
+from timur_tools.model import HaltNotReachedError, TimingDependentError, TimurModel, divide
+from timur_tools.rvc import decompress
 
 PREAMBLE = """
         lui   x31, 0x20000         # RAM base
@@ -209,7 +209,7 @@ def test_trace_and_retired_count() -> None:
 def test_program_without_halt_is_reported() -> None:
     image = assemble("loop: addi x1, x1, 1\n      beq x0, x0, loop").image
 
-    with pytest.raises(HaltNotReached):
+    with pytest.raises(HaltNotReachedError):
         TimurModel(image).run(limit=100)
 
 
@@ -217,7 +217,7 @@ def test_counter_values_taint_and_cannot_steer_the_program() -> None:
     tainted = run("csrrs x5, cycle, x0\nadd x6, x5, x5\naddi x7, x0, 1\n")
     assert tainted.taint == {5, 6}
 
-    with pytest.raises(TimingDependent):
+    with pytest.raises(TimingDependentError):
         run("csrrs x5, cycle, x0\nskip: beq x5, x0, skip\n")
 
 
@@ -229,7 +229,7 @@ def test_fake_time_is_a_property_of_one_model_not_of_the_module() -> None:
     assert fake.x[5] == 2, "the counter counts executed instructions"
     assert fake.read_time and not fake.taint
 
-    with pytest.raises(TimingDependent):
+    with pytest.raises(TimingDependentError):
         run(program)
 
 
