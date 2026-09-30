@@ -49,6 +49,10 @@ halt:   jal   x0, halt
         ("12 30\\rTimur\\r", b"12 30\rTimur\r"),
         ("\\x41\\101\\\\", b"AA\\"),
         ("plain", b"plain"),
+        # \u, \U and \N are not escapes here, as with the old codecs.escape_decode
+        ("\\u0041", b"\\u0041"),
+        ("\\N{DIGIT ONE}", b"\\N{DIGIT ONE}"),
+        ("\\\\u", b"\\u"),
         ("é", "é".encode()),
     ],
 )

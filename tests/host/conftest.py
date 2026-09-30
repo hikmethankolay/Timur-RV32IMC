@@ -22,6 +22,7 @@ REPO = Path(__file__).resolve().parents[2]
 PINNED_GCC_VERSION = "14.2.0"
 
 ROOT_IMAGES = ("rom.hex", "rom_lo.hex", "rom_hi.hex", "rom_lo.mif", "rom_hi.mif")
+ROOT_CONFIG = (".clang-tidy", ".clang-format")
 GENERATED_DIRS = ("vectors", "sw/bringup")
 
 
@@ -66,7 +67,7 @@ def copy_project(destination: Path) -> Path:
         ignore=shutil.ignore_patterns("build", "__pycache__", "*.pyc"),
     )
     shutil.copytree(REPO / "vectors", destination / "vectors")
-    for name in ROOT_IMAGES:
+    for name in ROOT_IMAGES + ROOT_CONFIG:
         shutil.copy2(REPO / name, destination / name)
     return destination
 

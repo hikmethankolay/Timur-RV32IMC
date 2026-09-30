@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -52,6 +53,7 @@ DEFAULT_MAX_INSTRUCTIONS = 20_000_000
 DEFAULT_RTL_CYCLES = 2_000_000
 EXIT_CODE_LEDS = 0x200  # _exit shows 0x200 | code on the LEDs
 EXIT_CODE_MASK = 0x1FF
+_NOT_ESCAPES = re.compile(r"\\\\|\\(?=[uUN])")
 
 
 @dataclass(frozen=True)
@@ -70,9 +72,14 @@ class Outcome:
 
 def parse_console_input(text: str) -> bytes:
     """--input with Python escapes (\\r, \\n, \\x41, \\101, \\\\) as the bytes to send;
-    other characters are sent as UTF-8."""
+    other characters are sent as UTF-8. As in a Python bytes literal, \\u, \\U and
+    \\N{...} are not escapes: they are sent as written."""
+    # double the backslash of \\u, \\U and \\N, but not one that is itself escaped
+    kept = _NOT_ESCAPES.sub(
+        lambda match: match.group(0) if len(match.group(0)) == 2 else "\\\\", text
+    )
     try:
-        return text.encode("utf-8").decode("unicode_escape").encode("latin-1")
+        return kept.encode("utf-8").decode("unicode_escape").encode("latin-1")
     except UnicodeError as error:
         raise TimurError("--input: %s" % error) from error
 

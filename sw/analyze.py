@@ -26,12 +26,14 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from timur_tools import builder, cli
+from timur_tools.errors import TimurError
 from timur_tools.paths import Project
 from timur_tools.toolchain import Toolchain, ToolchainError, require_toolchain
 
 LOG = logging.getLogger("timur.analyze")
 
 MARCH = builder.DEFAULT_MARCH
+CLANG_TIDY_CONFIG = ".clang-tidy"
 
 
 def find_tool(name: str) -> str | None:
@@ -79,10 +81,17 @@ def cross_include_flags(toolchain: Toolchain) -> list[str]:
 
 
 def clang_tidy(project: Project, toolchain: Toolchain, tool: str) -> bool:
-    """clang-tidy with the project's .clang-tidy; True if clean."""
+    """clang-tidy with the project's .clang-tidy; True if clean.
+
+    The configuration is passed explicitly: clang-tidy would otherwise look for it
+    next to the sources and, finding none, fail with "no checks enabled".
+    """
+    config = project.root / CLANG_TIDY_CONFIG
+    if not config.is_file():
+        raise TimurError("%s is missing: it lists the clang-tidy checks" % config)
     runtime, _ = c_sources(project)
     command = [
-        tool, "--quiet", *map(str, runtime), "--",
+        tool, "--quiet", "--config-file=%s" % config, *map(str, runtime), "--",
         "--target=riscv32-unknown-elf", "-march=" + MARCH, "-mabi=" + builder.ABI,
         "-std=" + builder.C_STANDARD, *cross_include_flags(toolchain),
         "-I", str(project.include),
