@@ -1,0 +1,3 @@
+# The test programs keep their hand-formatted data tables (one case per cell,
+# several per line); clang-format would put every element on its own line.
+DisableFormat: true

@@ -1,0 +1,8 @@
+# Development tools for the host-side Python code and the C runtime.
+# The tools themselves (sw/*.py, sw/timur_tools/) need only the standard library.
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+ruff>=0.6
+mypy>=1.10
+pytest>=8.0
+pytest-cov>=5.0
+clang-format>=18

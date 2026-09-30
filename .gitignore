@@ -107,8 +107,7 @@ desktop.ini
 # Documentation source files
 *.docx
 *.pdf
-/tools/__pycache__
-/sw/__pycache__
+__pycache__/
 
 # C programs built by sw/build.py (the test images are committed in vectors/)
 sw/build/
@@ -122,3 +121,11 @@ docs/build-guide/
 /docs
 CLAUDE.md
 /graphify-out
+
+# Python development environment and tool caches
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/

@@ -1,0 +1,51 @@
+# Tool configuration for the host-side Python code (sw/*.py, sw/timur_tools/).
+# The project is not an installable package: the scripts in sw/ run in place.
+
+[tool.pytest.ini_options]
+testpaths = ["tests/host"]
+pythonpath = ["sw"]
+addopts = "-ra"
+markers = [
+    "toolchain: needs the RISC-V GNU toolchain (riscv-none-elf-gcc)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+src = ["sw", "tests/host"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # import order
+    "N",        # naming
+    "B",        # likely bugs
+    "UP",       # outdated syntax
+    "SIM",      # simplifications
+    "C4",       # comprehensions
+    "PTH",      # pathlib instead of os.path
+    "RUF",      # ruff's own checks
+]
+ignore = [
+    # The %-format strings mirror the vector and memory file formats that the
+    # testbenches parse; they stay as they are.
+    "UP031",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/host/*" = ["N802"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+mypy_path = "sw"
+files = ["sw", "tests/host"]
+exclude = ["sw/build/"]
+
+[tool.coverage.run]
+source = ["sw"]
+omit = ["sw/build/*"]
+
+[tool.coverage.report]
+exclude_also = ["if __name__ == .__main__.:"]

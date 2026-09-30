@@ -1,0 +1,30 @@
+# C style of the Timur runtime (sw/runtime); sw/tests opts out, see its .clang-format:
+# four spaces, function braces on their own line, 100 columns.
+# Check: make lint      Apply: make format
+BasedOnStyle: LLVM
+Language: Cpp
+IndentWidth: 4
+ColumnLimit: 100
+BreakBeforeBraces: Linux
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: true
+AlignConsecutiveMacros: Consecutive
+AlignTrailingComments:
+  Kind: Leave
+AlignEscapedNewlines: Left
+AlignAfterOpenBracket: Align
+AlignOperands: Align
+BreakBeforeBinaryOperators: None
+IndentCaseLabels: false
+PointerAlignment: Right
+SpaceAfterCStyleCast: false
+SortIncludes: Never
+ReflowComments: false
+MaxEmptyLinesToKeep: 1
+Cpp11BracedListStyle: false
+BinPackArguments: true
+BinPackParameters: true
+PenaltyBreakAssignment: 20
