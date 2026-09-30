@@ -116,9 +116,9 @@ static void test_globals(void)
     check("rodata_table", 0, sum, expected);
     check("rodata_text", 0, (uint32_t)strlen(launder(rodata_text)), sizeof rodata_text - 1);
     check("ctor_value", 0, (uint32_t)ctor_value, 0xC0DE);
-    check("layout .data", 0, in_range(&data_small, _data_start, _data_end), 1);
-    check("layout .bss", 0, in_range(bss_big, _bss_start, _bss_end), 1);
-    check("layout .rodata", 0, (uintptr_t)rodata_table < 0x10000u, 1);
+    check("layout .data", 0, (uint32_t)in_range(&data_small, _data_start, _data_end), 1);
+    check("layout .bss", 0, (uint32_t)in_range(bss_big, _bss_start, _bss_end), 1);
+    check("layout .rodata", 0, (uintptr_t)rodata_table < TIMUR_ROM_BASE + TIMUR_ROM_SIZE, 1);
     check("layout heap", 0, (uintptr_t)_end == (uintptr_t)_bss_end && (uintptr_t)_end < (uintptr_t)_heap_end, 1);
     report("globals", c, m);
 }
@@ -459,7 +459,7 @@ static void test_csr(void)
 {
     int c = checks, m = mismatches;
 
-    check("misa", 0, csr_read(misa), 0x40001104u);
+    check("misa", 0, csr_read(misa), MISA_VALUE);
     check("mhartid", 0, csr_read(mhartid), 0);
     check("mstatus.MPP", 0, csr_read(mstatus) & (3u << 11), 3u << 11);
     check("mtvec", 0, csr_read(mtvec), (uint32_t)(uintptr_t)trap_entry);

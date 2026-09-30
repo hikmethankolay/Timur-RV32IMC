@@ -10,8 +10,8 @@ int main(void)
 
     printf("Hello from Timur RV32IMC!\n");
     printf("misa %08lx: RV32%s%s%s, machine mode\n", (unsigned long)misa,
-           (misa & (1u << 8)) ? "I" : "", (misa & (1u << 12)) ? "M" : "",
-           (misa & (1u << 2)) ? "C" : "");
-    printf("switches: %03lx\n", (unsigned long)(GPIO_IN & 0x3FFu));
+           (misa & MISA_EXT('I')) ? "I" : "", (misa & MISA_EXT('M')) ? "M" : "",
+           (misa & MISA_EXT('C')) ? "C" : "");
+    printf("switches: %03lx\n", (unsigned long)(GPIO_IN & GPIO_PIN_MASK));
     return 0;
 }

@@ -1,4 +1,4 @@
-/* Timur RV32IMC memory layout (Phase 12).
+/* Timur RV32IMC memory layout.
  *
  *   ROM 0x0000_0000, 64 KB: code, constants and the initial values of .data.
  *       Instructions are fetched only through the ROM's fetch port, so code
@@ -17,7 +17,9 @@
  *   __global_pointer$     the small data (.sdata, .sbss) plus 0x800, loaded into gp
  *
  * Every range crt0 copies or clears starts and ends on a 4-byte boundary.
- * Override the stack size with -Wl,--defsym=__stack_size=<bytes>. */
+ * Override the stack size with -Wl,--defsym=__stack_size=<bytes> (sw/build.py
+ * --stack-size). The origins and lengths below are the TIMUR_ROM_* and
+ * TIMUR_RAM_* values of include/timur_defs.h (tests/host/test_memmap.py). */
 
 OUTPUT_ARCH("riscv")
 ENTRY(_start)

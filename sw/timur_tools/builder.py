@@ -28,8 +28,21 @@ OPT_LEVELS = ("0", "1", "2", "3", "s", "g", "z", "fast")
 DEFAULT_OPT = "-O2"
 DEFAULT_STACK_SIZE = 8192  # sw/linker.ld: __stack_size
 
+#: Sources of the runtime in sw/runtime/, in link order (crt0.S first).
 RUNTIME_SOURCES = ("crt0.S", "syscalls.c", "trap.c")
 LINKER_SCRIPT = "linker.ld"
+
+#: GNU C: the runtime uses inline assembly and statement expressions.
+C_STANDARD = "gnu11"
+#: Warnings for every program.
+WARNINGS = ("-Wall", "-Wextra")
+#: Warnings for the runtime (always, as errors) and for programs built with strict=True.
+STRICT_WARNINGS = (
+    *WARNINGS, "-Wshadow", "-Wconversion", "-Wsign-conversion", "-Wstrict-prototypes",
+    "-Wmissing-prototypes", "-Wmissing-declarations", "-Wundef", "-Wcast-qual", "-Wcast-align",
+    "-Wformat=2", "-Wdouble-promotion", "-Wimplicit-fallthrough", "-Wredundant-decls",
+    "-Wwrite-strings", "-Wpointer-arith", "-Wnull-dereference", "-Wswitch-enum",
+)  # fmt: skip
 
 ROM_END = memmap.ROM_BASE + memmap.ROM_SIZE
 RAM_END = memmap.RAM_BASE + memmap.RAM_SIZE
@@ -89,17 +102,33 @@ def lookup_symbol(symbols: dict[str, int], name: str, elf: Path) -> int:
 
 
 def compile_flags(project: Project, march: str, opt: str) -> list[str]:
-    """Compiler options shared by every source file.
+    """Compiler options shared by every source file (without warnings).
 
     -ffile-prefix-map keeps the checkout location out of the debug information
     and out of __FILE__, so the same sources give the same program anywhere.
     """
     return [
-        "-march=" + march, "-mabi=" + ABI, opt, "-g", "-Wall", "-Wextra",
-        "-ffunction-sections", "-fdata-sections",
+        "-march=" + march, "-mabi=" + ABI, opt, "-g", "-std=" + C_STANDARD,
+        "--specs=nano.specs", "-ffunction-sections", "-fdata-sections",
         "-ffile-prefix-map=%s=." % project.root,
         "-I", str(project.include),
     ]  # fmt: skip
+
+
+def compile_runtime(
+    toolchain: Toolchain, project: Project, flags: Sequence[str], obj_dir: Path
+) -> list[Path]:
+    """Compile the runtime with every warning enabled and treated as an error;
+    returns the object files in link order."""
+    obj_dir.mkdir(parents=True, exist_ok=True)
+    objects = []
+    for source in RUNTIME_SOURCES:
+        obj = obj_dir / (source + ".o")
+        toolchain.run(
+            "gcc", *flags, *STRICT_WARNINGS, "-Werror", "-c", "-o", obj, project.runtime / source
+        )
+        objects.append(obj)
+    return objects
 
 
 def check_multilib(toolchain: Toolchain, march: str) -> str:
@@ -169,6 +198,7 @@ def build(
     title: str | None = None,
     extra: Sequence[str] = (),
     *,
+    strict: bool = False,
     project: Project | None = None,
     toolchain: Toolchain | None = None,
 ) -> BuildResult:
@@ -180,6 +210,7 @@ def build(
     name      output name (default: the first source's stem)
     extra     further gcc options, placed after the sources so that libraries
               such as -lm resolve
+    strict    compile the program with the runtime's warnings, as errors
     Raises BuildError or ToolchainError.
     """
     if not sources:
@@ -196,14 +227,14 @@ def build(
     elf, binary = suffixed(base, ".elf"), suffixed(base, ".bin")
 
     multilib = check_multilib(toolchain, march)
+    flags = compile_flags(project, march, opt)
+    runtime_objects = compile_runtime(toolchain, project, flags, out_dir / "obj")
+    warnings = [*STRICT_WARNINGS, "-Werror"] if strict else list(WARNINGS)
     toolchain.run(
-        "gcc",
-        *compile_flags(project, march, opt),
-        "-nostartfiles", "-T", project.runtime / LINKER_SCRIPT, "--specs=nano.specs",
+        "gcc", *flags, *warnings,
+        "-nostartfiles", "-T", project.runtime / LINKER_SCRIPT,
         "-Wl,--gc-sections", "-Wl,-Map=" + str(suffixed(base, ".map")), "-o", elf,
-        *(project.runtime / source for source in RUNTIME_SOURCES),
-        *source_paths,
-        *extra,
+        *runtime_objects, *source_paths, *extra,
     )  # fmt: skip
     sections = read_sections(toolchain, elf)
     check_layout(sections)

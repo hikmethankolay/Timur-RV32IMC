@@ -1,25 +1,23 @@
-/* Timur RV32IMC system calls for newlib (Phase 12).
+/**
+ * @file syscalls.c
+ * @brief newlib system calls of the Timur runtime, and the raw UART driver.
  *
  * The UART is the console: stdout and stderr write to it, stdin reads from
  * it. Output turns '\n' into "\r\n" and input turns '\r' (what a terminal
  * sends for Enter) into '\n', so a terminal at 115200 8N1 needs no settings.
  * The heap grows from _end to _heap_end (linker.ld); the stack lives above
  * it. stdio reports the console as a character device, so stdout is line
- * buffered and stdin is read a line at a time. */
+ * buffered and stdin is read a line at a time.
+ */
 
 #include <errno.h>
-#include <stddef.h>
 #include <stdint.h>
-#include <sys/stat.h>
-#include "timur.h"
 
-extern char _end[], _heap_end[];
+#include "timur_runtime.h"
 
-int  _read(int fd, char *buf, int len);
-int  _write(int fd, const char *buf, int len);
-void _exit(int code) __attribute__((noreturn));
+/* ---- console ------------------------------------------------------------------------ */
 
-/* ---- console ---------------------------------------------------------------- */
+/** Send one byte as it is, once the transmitter is free. */
 static void uart_send(uint8_t byte)
 {
     while (UART_STATUS & UART_TX_BUSY)
@@ -55,7 +53,9 @@ int uart_getc(void)
     return (int)(UART_DATA & 0xFFu);
 }
 
-/* ---- newlib stubs ------------------------------------------------------------ */
+/* ---- newlib stubs --------------------------------------------------------------------- */
+
+/** Write len bytes to stdout or stderr. */
 int _write(int fd, const char *buf, int len)
 {
     if (fd != 1 && fd != 2) {
@@ -67,7 +67,7 @@ int _write(int fd, const char *buf, int len)
     return len;
 }
 
-/* Waits for the first byte, then returns after a newline or len bytes. */
+/** Read from stdin: waits for the first byte, then returns after a newline or len bytes. */
 int _read(int fd, char *buf, int len)
 {
     int n = 0;
@@ -87,7 +87,7 @@ int _read(int fd, char *buf, int len)
     return n;
 }
 
-/* malloc's memory: fails with ENOMEM instead of growing into the stack. */
+/** malloc's memory: fails with ENOMEM instead of growing into the stack. */
 void *_sbrk(ptrdiff_t increment)
 {
     static uintptr_t brk = (uintptr_t)_end;
@@ -102,10 +102,10 @@ void *_sbrk(ptrdiff_t increment)
     return (void *)old;
 }
 
-/* Shows 0x200 | code on the LEDs and stops. */
+/** Shows TIMUR_EXIT_LEDS | code on the LEDs and stops. */
 void _exit(int code)
 {
-    GPIO_OUT = 0x200u | ((uint32_t)code & 0x1FFu);
+    GPIO_OUT = TIMUR_EXIT_LEDS | ((uint32_t)code & TIMUR_EXIT_CODE_MASK);
     _halt();
 }
 

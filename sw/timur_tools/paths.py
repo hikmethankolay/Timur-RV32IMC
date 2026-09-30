@@ -79,12 +79,12 @@ class Project:
     @property
     def runtime(self) -> Path:
         """C runtime: startup code, system calls, trap handler, linker script."""
-        return self.sw
+        return self.sw / "runtime"
 
     @property
     def include(self) -> Path:
         """Headers of the C runtime."""
-        return self.sw
+        return self.runtime / "include"
 
     @property
     def tests(self) -> Path:
