@@ -12,4 +12,5 @@ heap         10 checks ok
   written by the ECALL write system call
 ecall         5 checks ok
 CSRs          7 checks ok
-all 242 checks passed
+limits       13 checks ok
+all 255 checks passed

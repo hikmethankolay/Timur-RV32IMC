@@ -1,4 +1,4 @@
-/* Timur RV32IMC startup code and trap entry.
+/* Timur RV32IMC startup code: the reset entry _start and the end of a program, _halt.
  *
  * _start, at the reset address 0 (linker.ld places .text.start first):
  *   1. gp <- __global_pointer$ (with linker relaxation off for that one
@@ -12,14 +12,7 @@
  * Only t0-t3 and s0-s1 are used before main; s0-s1 keep the constructor loop
  * state across the calls, as the calling convention guarantees.
  *
- * trap_entry saves the caller-saved registers (struct trap_frame in timur.h,
- * offsets in timur_defs.h), calls timur_trap(frame) and restores them before
- * MRET. timur_trap is C code, so it preserves s0-s11 itself; a system call's
- * result goes into the saved a0, which the restore below then loads. The frame
- * lives on the interrupted stack, so a trap needs TRAP_FRAME_SIZE bytes of
- * stack plus what the C handlers use. */
-
-#include "timur_defs.h"
+ * The trap entry is in trap_entry.S. */
 
     .section .text.start, "ax", @progbits
     .globl  _start
@@ -61,7 +54,8 @@ _start:
     li      a0, 0                       # 7. argc = 0, argv = NULL
     li      a1, 0
     call    main
-    call    exit                        # does not return
+    call    exit                        # does not return; if it did:
+    j       _halt
     .size   _start, . - _start
 
 /* _exit (syscalls.c) ends here: the jump-to-self that testbenches and the
@@ -72,47 +66,3 @@ _start:
 _halt:
     j       _halt
     .size   _halt, . - _halt
-
-    .text
-    .align  2                           # mtvec ignores bits [1:0]
-    .globl  trap_entry
-    .type   trap_entry, @function
-trap_entry:
-    addi    sp, sp, -TRAP_FRAME_SIZE
-    sw      ra, TRAP_FRAME_RA(sp)
-    sw      t0, TRAP_FRAME_T0(sp)
-    sw      t1, TRAP_FRAME_T1(sp)
-    sw      t2, TRAP_FRAME_T2(sp)
-    sw      a0, TRAP_FRAME_A0(sp)
-    sw      a1, TRAP_FRAME_A1(sp)
-    sw      a2, TRAP_FRAME_A2(sp)
-    sw      a3, TRAP_FRAME_A3(sp)
-    sw      a4, TRAP_FRAME_A4(sp)
-    sw      a5, TRAP_FRAME_A5(sp)
-    sw      a6, TRAP_FRAME_A6(sp)
-    sw      a7, TRAP_FRAME_A7(sp)
-    sw      t3, TRAP_FRAME_T3(sp)
-    sw      t4, TRAP_FRAME_T4(sp)
-    sw      t5, TRAP_FRAME_T5(sp)
-    sw      t6, TRAP_FRAME_T6(sp)
-    mv      a0, sp                      # timur_trap(struct trap_frame *frame)
-    call    timur_trap
-    lw      ra, TRAP_FRAME_RA(sp)
-    lw      t0, TRAP_FRAME_T0(sp)
-    lw      t1, TRAP_FRAME_T1(sp)
-    lw      t2, TRAP_FRAME_T2(sp)
-    lw      a0, TRAP_FRAME_A0(sp)
-    lw      a1, TRAP_FRAME_A1(sp)
-    lw      a2, TRAP_FRAME_A2(sp)
-    lw      a3, TRAP_FRAME_A3(sp)
-    lw      a4, TRAP_FRAME_A4(sp)
-    lw      a5, TRAP_FRAME_A5(sp)
-    lw      a6, TRAP_FRAME_A6(sp)
-    lw      a7, TRAP_FRAME_A7(sp)
-    lw      t3, TRAP_FRAME_T3(sp)
-    lw      t4, TRAP_FRAME_T4(sp)
-    lw      t5, TRAP_FRAME_T5(sp)
-    lw      t6, TRAP_FRAME_T6(sp)
-    addi    sp, sp, TRAP_FRAME_SIZE
-    mret
-    .size   trap_entry, . - trap_entry

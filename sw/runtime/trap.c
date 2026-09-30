@@ -4,14 +4,15 @@
  *
  * trap_entry saves the caller-saved registers and calls timur_trap with
  * mstatus.MIE = 0 (the hardware cleared it), so traps do not nest.
- *   ECALL      system call a7 with arguments a0-a2; the result goes into
- *              the saved a0 and mepc advances by 4 (ECALL has no 16-bit form)
+ *   ECALL      system call a7 with arguments a0-a2, checked before use; the
+ *              result goes into the saved a0 and mepc advances by 4
  *   interrupt  irq_handler(mcause), which must clear its source
  *   exception  exception_handler(); if it returns 0, timur_fatal
  * The weak defaults below make any interrupt or exception fatal.
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "timur_runtime.h"
@@ -19,17 +20,55 @@
 /** Length of ECALL: it has no 16-bit form. */
 #define ECALL_LENGTH 4u
 
+/** Largest length a read or write system call accepts: the stubs take an int. */
+#define SYSCALL_MAX_LENGTH 0x7FFFFFFFu
+
+/** True if [address, address + length) lies inside [base, base + size); overflow-safe. */
+static bool in_memory(uint32_t address, uint32_t length, uint32_t base, uint32_t size)
+{
+    return address >= base && address - base <= size && length <= size - (address - base);
+}
+
+/** A buffer the program may send from: ROM or RAM. */
+static bool readable(uint32_t address, uint32_t length)
+{
+    return in_memory(address, length, TIMUR_ROM_BASE, TIMUR_ROM_SIZE) ||
+           in_memory(address, length, TIMUR_RAM_BASE, TIMUR_RAM_SIZE);
+}
+
+/** A buffer the program may receive into: RAM only (ROM ignores writes, and the
+ *  peripheral registers must not be overwritten by console input). */
+static bool writable(uint32_t address, uint32_t length)
+{
+    return in_memory(address, length, TIMUR_RAM_BASE, TIMUR_RAM_SIZE);
+}
+
+/**
+ * The system call behind an ECALL. The arguments come straight from the
+ * program's registers, so they are checked before they are used: an unknown
+ * file descriptor gives -EBADF, a length above SYSCALL_MAX_LENGTH -EINVAL, and
+ * a buffer outside the memories it may use -EFAULT (a zero length needs no
+ * buffer).
+ */
 static long timur_syscall(uint32_t number, uint32_t arg0, uint32_t arg1, uint32_t arg2)
 {
     switch (number) {
     case SYS_write:
-        if (arg0 != 1 && arg0 != 2)
+        if (arg0 != TIMUR_FD_STDOUT && arg0 != TIMUR_FD_STDERR)
             return -EBADF;
-        return _write((int)arg0, (const char *)arg1, (int)arg2);
+        if (arg2 > SYSCALL_MAX_LENGTH)
+            return -EINVAL;
+        if (arg2 != 0 && !readable(arg1, arg2))
+            return -EFAULT;
+        return _write((int)arg0, (const char *)(uintptr_t)arg1, (int)arg2);
     case SYS_read:
-        if (arg0 != 0)
+        if (arg0 != TIMUR_FD_STDIN)
             return -EBADF;
-        return _read((int)arg0, (char *)arg1, (int)arg2);
+        if (arg2 > SYSCALL_MAX_LENGTH)
+            return -EINVAL;
+        if (arg2 != 0 && !writable(arg1, arg2))
+            return -EFAULT;
+        return _read((int)arg0, (char *)(uintptr_t)arg1, (int)arg2);
     case SYS_exit:
         _exit((int)arg0);
     default:

@@ -29,7 +29,7 @@ DEFAULT_OPT = "-O2"
 DEFAULT_STACK_SIZE = 8192  # sw/linker.ld: __stack_size
 
 #: Sources of the runtime in sw/runtime/, in link order (crt0.S first).
-RUNTIME_SOURCES = ("crt0.S", "syscalls.c", "trap.c")
+RUNTIME_SOURCES = ("crt0.S", "trap_entry.S", "uart.c", "syscalls.c", "trap.c")
 LINKER_SCRIPT = "linker.ld"
 
 #: GNU C: the runtime uses inline assembly and statement expressions.
@@ -118,14 +118,22 @@ def compile_flags(project: Project, march: str, opt: str) -> list[str]:
 def compile_runtime(
     toolchain: Toolchain, project: Project, flags: Sequence[str], obj_dir: Path
 ) -> list[Path]:
-    """Compile the runtime with every warning enabled and treated as an error;
-    returns the object files in link order."""
+    """Compile the runtime with every warning enabled and treated as an error,
+    assembler warnings included; returns the object files in link order."""
     obj_dir.mkdir(parents=True, exist_ok=True)
     objects = []
     for source in RUNTIME_SOURCES:
         obj = obj_dir / (source + ".o")
         toolchain.run(
-            "gcc", *flags, *STRICT_WARNINGS, "-Werror", "-c", "-o", obj, project.runtime / source
+            "gcc",
+            *flags,
+            *STRICT_WARNINGS,
+            "-Werror",
+            "-Wa,--fatal-warnings",
+            "-c",
+            "-o",
+            obj,
+            project.runtime / source,
         )
         objects.append(obj)
     return objects

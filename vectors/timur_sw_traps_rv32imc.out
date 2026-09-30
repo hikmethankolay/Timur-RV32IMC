@@ -13,4 +13,4 @@ Exceptions handled by the program
 now an exception the program does not handle:
 
 *** unhandled trap: illegal instruction
-    mcause 00000002  mepc 0000042A  mtval 00000000
+    mcause 00000002  mepc 00000504  mtval 00000000

@@ -113,13 +113,15 @@ int exception_handler(struct trap_frame *frame, uint32_t mcause, uint32_t *mepc,
 void timur_fatal(uint32_t mcause, uint32_t mepc, uint32_t mtval) __attribute__((noreturn));
 
 /* ---- System calls through ECALL (the RISC-V Linux numbering) ------------------------ */
-#define SYS_read  63 /**< read(fd 0, buf, len) */
-#define SYS_write 64 /**< write(fd 1 or 2, buf, len) */
+#define SYS_read  63 /**< read(fd 0, buf, len): buf must lie in RAM */
+#define SYS_write 64 /**< write(fd 1 or 2, buf, len): buf must lie in ROM or RAM */
 #define SYS_exit  93 /**< exit(code): does not return */
 
 /**
  * @brief Make a system call with ECALL.
- * @return the result, or a negative errno value (-EBADF, -ENOSYS)
+ * @return the result, or a negative errno value: -EBADF (file descriptor),
+ *         -EINVAL (length above 0x7FFFFFFF), -EFAULT (buffer outside the memories
+ *         it may use), -ENOSYS (unknown number)
  */
 static inline long timur_ecall(long number, long arg0, long arg1, long arg2)
 {

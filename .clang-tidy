@@ -1,0 +1,28 @@
+# Static analysis of the C runtime; sw/analyze.py (make analyze) runs it with
+# the cross toolchain's headers. The test programs are analysed by GCC only:
+# they call the C library, recurse and use fixed addresses on purpose.
+#
+# Disabled checks and why:
+#   clang-analyzer-core.FixedAddressDereference
+#       memory-mapped registers are fixed addresses by design (timur.h)
+#   bugprone-reserved-identifier, cert-dcl37-c, cert-dcl51-cpp
+#       newlib requires the stub names (_write, _sbrk, ...); _halt is part of
+#       the interface the testbenches and tools rely on
+#   bugprone-easily-swappable-parameters
+#       register-level interfaces (mcause, mepc, mtval) are all uint32_t
+#   misc-include-cleaner
+#       reports symbols that timur.h deliberately re-exports from timur_defs.h
+Checks: >
+  -*,
+  clang-analyzer-*,
+  -clang-analyzer-core.FixedAddressDereference,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-reserved-identifier,
+  cert-*,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  misc-*,
+  -misc-include-cleaner
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/sw/runtime/include/.*'

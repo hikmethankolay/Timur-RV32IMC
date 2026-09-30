@@ -2,7 +2,7 @@
  * @file timur_runtime.h
  * @brief Internal interface between the parts of the Timur C runtime.
  *
- * Shared by crt0.S, trap_entry.S, syscalls.c, uart.c and trap.c; programs
+ * Shared by syscalls.c, uart.c and trap.c; programs
  * include timur.h instead. Declares the newlib system-call stubs (so that each
  * has one prototype), the linker-script symbols and the C trap entry point.
  */
@@ -18,6 +18,12 @@
 extern char _end[];       /**< first byte after .bss: the start of the heap */
 extern char _heap_end[];  /**< end of the heap: the lowest address of the stack region */
 extern char _stack_top[]; /**< initial stack pointer: the end of RAM */
+
+/* ---- File descriptors of the console (<unistd.h> cannot be included: its
+ *      prototypes of the stubs below differ from newlib's reentrant ones) ------------------ */
+#define TIMUR_FD_STDIN  0
+#define TIMUR_FD_STDOUT 1
+#define TIMUR_FD_STDERR 2
 
 /* ---- newlib system-call stubs (syscalls.c) ----------------------------------------------
  * The console is the UART: fd 0 is stdin, 1 and 2 are stdout and stderr. Errors

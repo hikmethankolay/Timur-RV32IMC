@@ -6,55 +6,55 @@
 //   UARTTEXT <file>  the bytes decoded from uart_tx equal the file (the model's output)
 // PROG halts at _halt, the jump-to-self that _exit ends in; LEDS is 0x200 | the exit code.
 //
-// ==== hello (rv32im_zicsr): printf, a CSR read, the switches; 6731 instructions on the model, 80 UART bytes
-PROG vectors/timur_sw_hello_rv32im.hex 193020 00000094 0
+// ==== hello (rv32im_zicsr): printf, a CSR read, the switches; 7237 instructions on the model, 80 UART bytes
+PROG vectors/timur_sw_hello_rv32im.hex 203140 00000098 0
 UARTTEXT vectors/timur_sw_hello_rv32im.out
 LEDS 200
 DIVS 22
-// ==== hello (rv32imc_zicsr): printf, a CSR read, the switches; 6731 instructions on the model, 80 UART bytes
-PROG vectors/timur_sw_hello_rv32imc.hex 193020 0000007C 0
+// ==== hello (rv32imc_zicsr): printf, a CSR read, the switches; 7237 instructions on the model, 80 UART bytes
+PROG vectors/timur_sw_hello_rv32imc.hex 203140 00000080 0
 UARTTEXT vectors/timur_sw_hello_rv32imc.out
 LEDS 200
 DIVS 22
-// ==== selftest (rv32im_zicsr): globals and sections, stack and recursion, arithmetic including division by zero, the C library, the heap up to exhaustion, ECALL system calls, CSRs; 119882 instructions on the model, 651 UART bytes
-PROG vectors/timur_sw_selftest_rv32im.hex 2730120 00000094 0
+// ==== selftest (rv32im_zicsr): globals and sections, stack and recursion, arithmetic including division by zero, the C library, the heap up to exhaustion, ECALL system calls, CSRs; 127124 instructions on the model, 678 UART bytes
+PROG vectors/timur_sw_selftest_rv32im.hex 2887920 00000098 0
 UARTTEXT vectors/timur_sw_selftest_rv32im.out
 LEDS 200
-DIVS 334
-// ==== selftest (rv32im_zicsr), HREADY waits: globals and sections, stack and recursion, arithmetic including division by zero, the C library, the heap up to exhaustion, ECALL system calls, CSRs; 119882 instructions on the model, 651 UART bytes
-PROG vectors/timur_sw_selftest_rv32im.hex 2730120 00000094 1
+DIVS 338
+// ==== selftest (rv32im_zicsr), HREADY waits: globals and sections, stack and recursion, arithmetic including division by zero, the C library, the heap up to exhaustion, ECALL system calls, CSRs; 127124 instructions on the model, 678 UART bytes
+PROG vectors/timur_sw_selftest_rv32im.hex 2887920 00000098 1
 UARTTEXT vectors/timur_sw_selftest_rv32im.out
 LEDS 200
-DIVS 334
-// ==== selftest (rv32imc_zicsr): globals and sections, stack and recursion, arithmetic including division by zero, the C library, the heap up to exhaustion, ECALL system calls, CSRs; 119886 instructions on the model, 651 UART bytes
-PROG vectors/timur_sw_selftest_rv32imc.hex 2730200 00000080 0
+DIVS 338
+// ==== selftest (rv32imc_zicsr): globals and sections, stack and recursion, arithmetic including division by zero, the C library, the heap up to exhaustion, ECALL system calls, CSRs; 127127 instructions on the model, 678 UART bytes
+PROG vectors/timur_sw_selftest_rv32imc.hex 2887980 00000082 0
 UARTTEXT vectors/timur_sw_selftest_rv32imc.out
 LEDS 200
-DIVS 334
-// ==== selftest (rv32imc_zicsr), HREADY waits: globals and sections, stack and recursion, arithmetic including division by zero, the C library, the heap up to exhaustion, ECALL system calls, CSRs; 119886 instructions on the model, 651 UART bytes
-PROG vectors/timur_sw_selftest_rv32imc.hex 2730200 00000080 1
+DIVS 338
+// ==== selftest (rv32imc_zicsr), HREADY waits: globals and sections, stack and recursion, arithmetic including division by zero, the C library, the heap up to exhaustion, ECALL system calls, CSRs; 127127 instructions on the model, 678 UART bytes
+PROG vectors/timur_sw_selftest_rv32imc.hex 2887980 00000082 1
 UARTTEXT vectors/timur_sw_selftest_rv32imc.out
 LEDS 200
-DIVS 334
-// ==== traps (rv32im_zicsr): exceptions handled by the program (illegal instruction, EBREAK, misaligned loads and stores, 16- and 32-bit), then the runtime's report of an unhandled one; 60040 instructions on the model, 1082 UART bytes
-PROG vectors/timur_sw_traps_rv32im.hex 1740160 00000094 0
+DIVS 338
+// ==== traps (rv32im_zicsr): exceptions handled by the program (illegal instruction, EBREAK, misaligned loads and stores, 16- and 32-bit), then the runtime's report of an unhandled one; 66064 instructions on the model, 1082 UART bytes
+PROG vectors/timur_sw_traps_rv32im.hex 1860640 00000098 0
 UARTTEXT vectors/timur_sw_traps_rv32im.out
 LEDS 302
 DIVS 44
-// ==== traps (rv32imc_zicsr): exceptions handled by the program (illegal instruction, EBREAK, misaligned loads and stores, 16- and 32-bit), then the runtime's report of an unhandled one; 60040 instructions on the model, 1082 UART bytes
-PROG vectors/timur_sw_traps_rv32imc.hex 1740160 0000007C 0
+// ==== traps (rv32imc_zicsr): exceptions handled by the program (illegal instruction, EBREAK, misaligned loads and stores, 16- and 32-bit), then the runtime's report of an unhandled one; 66064 instructions on the model, 1082 UART bytes
+PROG vectors/timur_sw_traps_rv32imc.hex 1860640 00000082 0
 UARTTEXT vectors/timur_sw_traps_rv32imc.out
 LEDS 302
 DIVS 44
-// ==== io (rv32im_zicsr): console input with fgets, sscanf and getchar; DMA done interrupt, a masked interrupt taken once MIE is set, UART receive interrupt; 42429 instructions on the model, 507 UART bytes
+// ==== io (rv32im_zicsr): console input with fgets, sscanf and getchar; DMA done interrupt, a masked interrupt taken once MIE is set, UART receive interrupt; 45901 instructions on the model, 507 UART bytes
 UARTIN vectors/timur_sw_io.in
-PROG vectors/timur_sw_io_rv32im.hex 1166660 00000094 0
+PROG vectors/timur_sw_io_rv32im.hex 1236100 00000098 0
 UARTTEXT vectors/timur_sw_io_rv32im.out
 LEDS 200
 DIVS 65
-// ==== io (rv32imc_zicsr): console input with fgets, sscanf and getchar; DMA done interrupt, a masked interrupt taken once MIE is set, UART receive interrupt; 42431 instructions on the model, 507 UART bytes
+// ==== io (rv32imc_zicsr): console input with fgets, sscanf and getchar; DMA done interrupt, a masked interrupt taken once MIE is set, UART receive interrupt; 45903 instructions on the model, 507 UART bytes
 UARTIN vectors/timur_sw_io.in
-PROG vectors/timur_sw_io_rv32imc.hex 1166700 00000080 0
+PROG vectors/timur_sw_io_rv32imc.hex 1236140 00000082 0
 UARTTEXT vectors/timur_sw_io_rv32imc.out
 LEDS 200
 DIVS 65

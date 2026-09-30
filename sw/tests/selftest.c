@@ -362,9 +362,10 @@ static void test_heap(void)
     int c = checks, m = mismatches;
     volatile uint32_t canary[16];
     static void *blocks[MAX_BLOCKS];
-    int n = 0, intact = 1, zero = 1, kept = 1;
-    char *p;
+    int n = 0, intact = 1, zero = 1, kept = 0;
+    char *p, *grown;
     int *q;
+    void *big;
 
     for (int i = 0; i < 16; i++)
         canary[i] = 0xC0FFEE00u + (uint32_t)i;
@@ -372,18 +373,30 @@ static void test_heap(void)
     p = malloc(100);
     q = calloc(64, sizeof *q);
     check("malloc", 0, p != NULL && q != NULL, 1);
+    if (p == NULL || q == NULL) {               /* nothing to test without them */
+        free(p);
+        free(q);
+        report("heap", c, m);
+        return;
+    }
     for (int i = 0; i < 100; i++)
         p[i] = (char)i;
     for (int i = 0; i < 64; i++)
         zero &= q[i] == 0;
     check("calloc zeroed", 0, (uint32_t)zero, 1);
-    p = realloc(p, 1000);
-    for (int i = 0; i < 100; i++)
-        kept &= p[i] == (char)i;
+    grown = realloc(p, 1000);
+    if (grown != NULL) {                        /* on failure p is still valid */
+        p = grown;
+        kept = 1;
+        for (int i = 0; i < 100; i++)
+            kept &= p[i] == (char)i;
+    }
     check("realloc kept", 0, (uint32_t)kept, 1);
     free(p);
     free(q);
-    check("malloc(128 KB)", 0, malloc(128 * 1024) == NULL, 1);
+    big = malloc(128 * 1024);
+    check("malloc(128 KB)", 0, big == NULL, 1);
+    free(big);
 
     /* one word every 64 bytes and the last word mark each block: enough to see
        two blocks overlap, and quick to simulate */
@@ -402,7 +415,7 @@ static void test_heap(void)
     }
     check("heap exhausted", 0, n > 30 && n < MAX_BLOCKS, 1);
     check("blocks intact", 0, (uint32_t)intact, 1);
-    check("below the stack", 0, (uintptr_t)blocks[n - 1] + BLOCK <= (uintptr_t)_heap_end, 1);
+    check("below the stack", 0, n > 0 && (uintptr_t)blocks[n - 1] + BLOCK <= (uintptr_t)_heap_end, 1);
     for (int i = 0; i < 16; i++)
         intact &= canary[i] == 0xC0FFEE00u + (uint32_t)i;
     check("stack canary", 0, (uint32_t)intact, 1);

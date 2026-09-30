@@ -93,13 +93,13 @@ int main(void)
     dma(copy, copy2, 16, DMAC_IRQ);
     while (!(DMAC_STATUS & DMAC_DONE))
         ;
-    printf("dma with mstatus.MIE = 0: done, mip.MEIP = %lu, interrupts taken so far %d\n",
-           (unsigned long)((csr_read(mip) >> 11) & 1u), dma_irqs);
+    printf("dma with mstatus.MIE = 0: done, mip.MEIP = %d, interrupts taken so far %d\n",
+           (csr_read(mip) & MIP_MEIP) != 0, dma_irqs);
     csr_set(mstatus, MSTATUS_MIE);
     while (dma_irqs < 2)
         ;
-    printf("  after setting MIE: interrupts taken %d, mip.MEIP = %lu, copy %s\n", dma_irqs,
-           (unsigned long)((csr_read(mip) >> 11) & 1u), memcmp(copy2, rom_table, sizeof copy2) ? "WRONG" : "correct");
+    printf("  after setting MIE: interrupts taken %d, mip.MEIP = %d, copy %s\n", dma_irqs,
+           (csr_read(mip) & MIP_MEIP) != 0, memcmp(copy2, rom_table, sizeof copy2) ? "WRONG" : "correct");
 
     printf("a line received by interrupt: ");
     fflush(stdout);
@@ -109,6 +109,9 @@ int main(void)
             break;
     UART_CTRL = UART_RX_ENABLE;
     csr_clear(mstatus, MSTATUS_MIE);
-    printf("%.*s\n  %d bytes, %d receive interrupts\n", rx_len - 1, (const char *)rx_line, rx_len, uart_irqs);
+    /* the handler is done with rx_line: copy it out of the volatile buffer for printf */
+    for (int i = 0; i < rx_len; i++)
+        line[i] = rx_line[i];
+    printf("%.*s\n  %d bytes, %d receive interrupts\n", rx_len - 1, line, rx_len, uart_irqs);
     return 0;
 }
