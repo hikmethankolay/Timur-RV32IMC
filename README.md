@@ -130,7 +130,7 @@ A trap saves the PC in `mepc` and `MIE` in `MPIE`, and clears `MIE`; MRET return
 
 ## Current Status
 
-**Phases 1–12 implemented and verified in simulation; timing closed at 50 MHz.**
+**Phases 1–12 implemented, verified in simulation and running on the DE10-Lite; timing closed at 50 MHz.**
 
 | Phase | Description | Status |
 | ----- | ----------- | ------ |
@@ -157,9 +157,10 @@ Full compile of the RV32IMC design with Quartus Prime 25.1std (Standard Edition;
 
 Resources: 5,848 logic elements (12 %), 128 of 182 M9K blocks (1,048,576 bits: the two ROM banks and the four RAM byte lanes), 8 embedded multiplier 9-bit elements. The critical path runs from a RAM load in WB through the load formatter and the forwarding mux into the branch comparator's carry chain, then through the fetch decision into the ROM bank address registers (see [Pipeline Design](#pipeline-design)).
 
+On the board (DE10-Lite, 30 September 2026): the shipped program (LEDs 42), bring-up 1–4 (LEDs and switches, UART transmit, DMA checksum), and the C programs `hello`, `selftest` (all 255 checks, built with and without the C extension), `traps` and `io` (console input and interrupts), with the UART connected to the PC through an ESP32-S3 used as a USB-to-serial bridge.
+
 Still open:
 
-- On the board: LEDs follow software, UART output readable, DMA checksum, the C programs (see [Building & Programming](#building--programming)).
 - riscv-arch-test RV32IMC and Zicsr suites (RISCOF flow).
 
 ---
@@ -561,7 +562,7 @@ Phase 11 ✅  C extension (decompressor, split-bank ROM)
 Phase 12 ✅  C software layer (linker script, crt0, syscalls, trap handler, converter)
 ```
 
-✅ = implemented and verified in simulation, timing closed in Quartus; the board checks listed under [Current Status](#current-status) are still open.
+✅ = implemented, verified in simulation and on the DE10-Lite, timing closed in Quartus (see [Current Status](#current-status)).
 
 ---
 
