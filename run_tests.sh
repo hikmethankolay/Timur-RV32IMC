@@ -13,21 +13,35 @@
 # Usage:  ./run_tests.sh                     every testbench
 #         ./run_tests.sh alu_tb timur_soc_tb only these
 # Paths inside testbenches are relative to the project root; the script
-# changes there first. Needs iverilog and vvp (sudo dnf install iverilog).
+# changes there first. Needs iverilog and vvp (sudo dnf install iverilog), or
+# IVERILOG and VVP set to the programs to use.
 # ============================================================
 set -u
 cd "$(dirname "$0")" || exit 2
 
-if ! command -v iverilog > /dev/null || ! command -v vvp > /dev/null; then
+IVERILOG=${IVERILOG:-iverilog}
+VVP=${VVP:-vvp}
+if ! command -v "$IVERILOG" > /dev/null || ! command -v "$VVP" > /dev/null; then
     echo "iverilog / vvp not found: install Icarus Verilog (sudo dnf install iverilog)"
+    echo "or set IVERILOG and VVP"
     exit 2
 fi
 
-RTL=$(ls rtl/*.v rtl/*/*.v 2> /dev/null | grep -v -e '_bb\.v$' -e '/cpu_pll\.v$' -e '/Timur_RV32IMC\.v$')
+RTL=()
+for file in rtl/*.v rtl/*/*.v; do
+    case "$file" in
+        *_bb.v | */cpu_pll.v | */Timur_RV32IMC.v | "rtl/*.v") ;;  # megafunctions, board wrapper
+        *) RTL+=("$file") ;;
+    esac
+done
 if [ $# -gt 0 ]; then
     TBS=("$@")
 else
-    TBS=($(ls tb/*_tb.v | xargs -n1 basename | sed 's/\.v$//'))
+    TBS=()
+    for file in tb/*_tb.v; do
+        name=${file##*/}
+        TBS+=("${name%.v}")
+    done
 fi
 
 mkdir -p logs
@@ -37,16 +51,17 @@ trap 'rm -rf "$WORK"' EXIT
 passed=0
 failed=()
 for tb in "${TBS[@]}"; do
-    extra=""
-    [ "$tb" = timur_sw_tb ] && extra=tb/timur_soc_tb.v
+    extra=()
+    [ "$tb" = timur_sw_tb ] && extra=(tb/timur_soc_tb.v)
     log="logs/$tb.log"
     start=$(date +%s)
-    if ! iverilog -g2001 -o "$WORK/$tb.vvp" -s "$tb" "tb/$tb.v" $extra $RTL > "$log" 2>&1; then
+    if ! "$IVERILOG" -g2001 -o "$WORK/$tb.vvp" -s "$tb" "tb/$tb.v" ${extra[@]+"${extra[@]}"} \
+            "${RTL[@]}" > "$log" 2>&1; then
         printf "FAIL  %-32s compile error, see %s\n" "$tb" "$log"
         failed+=("$tb")
         continue
     fi
-    vvp -n "$WORK/$tb.vvp" >> "$log" 2>&1
+    "$VVP" -n "$WORK/$tb.vvp" >> "$log" 2>&1
     count=$(grep -oE 'ALL [0-9]+ TESTS PASSED' "$log" | tail -1 | grep -oE '[0-9]+')
     secs=$(( $(date +%s) - start ))
     if [ -n "$count" ] && [ "$count" -gt 0 ] && ! grep -q '^FAIL' "$log"; then

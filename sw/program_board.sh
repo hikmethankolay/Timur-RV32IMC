@@ -70,8 +70,8 @@ if [ $full = 1 ]; then
 elif [ ! -f "$fit" ] || [ ! -d db ]; then
     reason="there is no earlier compilation"
 else
-    newer=$(find rtl "$PROJECT.qsf" "$PROJECT.sdc" -newer "$fit" -type f \( -name '*.v' -o -name '*.qip' -o -name '*.qsf' -o -name '*.sdc' \) 2> /dev/null | head -3)
-    [ -n "$newer" ] && reason="changed since the last fit: $(echo $newer)"
+    newer=$(find rtl "$PROJECT.qsf" "$PROJECT.sdc" -newer "$fit" -type f \( -name '*.v' -o -name '*.qip' -o -name '*.qsf' -o -name '*.sdc' \) 2> /dev/null | head -3 | tr '\n' ' ')
+    [ -n "$newer" ] && reason="changed since the last fit: ${newer% }"
 fi
 
 if [ -n "$reason" ]; then
