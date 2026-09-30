@@ -9,10 +9,12 @@ import pytest
 
 from timur_tools.toolchain import (
     ENV_PREFIX,
+    PINNED_GCC_VERSION,
     Toolchain,
     ToolchainError,
     find_toolchain,
     require_toolchain,
+    warn_if_not_pinned,
 )
 
 
@@ -54,12 +56,14 @@ def test_search_order_is_argument_environment_path_tools(
     found = find_toolchain(root)
     assert found is not None and found.prefix == "riscv-none-elf-"
 
-    monkeypatch.setenv(ENV_PREFIX, "/opt/env/riscv-none-elf-")
+    make_fake_toolchain(root / "env")
+    monkeypatch.setenv(ENV_PREFIX, str(root / "env" / "riscv-none-elf-"))
     found = find_toolchain(root)
-    assert found is not None and found.prefix == "/opt/env/riscv-none-elf-"
+    assert found is not None and found.prefix == str(root / "env" / "riscv-none-elf-")
 
-    found = find_toolchain(root, prefix="/opt/arg/riscv32-")
-    assert found is not None and found.prefix == "/opt/arg/riscv32-"
+    make_fake_toolchain(root / "arg")
+    found = find_toolchain(root, prefix=str(root / "arg" / "riscv-none-elf-"))
+    assert found is not None and found.prefix == str(root / "arg" / "riscv-none-elf-")
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="uses a shell script as the fake compiler")
@@ -92,3 +96,32 @@ def test_run_returns_stdout_and_reports_failures(tmp_path: Path) -> None:
 def test_a_missing_tool_is_a_toolchain_error(tmp_path: Path) -> None:
     with pytest.raises(ToolchainError, match="cannot run"):
         Toolchain(str(tmp_path / "nothing-")).run("gcc", "--version")
+
+
+def test_an_explicit_prefix_without_gcc_is_an_error_at_once(
+    clean_environment: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A wrong TIMUR_TOOLCHAIN_PREFIX used to be accepted and fail much later."""
+    monkeypatch.setenv(ENV_PREFIX, str(clean_environment / "nowhere" / "riscv-none-elf-"))
+    with pytest.raises(ToolchainError, match=ENV_PREFIX):
+        find_toolchain(clean_environment)
+
+    monkeypatch.delenv(ENV_PREFIX)
+    with pytest.raises(ToolchainError, match="--prefix"):
+        find_toolchain(clean_environment, prefix=str(clean_environment / "nowhere" / "x-"))
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="uses a shell script as the fake compiler")
+def test_another_compiler_release_is_reported(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    make_fake_toolchain(tmp_path / "old", version="13.2.0")
+    make_fake_toolchain(tmp_path / "pinned", version=PINNED_GCC_VERSION)
+
+    with caplog.at_level("WARNING", logger="timur"):
+        warn_if_not_pinned(Toolchain(str(tmp_path / "pinned" / "riscv-none-elf-")))
+        assert not caplog.records
+        warn_if_not_pinned(Toolchain(str(tmp_path / "old" / "riscv-none-elf-")))
+
+    assert "riscv-none-elf-gcc 13.2.0" in caplog.text
+    assert PINNED_GCC_VERSION in caplog.text

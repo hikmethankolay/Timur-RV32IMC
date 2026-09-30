@@ -35,7 +35,7 @@ from timur_tools import builder, cli, memmap, paths, romimage
 from timur_tools.errors import GenerationError
 from timur_tools.model import ModelError, TimurModel
 from timur_tools.paths import Project
-from timur_tools.toolchain import PINNED_GCC_VERSION, Toolchain, find_toolchain
+from timur_tools.toolchain import Toolchain, find_toolchain, warn_if_not_pinned
 from timur_tools.vectors import Vectors, prog_cycle_budget
 
 LOG = logging.getLogger("timur.gen_sw_tests")
@@ -200,14 +200,7 @@ def generate(project: Project, toolchain: Toolchain | None) -> list[str]:
     if toolchain is None:
         LOG.info("no toolchain: reusing the committed images in %s/", paths.VECTORS)
     else:
-        version = toolchain.gcc_version()
-        if version != PINNED_GCC_VERSION:
-            LOG.warning(
-                "riscv-none-elf-gcc %s: the committed images were built with %s, "
-                "so they will change",
-                version,
-                PINNED_GCC_VERSION,
-            )
+        warn_if_not_pinned(toolchain)
     vec = Vectors()
     add_header(vec)
     summary = []

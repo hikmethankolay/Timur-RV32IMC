@@ -133,3 +133,21 @@ def test_dma_and_interrupt_programs_on_the_model(project: Path) -> None:
 
     assert [cause for cause, _, _ in model.traps] == [0x8000000B]
     assert model.x[26] == 1
+
+
+def test_soc_generator_reports_another_compiler_release(
+    project: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """gen_soc_tests.py rebuilds the GNU-assembled images too, and used to say nothing."""
+    fake = project / "fakebin"
+    fake.mkdir()
+    script = fake / "riscv-none-elf-gcc"
+    script.write_text("#!/bin/sh\necho 13.2.0\n")
+    script.chmod(0o755)
+    monkeypatch.setenv("TIMUR_TOOLCHAIN_PREFIX", str(fake / "riscv-none-elf-"))
+    monkeypatch.setattr(gen_soc_tests, "generate", lambda *args: 0)
+
+    with caplog.at_level("WARNING", logger="timur"):
+        assert gen_soc_tests.main(["--root", str(project)]) == 0
+
+    assert "riscv-none-elf-gcc 13.2.0" in caplog.text

@@ -45,7 +45,7 @@ from timur_tools.model import TimurModel, divide
 from timur_tools.paths import Project
 from timur_tools.randprog import random_c_program, random_program
 from timur_tools.rvc import decompress
-from timur_tools.toolchain import Toolchain, find_toolchain
+from timur_tools.toolchain import Toolchain, find_toolchain, warn_if_not_pinned
 from timur_tools.vectors import NO_HALT, Vectors, model_checks
 
 LOG = logging.getLogger("timur.gen_soc_tests")
@@ -485,7 +485,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     project = cli.project_from(args)
 
-    executed = generate(project, args.seed, args.length, find_toolchain(project.root))
+    toolchain = find_toolchain(project.root)
+    if toolchain is not None:
+        warn_if_not_pinned(toolchain)
+    executed = generate(project, args.seed, args.length, toolchain)
     print("random program: seed %d, %d instructions executed" % (args.seed, executed))
     return 0
 

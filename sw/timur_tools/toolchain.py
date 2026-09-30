@@ -2,9 +2,11 @@
 
 Search order, the same for every tool:
   1. a prefix given on the command line
-  2. $TIMUR_TOOLCHAIN_PREFIX, for example /opt/riscv/bin/riscv-none-elf-
+  2. $TIMUR_TOOLCHAIN_PREFIX, for example /opt/riscv/bin/riscv-none-elf- (empty = unset)
   3. riscv-none-elf-gcc on PATH
   4. the newest release unpacked in <project>/.tools/xpack-riscv-none-elf-gcc-*/
+A prefix given explicitly (1 or 2) must name a gcc that exists: a mistake there
+is reported at once instead of falling back to another toolchain, or to none.
 """
 
 from __future__ import annotations
@@ -77,13 +79,23 @@ def _release_key(bin_dir: Path) -> tuple[int, ...]:
     return tuple(int(number) for number in re.findall(r"\d+", bin_dir.parent.name))
 
 
+def _explicit(prefix: str, source: str) -> Toolchain:
+    """A toolchain the user named; ToolchainError if its gcc does not exist."""
+    if not shutil.which(prefix + "gcc"):
+        raise ToolchainError("%sgcc not found: check %s" % (prefix, source))
+    return Toolchain(prefix)
+
+
 def find_toolchain(root: Path, prefix: str | None = None) -> Toolchain | None:
-    """The toolchain to use for the project at root, or None if there is none."""
+    """The toolchain to use for the project at root, or None if there is none.
+
+    Raises ToolchainError if an explicitly given prefix names no gcc.
+    """
     if prefix:
-        return Toolchain(prefix)
+        return _explicit(prefix, "--prefix")
     from_environment = os.environ.get(ENV_PREFIX)
     if from_environment:
-        return Toolchain(from_environment)
+        return _explicit(from_environment, "$" + ENV_PREFIX)
     if shutil.which(DEFAULT_PREFIX + "gcc"):
         return Toolchain(DEFAULT_PREFIX)
     unpacked = sorted((root / ".tools").glob(UNPACKED_GLOB), key=_release_key, reverse=True)
@@ -91,6 +103,18 @@ def find_toolchain(root: Path, prefix: str | None = None) -> Toolchain | None:
         if shutil.which(DEFAULT_PREFIX + "gcc", path=str(bin_dir)):
             return Toolchain(str(bin_dir / DEFAULT_PREFIX))
     return None
+
+
+def warn_if_not_pinned(toolchain: Toolchain) -> None:
+    """Warn if the compiler is not the release the committed images were built with:
+    regenerated images will then differ from the committed ones."""
+    version = toolchain.gcc_version()
+    if version != PINNED_GCC_VERSION:
+        LOG.warning(
+            "riscv-none-elf-gcc %s: the committed images were built with %s, so they will change",
+            version,
+            PINNED_GCC_VERSION,
+        )
 
 
 def require_toolchain(root: Path, prefix: str | None = None) -> Toolchain:
