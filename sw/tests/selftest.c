@@ -8,13 +8,16 @@
  * undefined (division by zero, INT32_MIN / -1), with the value the M
  * extension defines. The output is the same for the rv32im_zicsr and
  * rv32imc_zicsr builds; the exit code (LEDs 0x200 | code) is the number of
- * checks that did not match, clipped to 1. */
+ * checks that did not match, clipped to 1. The last section checks that the
+ * runtime rejects arguments it cannot serve. */
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "timur.h"
 
 extern char _data_start[], _data_end[], _bss_start[], _bss_end[];
@@ -472,6 +475,38 @@ static void test_csr(void)
     report("CSRs", c, m);
 }
 
+/* ---- the runtime's limits --------------------------------------------------------------- */
+static void test_limits(void)
+{
+    int c = checks, m = mismatches;
+    static const char msg[] = "x";
+    const long unmapped = 0x10000000L;                  /* no slave: reads 0 */
+    const long ram_last = (long)(TIMUR_RAM_BASE + TIMUR_RAM_SIZE - 1u);
+    struct stat st;
+
+    /* ECALL arguments come from registers: they are checked before they are used */
+    check("ecall write length", 0, (uint32_t)timur_ecall(SYS_write, 1, (long)msg, (long)0x80000000u),
+          (uint32_t)-EINVAL);
+    check("ecall write length", 1, (uint32_t)timur_ecall(SYS_write, 1, (long)msg, -1), (uint32_t)-EINVAL);
+    check("ecall write source", 0, (uint32_t)timur_ecall(SYS_write, 1, unmapped, 1), (uint32_t)-EFAULT);
+    check("ecall write source", 1, (uint32_t)timur_ecall(SYS_write, 1, ram_last, 2), (uint32_t)-EFAULT);
+    check("ecall write nothing", 0, (uint32_t)timur_ecall(SYS_write, 1, unmapped, 0), 0);
+    check("ecall read destination", 0, (uint32_t)timur_ecall(SYS_read, 0, (long)rodata_text, 1),
+          (uint32_t)-EFAULT);
+    check("ecall read destination", 1, (uint32_t)timur_ecall(SYS_read, 0, (long)TIMUR_GPIO_BASE, 1),
+          (uint32_t)-EFAULT);
+    /* the console, fds 0-2, is the only file */
+    check("isatty", 1, (uint32_t)isatty(1), 1);
+    errno = 0;
+    check("isatty", 7, (uint32_t)isatty(7), 0);
+    check("isatty errno", 7, (uint32_t)errno, EBADF);
+    check("fstat", 7, (uint32_t)fstat(7, &st), (uint32_t)-1);
+    /* the heap neither wraps around nor shrinks below its start */
+    check("sbrk(PTRDIFF_MIN)", 0, (uint32_t)(uintptr_t)sbrk(PTRDIFF_MIN), (uint32_t)-1);
+    check("sbrk(PTRDIFF_MAX)", 0, (uint32_t)(uintptr_t)sbrk(PTRDIFF_MAX), (uint32_t)-1);
+    report("limits", c, m);
+}
+
 int main(void)
 {
     printf("Timur C runtime self-test\n");
@@ -482,6 +517,7 @@ int main(void)
     test_heap();
     test_ecall();
     test_csr();
+    test_limits();
     if (mismatches)
         printf("%d of %d checks differ\n", mismatches, checks);
     else

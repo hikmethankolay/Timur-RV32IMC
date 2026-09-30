@@ -138,7 +138,7 @@ def build_image(
     with tempfile.TemporaryDirectory() as tmp:
         result = builder.build(
             [project.tests / (name + ".c")], isa, Path(tmp), name,
-            project=project, toolchain=toolchain,
+            strict=True, project=project, toolchain=toolchain,
         )  # fmt: skip
     symbols = {symbol: result.symbol(symbol) for symbol in SYMBOLS}
     lines = [
