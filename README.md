@@ -5,7 +5,7 @@
 
 > A RISC-V microcontroller written from scratch in Verilog, running C programs on a DE10-Lite FPGA board. *Timur* means "iron" in Old Turkic.
 
-Timur is a complete small computer: a five-stage pipelined CPU for the 32-bit RISC-V instruction set (RV32IMC), its memories, buses and peripherals, a C runtime, and the Python tools that build, simulate and check it. It runs at 50 MHz on a Terasic DE10-Lite (Intel MAX 10) and talks to the world through LEDs, switches, a serial port and a VGA monitor.
+Timur is a complete small computer: a five-stage pipelined CPU for the 32-bit RISC-V instruction set (RV32IMC), its memories, buses and peripherals, a C runtime, and the Python tools that build, simulate and check it. It runs at 50 MHz on a Terasic DE10-Lite (Intel MAX 10) and talks to the world through LEDs, switches, a serial port and a VGA monitor. The DE10-Lite is the board it was built and tested on, but the design is plain Verilog with no vendor IP below the board wrapper, so it can be moved to other FPGA boards: see [Using another board](#using-another-board).
 
 **Highlights**
 
@@ -148,6 +148,7 @@ A full-screen picture uses 38,400 of the ROM's 65,536 bytes; `--size WxH` and `-
     - [C programs](#c-programs)
     - [Regenerating vectors and images](#regenerating-vectors-and-images)
   - [Building \& Programming](#building--programming)
+  - [Using another board](#using-another-board)
   - [C Software Layer](#c-software-layer)
   - [Development and Checks](#development-and-checks)
   - [Development Phases](#development-phases)
@@ -629,6 +630,49 @@ A new ROM image does not need a full compilation: after one full compilation in 
 
 ---
 
+## Using another board
+
+Timur was built and tested on a **Terasic DE10-Lite**, and everything above describes that board. Nothing below the board wrapper depends on it: `timur_soc` and every module under it are plain Verilog-2005 with no vendor IP, so another FPGA board needs a new top-level file, a pin file and the board's own programming tool. Only the DE10-Lite has been tested on hardware; the other targets below have been checked in simulation and with Yosys synthesis.
+
+**What the board needs**
+
+| Need | Why |
+| ---- | --- |
+| A 50 MHz clock, or a PLL that makes one | `TIMUR_CLOCK_HZ`, the UART divider (115200 baud) and the VGA timing (a pixel every second clock) all assume 50 MHz |
+| About 1.36 Mbit of block RAM | 64 KB ROM + 64 KB RAM + 37.5 KB VGA framebuffer |
+| A push button for reset | Active low in the template; invert an active-high one |
+| Optional: LEDs, switches, a 3.3 V UART, VGA with 4 bits per colour | Tie unused inputs off (`sw` to 0, `uart_rx` to 1) and leave unused outputs unconnected |
+
+**Porting steps**
+
+1. Copy `boards/template/timur_board_top.v` into the new project. It has the same ports as the DE10-Lite wrapper but no PLL: the clock goes straight to `reset_sync` and `timur_soc`. If the board's oscillator is not 50 MHz, add the vendor's PLL and AND its locked output into the reset, as `rtl/top/Timur_RV32IMC.v` does.
+2. Add every `rtl/*/*.v` except `rtl/primitives/cpu_pll.v`, `rtl/primitives/cpu_pll_bb.v` and `rtl/top/Timur_RV32IMC.v` (the Intel PLL and the DE10-Lite wrapper).
+3. Define **`TIMUR_PORTABLE`** for synthesis. It drops the Intel `ramstyle = "M9K"` hints (Yosys obeys them and fails on other FPGAs) and loads the ROM with `$readmemh` from `rom_lo.hex` and `rom_hi.hex` instead of Quartus's `.mif` files. The DE10-Lite build never defines it, so Quartus compiles exactly the same code as before.
+4. Make `rom_lo.hex` and `rom_hi.hex` visible to the tool: add them to the Vivado project, or run Yosys from the repository root. `python3 sw/build.py --install prog.c` writes them as before; synthesise again after installing a new program.
+5. Write the pin constraints from the board's manual, build and program.
+
+With Yosys, for example for a Xilinx 7-series part:
+
+```bash
+RTL=$(ls rtl/*/*.v | grep -v -e cpu_pll -e Timur_RV32IMC.v | tr '\n' ' ')
+yosys -p "read_verilog -DTIMUR_PORTABLE $RTL boards/template/timur_board_top.v; synth_xilinx -top timur_board_top -family xc7 -flatten"
+```
+
+In Vivado, `set_property verilog_define TIMUR_PORTABLE [current_fileset]` sets the define.
+
+**By FPGA family**
+
+| Board family | What changes | Fits? |
+| ------------ | ------------ | ----- |
+| Other Intel boards (DE0-CV, DE1-SoC, DE2-115, DE10-Nano) | Stay with Quartus, the `.mif` files and `rtl/top/Timur_RV32IMC.v`; leave `TIMUR_PORTABLE` undefined. Change the device and pins in the `.qsf` and regenerate `cpu_pll` for the new family. On Cyclone V, change the `M9K` hints to `M10K`. The DE1-SoC and DE2-115 drive VGA through an 8-bit ADV7123 DAC that also needs `VGA_CLK`, `VGA_BLANK_N` and `VGA_SYNC_N`: connect the 4-bit colours to its top bits | Yes |
+| Xilinx 7-series (Basys 3, Arty A7, Nexys A7) | Template wrapper, `TIMUR_PORTABLE`, a Clocking Wizard for 100 MHz → 50 MHz, an `.xdc` pin file. The Basys 3 is the closest match: 4-bit-per-colour VGA like the DE10-Lite and a USB-UART on the board | XC7A35T: about 4,100 LUTs, 1,900 flip-flops, 4 DSPs, 41 of 50 block RAMs (Yosys) |
+| Lattice ECP5 (ULX3S, OrangeCrab; Yosys + nextpnr) | Template wrapper, `TIMUR_PORTABLE`, an EHXPLLL for 50 MHz if the board clock differs, an `.lpf` pin file | 82 DP16KD block RAMs: the 45F and larger fit, the 25F (56) does not |
+| Small FPGAs (iCE40, Tang Nano, ECP5-25F) | Not enough block RAM. Shrink the ROM and RAM (the address decoder, `sw/runtime/linker.ld`, `timur_defs.h` and `sw/timur_tools/memmap.py` together; `tests/host/test_memmap.py` checks they agree) or leave out the VGA | After changes |
+
+Timing has only been closed on the MAX 10 at its slowest speed grade, which is slower than most current FPGAs, so 50 MHz should not be a problem elsewhere; check the tool's timing report all the same.
+
+---
+
 ## C Software Layer
 
 <p align="center"><img src="docs/diagrams/build_flow.svg" width="460" alt="From a C file to the board: GCC, layout checks, ROM images, Quartus, programming"></p>
@@ -770,6 +814,7 @@ Timur-RV32IMC/
 │   ├── periph/       # gpio_apb, uart_apb, dmac_apb_regs, vga
 │   ├── csr/          # csr_file, trap_unit
 │   └── top/          # Timur_RV32IMC (board wrapper), timur_soc
+├── boards/template/  # timur_board_top.v: vendor-neutral board wrapper for porting
 ├── tb/               # <module>_tb.v, one per module; timur_sw_tb.v (C programs)
 ├── vectors/          # <module>_vectors.txt, program images, expected UART output (.out) and input (.in)
 ├── sw/

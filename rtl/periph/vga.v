@@ -161,10 +161,18 @@ module vga (
     // =====================================================================
     // Framebuffer
     // =====================================================================
+    // TIMUR_PORTABLE: no Intel attributes (see rom_ahb).
+`ifdef TIMUR_PORTABLE
+    reg [7:0] lane0 [0:9599];
+    reg [7:0] lane1 [0:9599];
+    reg [7:0] lane2 [0:9599];
+    reg [7:0] lane3 [0:9599];
+`else
     (* ramstyle = "M9K" *) reg [7:0] lane0 [0:9599];
     (* ramstyle = "M9K" *) reg [7:0] lane1 [0:9599];
     (* ramstyle = "M9K" *) reg [7:0] lane2 [0:9599];
     (* ramstyle = "M9K" *) reg [7:0] lane3 [0:9599];
+`endif
 
     wire        accept   = HSEL & HTRANS[1] & HREADY;
     wire [13:0] index    = HADDR[15:2];

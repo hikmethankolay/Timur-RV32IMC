@@ -35,8 +35,25 @@ module rom_ahb (
     output        HRESP
 );
 
+    // TIMUR_PORTABLE (a board port built with Vivado, Yosys or another
+    // non-Quartus tool): no Intel attributes, and the synthesis image comes
+    // from rom_lo.hex and rom_hi.hex, which the port adds to its project.
+    // Never defined for the DE10-Lite build or the testbenches.
+`ifdef TIMUR_PORTABLE
+    reg [15:0] lo [0:16383];
+    reg [15:0] hi [0:16383];
+
+    // No zero fill: Yosys lets a fill loop override $readmemh, and Xilinx
+    // and Lattice block RAM already starts at 0, so halfwords past the image
+    // still read 0000.
+    initial begin
+        $readmemh("rom_lo.hex", lo);
+        $readmemh("rom_hi.hex", hi);
+    end
+`else
     (* ramstyle = "M9K", ram_init_file = "rom_lo.mif" *) reg [15:0] lo [0:16383];
     (* ramstyle = "M9K", ram_init_file = "rom_hi.mif" *) reg [15:0] hi [0:16383];
+`endif
 
     // Simulation image: unused halfwords read as 0000 (an illegal instruction),
     // the same fill as the .mif files; then rom_lo.hex and rom_hi.hex.
