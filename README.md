@@ -1,29 +1,137 @@
-# Timur-RV32IMC
+# Timur RV32IMC
 
-> A pipelined RISC-V RV32IMC microcontroller in Verilog-2001 for the Terasic DE10-Lite (Intel MAX 10), with a Harvard instruction-fetch port, an AHB-Lite/APB bus fabric with DMA, GPIO, UART and VGA output. *Timur* means "iron" in Old Turkic.
+[![checks](https://github.com/hikmethankolay/Timur-RV32IMC/actions/workflows/ci.yml/badge.svg)](https://github.com/hikmethankolay/Timur-RV32IMC/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+> A RISC-V microcontroller written from scratch in Verilog, running C programs on a DE10-Lite FPGA board. *Timur* means "iron" in Old Turkic.
+
+Timur is a complete small computer: a five-stage pipelined CPU for the 32-bit RISC-V instruction set (RV32IMC), its memories, buses and peripherals, a C runtime, and the Python tools that build, simulate and check it. It runs at 50 MHz on a Terasic DE10-Lite (Intel MAX 10) and talks to the world through LEDs, switches, a serial port and a VGA monitor.
+
+**Highlights**
+
+- **Runs real C.** GCC and newlib-nano: `printf`, `malloc`, `fgets` and `sscanf`, interrupts and traps all work on the board.
+- **Draws on a monitor.** 640×480 VGA from a 320×240, 16-colour framebuffer, with a text console that `printf` can write to and a PNG-to-C converter for pictures (verified in simulation; the board test is still to come).
+- **A real bus system.** AHB-Lite with two masters (the CPU and a DMA engine) and APB peripherals, the bus standards used in commercial microcontrollers.
+- **Checked against a reference model.** 41 testbenches; C programs must print, byte for byte, what an instruction-level Python model of the CPU prints. CI runs everything on every push.
+- **Timing closed at 50 MHz** on the MAX 10 (before the VGA was added), with 16-bit compressed instructions fetched in a single cycle.
+
+## Prerequisites
+
+| Tool | Version | Needed for |
+| ---- | ------- | ---------- |
+| Python | 3.10 or newer | The tools and tests (standard library only; `make venv` adds the linters and pytest) |
+| [Icarus Verilog](https://steveicarus.github.io/iverilog/) | 12 or newer | RTL simulation (`make sim`) |
+| [xPack RISC-V GCC](https://xpack-dev-tools.github.io/riscv-none-elf-gcc-xpack/) | 14.2.0-3 | Building C programs. Other releases work, but produce images that differ from the committed ones |
+| Quartus Prime | 25.1std (Lite supports the 10M50) | Compiling for the FPGA and programming the board |
+| Terasic DE10-Lite, 3.3 V serial adapter | | Running on hardware |
+
+Tested on Fedora 44 and Ubuntu 24.04 (CI), x86-64. On Windows the RTL regression runs in ModelSim with `run_tests.bat`; macOS is untested.
+
+## Installation
+
+```bash
+git clone https://github.com/hikmethankolay/Timur-RV32IMC.git
+cd Timur-RV32IMC
+
+# Icarus Verilog: sudo dnf install iverilog (Fedora) or sudo apt install iverilog (Ubuntu)
+
+# RISC-V GCC, unpacked into .tools/ where the tools find it (the same steps as CI)
+release=xpack-riscv-none-elf-gcc-14.2.0-3-linux-x64.tar.gz
+curl -fsSLO https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v14.2.0-3/$release
+echo "f574415b63f12b09bdd3475223ab492a465d23810646c90c13a4c3b676c83503  $release" | sha256sum -c
+mkdir -p .tools && tar -xzf $release -C .tools
+
+make venv            # Python development tools in .venv
+```
+
+## Quick Start
+
+```bash
+make check                                        # lint, type checks and host tests
+make sim                                          # all 41 RTL testbenches (a few minutes)
+python3 sw/build.py apps/first.c                  # build a C program
+python3 sw/run_model.py sw/build/first/first.elf  # run it on the reference model
+```
+
+`make sim` ends with `41 of 41 testbenches passed`. The last command prints:
+
+```text
+Hello, this is my first program on Timur!
+round  0: switches 15a
+...
+round 19: switches 15a
+done
+------------------------------------------------------------------------
+ended at _halt (00000080) after 46802 instructions
+LEDs 200  (0x200 | exit code 0)
+```
+
+To run it on the board: `python3 sw/build.py --install apps/first.c`, then `sw/program_board.sh` (see [Building & Programming](#building--programming)).
+
+## Usage
+
+Programs are plain C files; keep yours in `apps/`. Everything a program needs comes from `timur.h` ([C Software Layer](#c-software-layer)).
+
+**1. Print over the serial port.** [`apps/first.c`](apps/first.c) above: `printf` goes to the UART at 115200 8N1, and `GPIO_IN` and `GPIO_OUT` are the switches and LEDs.
+
+**2. Print on a VGA monitor.** Save as `apps/hello_vga.c`:
+
+```c
+#include <stdio.h>
+#include "timur.h"
+
+int main(void)
+{
+    vga_console_init(VGA_WHITE, VGA_BLUE); /* clear the screen; printf now goes there too */
+    printf("Hello, VGA!\n");
+    vga_fill_rect(0, 16, 320, 8, VGA_YELLOW); /* a yellow bar under the text */
+    return 0;
+}
+```
+
+```bash
+python3 sw/build.py apps/hello_vga.c
+python3 sw/run_model.py sw/build/hello_vga/hello_vga.elf   # prints Hello, VGA! (the UART copy)
+```
+
+**3. Show a picture.** Convert a PNG to a C header, then copy it into the framebuffer with the DMA engine:
+
+```bash
+python3 sw/img2vga.py photo.png -o apps/photo.h
+# wrote apps/photo.h: photo, 320x240, 38400 bytes of pixels
+```
+
+```c
+#include "timur.h"
+#include "photo.h"
+
+int main(void)
+{
+    for (int i = 0; i < 16; i++)
+        vga_set_palette(i, photo_palette[i]);
+    vga_show_image(photo_pixels); /* DMA copy into the framebuffer */
+    return 0;
+}
+```
+
+A full-screen picture uses 38,400 of the ROM's 65,536 bytes; `--size WxH` and `--keep-aspect` make smaller ones for `vga_blit`. More examples: [`apps/vga_demo.c`](apps/vga_demo.c) and the test programs in [`sw/tests/`](sw/tests/).
 
 ---
 
 ## Table of Contents
 
-- [Timur-RV32IMC](#timur-rv32imc)
+- [Timur RV32IMC](#timur-rv32imc)
   - [Table of Contents](#table-of-contents)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Usage](#usage)
   - [Overview](#overview)
   - [Architecture](#architecture)
   - [ISA Support](#isa-support)
   - [Current Status](#current-status)
+    - [Not supported](#not-supported)
   - [Module Structure](#module-structure)
-    - [Phase 1 — Primitives and Verification Infrastructure](#phase-1--primitives-and-verification-infrastructure)
-    - [Phase 2 — Execution Datapath](#phase-2--execution-datapath)
-    - [Phase 3 — State and Memory](#phase-3--state-and-memory)
-    - [Phase 4 — Instruction Decode and Control](#phase-4--instruction-decode-and-control)
-    - [Phases 5–7 — Pipeline and Hazard Resolution](#phases-57--pipeline-and-hazard-resolution)
-    - [Phase 8 — APB Peripherals](#phase-8--apb-peripherals)
-    - [Phase 9 — AHB Bus Fabric and System](#phase-9--ahb-bus-fabric-and-system)
-    - [Phase 10 — CSRs, Traps and Machine Mode](#phase-10--csrs-traps-and-machine-mode)
-    - [Phase 11 — C Extension](#phase-11--c-extension)
-    - [Phase 13 — VGA Output](#phase-13--vga-output)
-    - [Phase 12 — C Software Layer](#phase-12--c-software-layer)
   - [Address Map](#address-map)
   - [Pipeline Design](#pipeline-design)
   - [Hazard Handling](#hazard-handling)
@@ -44,6 +152,8 @@
   - [Development and Checks](#development-and-checks)
   - [Development Phases](#development-phases)
   - [Directory Structure](#directory-structure)
+  - [Contributing](#contributing)
+  - [Support](#support)
   - [License](#license)
 
 ---
@@ -142,9 +252,28 @@ Still open:
 - riscv-arch-test RV32IMC and Zicsr suites (RISCOF flow).
 - VGA (Phase 13) in Quartus and on the board: the framebuffer adds 40 M9K blocks (about 168 of 182 expected) and one input to the AHB read-data mux; the resource and timing numbers above predate it and must be re-measured.
 
+### Not supported
+
+Left out on purpose, to keep the design small:
+
+| Feature | Instead |
+| ------- | ------- |
+| User mode, supervisor mode, PMP | Machine mode only |
+| Timer and software interrupts (`mtime`, `mtimecmp`, `msip`) | One machine external interrupt: UART receive or DMA done |
+| Vectored `mtvec` | Direct mode; `trap.c` dispatches on `mcause` |
+| F, D, A extensions | Floating point in software (`--extra=-Wl,-u,_printf_float` for `%f`) |
+| FENCE, FENCE.I, WFI semantics | Executed as no-operations (one in-order hart, no caches) |
+| Bus locking (HLOCK) | The DMA engine keeps its data if it loses the bus between read and write |
+| Caches, external SDRAM | 64 KB ROM and 64 KB RAM in on-chip M9K memory |
+
 ---
 
 ## Module Structure
+
+What each phase added, module by module. Each RTL file starts with a header comment that describes its interface and behaviour in more detail.
+
+<details>
+<summary>Show the module list (phases 1 to 13)</summary>
 
 ### Phase 1 — Primitives and Verification Infrastructure
 
@@ -218,6 +347,12 @@ The datapath lives in **`timur_soc`**:
 - **Split-bank ROM** — see `rom_ahb` under Phase 3.
 - **In `timur_soc`** — `is_compressed` travels to EX, where the link value is PC + 2 or PC + 4. Branch and JALR targets, and `mepc`, may be on any halfword.
 
+### Phase 12 — C Software Layer
+
+- **`sw/runtime/`** — the C runtime: memory layout (`linker.ld`), startup code (`crt0.S`), trap entry (`trap_entry.S`), UART driver (`uart.c`), newlib system calls (`syscalls.c`), trap dispatch (`trap.c`); headers in `sw/runtime/include/` (`timur.h`, `timur_defs.h`).
+- **`sw/build.py`** — compile, link, check and convert a C program; **`sw/bin2mem.py`** — the binary-to-memory converter. See [C Software Layer](#c-software-layer).
+- **`sw/tests/`** — C programs run on the SoC by `tb/timur_sw_tb.v`.
+
 ### Phase 13 — VGA Output
 
 - **`vga`** (`rtl/periph/`) — 640×480 at 60 Hz with a pixel every second clock (25 MHz from the 50 MHz clock, one clock domain); 800×525 total, syncs active low. A 320×240 framebuffer of 4-bit pixels (38,400 bytes in four 9600×8 byte lanes) is an AHB slave at `0x3000_0000` with byte, halfword and word access as in `ram_ahb`; each framebuffer pixel is shown as 2×2 screen pixels through a 16-entry palette of 12-bit colours. Registers on APB at `0x4000_0300` (see [VGA](#vga)): CTRL (enable), STATUS (vertical blank), SCROLL (framebuffer row shown at the top, for scrolling without copying), FRAME (frame counter), PALETTE.
@@ -225,11 +360,7 @@ The datapath lives in **`timur_soc`**:
 - **In `timur_soc`** — `HSEL_VGA` for `HADDR[31:16] = 0x3000` in `ahb_decoder`, APB page `0x03` in `ahb_apb_bridge`, the `vga_r/g/b[3:0]`, `vga_hs`, `vga_vs` outputs. The DMAC can copy straight into the framebuffer.
 - **Software** — `sw/runtime/vga.c` (pixels, rectangles, images, characters, a 40×30 console that `printf` writes to after `vga_console_init`), `sw/runtime/vga_font.c` (an 8×8 font drawn in `sw/gen_font.py`), `sw/img2vga.py` (PNG to a C header).
 
-### Phase 12 — C Software Layer
-
-- **`sw/runtime/`** — the C runtime: memory layout (`linker.ld`), startup code (`crt0.S`), trap entry (`trap_entry.S`), UART driver (`uart.c`), newlib system calls (`syscalls.c`), trap dispatch (`trap.c`); headers in `sw/runtime/include/` (`timur.h`, `timur_defs.h`).
-- **`sw/build.py`** — compile, link, check and convert a C program; **`sw/bin2mem.py`** — the binary-to-memory converter. See [C Software Layer](#c-software-layer).
-- **`sw/tests/`** — C programs run on the SoC by `tb/timur_sw_tb.v`.
+</details>
 
 ---
 
@@ -373,7 +504,15 @@ The framebuffer at `0x3000_0000` holds row *y* at byte 160·*y*; each byte holds
 
 ### Running all tests
 
-Double-click `run_tests.bat` or run it from a terminal. It changes to the project folder and starts `C:\intelFPGA\20.1\modelsim_ase\win32aloem\vsim.exe -c -do run_tests.tcl` (set `VSIM` to use another `vsim.exe`), which:
+`make sim` (or `./run_tests.sh`) runs the whole regression with Icarus Verilog (`sudo dnf install iverilog`, or set `IVERILOG` and `VVP`): it compiles each testbench with the RTL (without `cpu_pll` and the board wrapper, which need the Altera megafunction library; `timur_sw_tb` also gets `tb/timur_soc_tb.v`), keeps its output in `logs/<testbench>.log` and prints a summary. A testbench passes only if its log contains `ALL n TESTS PASSED` with n > 0 and no `FAIL` line, so a crash, a missing vector file or a watchdog timeout counts as a failure. `./run_tests.sh alu_tb timur_soc_tb` runs only those. A single testbench by hand:
+
+```bash
+RTL=$(ls rtl/*/*.v | grep -v -e cpu_pll -e _bb.v -e Timur_RV32IMC.v)
+iverilog -g2001 -s timur_soc_tb -o sim.vvp tb/timur_soc_tb.v $RTL && vvp -n sim.vvp
+iverilog -g2001 -s timur_sw_tb  -o sim.vvp tb/timur_sw_tb.v tb/timur_soc_tb.v $RTL && vvp -n sim.vvp
+```
+
+**ModelSim on Windows.** Double-click `run_tests.bat` or run it from a terminal. It changes to the project folder and starts `C:\intelFPGA\20.1\modelsim_ase\win32aloem\vsim.exe -c -do run_tests.tcl` (set `VSIM` to use another `vsim.exe`), which:
 
 1. collects `rtl/*.v` and `rtl/*/*.v` (dropping every `*_bb.v`) and `tb/*_tb.v`;
 2. deletes, recreates and maps the `work` library;
@@ -384,19 +523,16 @@ Double-click `run_tests.bat` or run it from a terminal. It changes to the projec
 
 Paths inside testbenches (`vectors/…`, `rom_lo.hex`) are relative to the project root. `timur_sw_tb` runs about 2 million cycles and takes the longest.
 
-On Linux, `./run_tests.sh` (or `make sim`) does the same with Icarus Verilog (`sudo dnf install iverilog`, or set `IVERILOG` and `VVP`): it compiles each testbench with the RTL (without `cpu_pll` and the board wrapper, which need the Altera megafunction library; `timur_sw_tb` also gets `tb/timur_soc_tb.v`), keeps its output in `logs/<testbench>.log`, applies the same pass rule and prints a summary. `./run_tests.sh alu_tb timur_soc_tb` runs only those. A single testbench by hand:
-
-```bash
-RTL=$(ls rtl/*/*.v | grep -v -e cpu_pll -e _bb.v -e Timur_RV32IMC.v)
-iverilog -g2001 -s timur_soc_tb -o sim.vvp tb/timur_soc_tb.v $RTL && vvp -n sim.vvp
-iverilog -g2001 -s timur_sw_tb  -o sim.vvp tb/timur_sw_tb.v tb/timur_soc_tb.v $RTL && vvp -n sim.vvp
-```
-
 ### Testbench conventions
+
+<details>
+<summary>Vector files, check timing and the pass rule</summary>
 
 - One `tb/<module>_tb.v` per module and one `vectors/<module>_vectors.txt`; lines starting with `//` are comments, and lines whose field count does not match are skipped.
 - Sequential vectors end with a `wait_type` column: `0` = check 3 ns after applying inputs without a clock edge, `1` = wait for the next rising edge plus 1 ns, then check. Protocol testbenches may use `x` digits in expected values for "don't care".
 - Every testbench starts with `` `timescale 1ns/1ps``, has a watchdog that prints a `FAIL` line, compares with `!==`, prints one `PASS`/`FAIL` line per vector, and ends with exactly `ALL n TESTS PASSED` or `f / n TESTS FAILED` followed by `$stop`. A run with no vectors is a failure. (`decompressor_tb` prints one summary `PASS` line for its 49,152 encodings.)
+
+</details>
 
 ### System tests and test programs
 
@@ -432,6 +568,9 @@ Every cycle of every program the testbench also checks that the fetch window hol
 
 ### Regenerating vectors and images
 
+<details>
+<summary>The generators and what they need</summary>
+
 From any directory (the scripts find the project they are in; `--root DIR` or `TIMUR_ROOT` selects another), or all five with `make regen`:
 
 ```bash
@@ -443,6 +582,8 @@ python3 sw/gen_decompressor_vectors.py   # all 16-bit encodings, expanded by the
 ```
 
 The generated files are deterministic: `tests/host/test_golden.py` regenerates them and compares them byte for byte with the committed ones. Images compiled from C are only byte-identical with the compiler release they were built with, xPack GCC 14.2.0-3; another release produces other, equally valid images, and `gen_sw_tests.py` warns about it. `gen_decompressor_vectors.py` needs the RISC-V toolchain. `gen_soc_tests.py` needs it for the Phase 11 programs and `gen_sw_tests.py` for the C programs; without it they reuse the committed images and still regenerate the expectations.
+
+</details>
 
 ---
 
@@ -475,9 +616,9 @@ The ROM contents come from `rom_lo.mif` and `rom_hi.mif` in the project root. Ha
 
 | Step | Program | Expected on the board |
 | ---- | ------- | --------------------- |
-| 1 | `sw/bringup/bringup_1_gpio_lo/_hi.mif` | LEDs mirror the switches; with every switch off they show `0x2A5` |
-| 2 | `sw/bringup/bringup_2_uart_lo/_hi.mif` | `UUUU…` in the terminal, a square wave on `uart_tx` |
-| 3 | `sw/bringup/bringup_3_dma_lo/_hi.mif` | DMA copies four ROM words to RAM; the LEDs show the checksum's low bits `0x2AA` |
+| 1 | `sw/bringup/bringup_1_gpio_lo.mif` and `_hi.mif` | LEDs mirror the switches; with every switch off they show `0x2A5` |
+| 2 | `sw/bringup/bringup_2_uart_lo.mif` and `_hi.mif` | `UUUU…` in the terminal, a square wave on `uart_tx` |
+| 3 | `sw/bringup/bringup_3_dma_lo.mif` and `_hi.mif` | DMA copies four ROM words to RAM; the LEDs show the checksum's low bits `0x2AA` |
 | 4 | `rom_lo.mif` / `rom_hi.mif` as shipped | Final cross-phase program: LEDs show 42 (`0b00_0010_1010`), one `U` on the UART |
 | 5 | `python3 sw/build.py --install sw/tests/hello.c` | `Hello from Timur RV32IMC!`, `misa`, the switch value; then LEDR9 lights (exit code 0) |
 | 6 | `python3 sw/build.py --install sw/tests/selftest.c` (or `io.c`, which asks for input) | `all 255 checks passed`; LEDs `0x200` |
@@ -657,6 +798,22 @@ Timur-RV32IMC/
 
 ---
 
+## Contributing
+
+Issues and pull requests are welcome. Before opening a pull request:
+
+- run `make all` (lint, type checks, host tests, static analysis and the RTL regression); CI runs the same checks;
+- add or update the testbench and vector file of any RTL module you change, and run `make regen` when a generator's output should change;
+- follow the existing style: `make format` applies ruff and clang-format; Verilog-2001, one module per file with a header comment describing its interface.
+
+The [Development and Checks](#development-and-checks) section lists every command.
+
+## Support
+
+Questions, bug reports and board-test results go to [GitHub Issues](https://github.com/hikmethankolay/Timur-RV32IMC/issues). Please include the command you ran, its output and, for RTL problems, the log from `logs/`.
+
+---
+
 ## License
 
-This project is developed for educational purposes. See [LICENSE](LICENSE) for details.
+[MIT](LICENSE) © 2026 Hikmethan Kolay. Developed as an educational project.
