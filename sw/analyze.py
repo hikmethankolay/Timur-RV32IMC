@@ -104,6 +104,7 @@ def cppcheck(project: Project, tool: str) -> bool:
     runtime, _ = c_sources(project)
     command = [
         tool, "--std=c11", "--enable=warning,style,performance,portability",
+        "--check-level=exhaustive",
         "--error-exitcode=1", "--inline-suppr", "--quiet",
         "--suppress=missingIncludeSystem", "-I", str(project.include),
         "-D__riscv", "-D__riscv_xlen=32",

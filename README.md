@@ -1,6 +1,6 @@
 # Timur-RV32IMC
 
-> A pipelined RISC-V RV32IMC microcontroller in Verilog-2001 for the Terasic DE10-Lite (Intel MAX 10), with a Harvard instruction-fetch port, an AHB-Lite/APB bus fabric with DMA, GPIO and UART. *Timur* means "iron" in Old Turkic.
+> A pipelined RISC-V RV32IMC microcontroller in Verilog-2001 for the Terasic DE10-Lite (Intel MAX 10), with a Harvard instruction-fetch port, an AHB-Lite/APB bus fabric with DMA, GPIO, UART and VGA output. *Timur* means "iron" in Old Turkic.
 
 ---
 
@@ -22,6 +22,7 @@
     - [Phase 9 — AHB Bus Fabric and System](#phase-9--ahb-bus-fabric-and-system)
     - [Phase 10 — CSRs, Traps and Machine Mode](#phase-10--csrs-traps-and-machine-mode)
     - [Phase 11 — C Extension](#phase-11--c-extension)
+    - [Phase 13 — VGA Output](#phase-13--vga-output)
     - [Phase 12 — C Software Layer](#phase-12--c-software-layer)
   - [Address Map](#address-map)
   - [Pipeline Design](#pipeline-design)
@@ -30,6 +31,7 @@
     - [GPIO](#gpio)
     - [UART](#uart)
     - [DMAC](#dmac)
+    - [VGA](#vga)
   - [Tool Stack](#tool-stack)
   - [Simulation](#simulation)
     - [Running all tests](#running-all-tests)
@@ -54,9 +56,9 @@
 | Pipeline | 5-stage in-order: IF, ID, EX, MEM, WB; full forwarding; control transfers and traps resolved in EX |
 | Instruction path | Dedicated fetch port into the on-chip ROM (Harvard fetch, never waits for the bus); 16-bit instructions expanded in IF |
 | Data path | AHB-Lite slaves behind a two-master arbiter (CPU data port with priority, DMAC) using AMBA 2-style HBUSREQ/HGRANT arbitration; APB peripherals behind a bridge |
-| Memory | 64 KB instruction ROM (two 16-bit banks) + 64 KB data RAM in M9K blocks |
-| Peripherals | GPIO (LEDs, switches), UART (115200 8N1), DMA controller; UART receive and DMA done can interrupt |
-| Software | C with newlib-nano: startup code, trap handler and system calls on the UART console |
+| Memory | 64 KB instruction ROM (two 16-bit banks) + 64 KB data RAM + 37.5 KB VGA framebuffer in M9K blocks |
+| Peripherals | GPIO (LEDs, switches), UART (115200 8N1), DMA controller, VGA (640×480 at 60 Hz from a 320×240, 16-colour framebuffer); UART receive and DMA done can interrupt |
+| Software | C with newlib-nano: startup code, trap handler and system calls on the UART console; VGA driver with a text console that `printf` can write to |
 | Board | Terasic DE10-Lite, Intel MAX 10 `10M50DAF484C7G` |
 | Clock | 50 MHz from ALTPLL; Fmax 52.5 MHz (Slow 1200mV 85C model, setup slack +0.96 ns) |
 
@@ -79,6 +81,7 @@ flowchart LR
         UART["uart_apb"]
         GPIO["gpio_apb"]
         DREG["dmac_apb_regs"]
+        VGA["vga<br/>framebuffer (AHB) + registers (APB)<br/>640x480 video"]
     end
     CORE -->|"fetch (direct)"| ROM
     CORE --> CPUM
@@ -91,12 +94,15 @@ flowchart LR
     DEC --> ROM
     DEC --> RAM
     DEC --> BR
+    DEC --> VGA
     BR --> UART
     BR --> GPIO
     BR --> DREG
+    BR --> VGA
     DREG -->|"src / dst / len / start"| DMAM
     UART -.->|"irq"| CORE
     DREG -.->|"irq"| CORE
+    VGA -->|"RGB 4:4:4, HS, VS"| MON["VGA connector"]
 ```
 
 The board wrapper `Timur_RV32IMC` contains only `cpu_pll`, the reset gating (button AND PLL locked), `reset_sync` and `timur_soc`. Testbenches instantiate `timur_soc` and drive its clock and reset directly.
@@ -130,7 +136,7 @@ A trap saves the PC in `mepc` and `MIE` in `MPIE`, and clears `MIE`; MRET return
 
 ## Current Status
 
-**Phases 1–12 implemented, verified in simulation and running on the DE10-Lite; timing closed at 50 MHz.**
+**Phases 1–12 implemented, verified in simulation and running on the DE10-Lite; timing closed at 50 MHz. Phase 13 (VGA output) is implemented and verified in simulation; its Quartus compile and board test are still to be done.**
 
 | Phase | Description | Status |
 | ----- | ----------- | ------ |
@@ -146,6 +152,7 @@ A trap saves the PC in `mepc` and `MIE` in `MPIE`, and clears `MIE`; MRET return
 | 10 | CSRs, traps, machine mode | ✅ Simulation |
 | 11 | C extension | ✅ Simulation |
 | 12 | C software layer | ✅ Simulation (C programs run on the SoC in `timur_sw_tb`) |
+| 13 | VGA output | ✅ Simulation (`vga_tb`, `sw/tests/vga.c`); Quartus and board pending |
 
 Full compile of the RV32IMC design with Quartus Prime 25.1std (Standard Edition; the Lite Edition supports the same device), `OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"` and physical synthesis (combinational, register duplication, retiming), three fitter seeds:
 
@@ -162,6 +169,7 @@ On the board (DE10-Lite, 30 September 2026): the shipped program (LEDs 42), brin
 Still open:
 
 - riscv-arch-test RV32IMC and Zicsr suites (RISCOF flow).
+- VGA (Phase 13) in Quartus and on the board: the framebuffer adds 40 M9K blocks (about 168 of 182 expected) and one input to the AHB read-data mux; the resource and timing numbers above predate it and must be re-measured.
 
 ---
 
@@ -239,6 +247,13 @@ The datapath lives in **`timur_soc`**:
 - **Split-bank ROM** — see `rom_ahb` under Phase 3.
 - **In `timur_soc`** — `is_compressed` travels to EX, where the link value is PC + 2 or PC + 4. Branch and JALR targets, and `mepc`, may be on any halfword.
 
+### Phase 13 — VGA Output
+
+- **`vga`** (`rtl/periph/`) — 640×480 at 60 Hz with a pixel every second clock (25 MHz from the 50 MHz clock, one clock domain); 800×525 total, syncs active low. A 320×240 framebuffer of 4-bit pixels (38,400 bytes in four 9600×8 byte lanes) is an AHB slave at `0x3000_0000` with byte, halfword and word access as in `ram_ahb`; each framebuffer pixel is shown as 2×2 screen pixels through a 16-entry palette of 12-bit colours. Registers on APB at `0x4000_0300` (see [VGA](#vga)): CTRL (enable), STATUS (vertical blank), SCROLL (framebuffer row shown at the top, for scrolling without copying), FRAME (frame counter), PALETTE.
+- **Shared read port** — each lane is a simple dual-port memory: the AHB data phase writes, and one read port serves both the video and AHB reads. The video fetches one word (8 pixels) per 32 clocks, in a fixed slot one word ahead; an AHB read whose address phase meets that slot waits one cycle (`HREADYOUT = 0`). Writes never wait.
+- **In `timur_soc`** — `HSEL_VGA` for `HADDR[31:16] = 0x3000` in `ahb_decoder`, APB page `0x03` in `ahb_apb_bridge`, the `vga_r/g/b[3:0]`, `vga_hs`, `vga_vs` outputs. The DMAC can copy straight into the framebuffer.
+- **Software** — `sw/runtime/vga.c` (pixels, rectangles, images, characters, a 40×30 console that `printf` writes to after `vga_console_init`), `sw/runtime/vga_font.c` (an 8×8 font drawn in `sw/gen_font.py`), `sw/img2vga.py` (PNG to a C header).
+
 ### Phase 12 — C Software Layer
 
 - **`sw/runtime/`** — the C runtime: memory layout (`linker.ld`), startup code (`crt0.S`), trap entry (`trap_entry.S`), UART driver (`uart.c`), newlib system calls (`syscalls.c`), trap dispatch (`trap.c`); headers in `sw/runtime/include/` (`timur.h`, `timur_defs.h`).
@@ -253,9 +268,11 @@ The datapath lives in **`timur_soc`**:
 | ----- | ----- | ---- | ----- |
 | `0x0000_0000 – 0x0000_FFFF` | ROM | 64 KB | Fetch port (IF) + AHB data port (loads, DMAC reads) |
 | `0x2000_0000 – 0x2000_FFFF` | RAM | 64 KB | `.data`, `.bss`, heap, stack; DMAC destination |
+| `0x3000_0000 – 0x3000_95FF` | VGA framebuffer | 37.5 KB | 320×240 pixels of 4 bits; `0x3000_9600 – 0x3000_FFFF` read 0, writes ignored; DMAC destination |
 | `0x4000_0000 – 0x4000_00FF` | UART (APB) | 256 B | DATA `0x00`, STATUS `0x04`, CTRL `0x08` |
 | `0x4000_0100 – 0x4000_01FF` | GPIO (APB) | 256 B | OUT `0x00`, IN `0x04`, DIR `0x08` |
 | `0x4000_0200 – 0x4000_02FF` | DMAC registers (APB) | 256 B | SRC `0x00`, DST `0x04`, LEN `0x08`, CTRL `0x0C`, STATUS `0x10` |
+| `0x4000_0300 – 0x4000_03FF` | VGA registers (APB) | 256 B | CTRL `0x00`, STATUS `0x04`, SCROLL `0x08`, FRAME `0x0C`, PALETTE `0x40`–`0x7C` |
 | anything else | default slave | — | Reads 0, writes ignored |
 
 APB3 has no byte strobes: peripheral registers are word-write only (a byte or halfword store writes the replicated value to the whole register), and registers are decoded on `PADDR[7:2]`.
@@ -327,12 +344,24 @@ All UART registers reset to 0, so the receiver starts disabled; software sets `r
 | Offset | Register | Access | Description |
 | ------ | -------- | ------ | ----------- |
 | `0x00` | DMAC_SRC | R/W | Source byte address (word-aligned): ROM or RAM |
-| `0x04` | DMAC_DST | R/W | Destination byte address (word-aligned): RAM |
+| `0x04` | DMAC_DST | R/W | Destination byte address (word-aligned): RAM or the VGA framebuffer |
 | `0x08` | DMAC_LEN | R/W | Number of 32-bit words; 0 = no transfer, done set at once |
 | `0x0C` | DMAC_CTRL | R/W | bit 0 start (self-clearing, ignored while busy), bit 1 `irq_enable`; any write clears done |
 | `0x10` | DMAC_STATUS | R | bit 0 busy, bit 1 done (sticky) |
 
-With `irq_enable` set, the DMAC requests the machine external interrupt while done is 1; any CTRL write clears done. Typical use: copy the `.data` section from ROM to RAM at boot, the hardware version of the `crt0` copy loop.
+With `irq_enable` set, the DMAC requests the machine external interrupt while done is 1; any CTRL write clears done. Typical use: copy the `.data` section from ROM to RAM at boot, the hardware version of the `crt0` copy loop, or a picture from ROM into the VGA framebuffer.
+
+### VGA
+
+| Offset | Register | Access | Description |
+| ------ | -------- | ------ | ----------- |
+| `0x00` | VGA_CTRL | R/W | bit 0 `enable` (resets to 1); 0 = black picture, syncs keep running |
+| `0x04` | VGA_STATUS | R | bit 0 `vblank`: the beam is in the vertical blanking interval (lines 480–524) |
+| `0x08` | VGA_SCROLL | R/W | Framebuffer row shown at the top of the screen, 0–239 (writes of 240 or more are ignored); the rows below it follow and wrap |
+| `0x0C` | VGA_FRAME | R | Frames started, counted at the start of each vertical blanking interval |
+| `0x40`–`0x7C` | VGA_PALETTE[0..15] | R/W | 12-bit colour `0xRGB` of pixel value 0–15; resets to the 16 standard VGA text-mode colours (0 black, 1 blue, … 15 white) |
+
+The framebuffer at `0x3000_0000` holds row *y* at byte 160·*y*; each byte holds two pixels, the left one in its low nibble, so a 32-bit word is eight pixels with the leftmost in bits 3:0. The picture is 640×480 at 60 Hz (25 MHz pixel rate, 25.175 MHz nominal), each framebuffer pixel shown as 2×2 screen pixels, on the DE10-Lite's 4-bit resistor DACs. Draw while `vblank` is 1 (or after FRAME changes) to avoid tearing. A framebuffer read that coincides with the video fetch takes one extra cycle; writes never wait.
 
 ---
 
@@ -345,7 +374,7 @@ With `irq_enable` set, the DMAC requests the machine external interrupt while do
 | Simulation | ModelSim-Intel FPGA Starter Edition 2020.1 (standalone), driven by `run_tests.tcl`; Questa-Altera FPGA Starter Edition or Icarus Verilog 13 are acceptable replacements |
 | PLL | ALTPLL via the IP Catalog (`cpu_pll.v` + `cpu_pll.qip`) |
 | Memory initialisation | `rom_lo.mif` / `rom_hi.mif` (synthesis), `rom_lo.hex` / `rom_hi.hex` (simulation) and `rom.hex` (32-bit words, testbenches), all from the same program |
-| Test programs | Python 3.10+, standard library only: `sw/gen_soc_tests.py` (system tests), `sw/gen_sw_tests.py` (C programs), `sw/gen_unit_vectors.py` (CSR file, trap unit), `sw/gen_decompressor_vectors.py` (decompressor), on the package `sw/timur_tools/` (assembler, RV32IMC reference model, vector writer) |
+| Test programs | Python 3.10+, standard library only: `sw/gen_soc_tests.py` (system tests), `sw/gen_sw_tests.py` (C programs), `sw/gen_unit_vectors.py` (CSR file, trap unit), `sw/gen_decompressor_vectors.py` (decompressor), `sw/gen_font.py` (VGA console font), on the package `sw/timur_tools/` (assembler, RV32IMC reference model, vector writer, PNG reader) |
 | Checks | ruff, mypy, pytest, clang-format, clang-tidy, cppcheck, shellcheck (`requirements-dev.txt`), GCC `-fanalyzer`; see [Development and Checks](#development-and-checks) |
 | Software | xPack `riscv-none-elf-gcc` 14.2.0-3 (GCC 14.2, newlib-nano) |
 | On-chip debug | Signal Tap Logic Analyzer |
@@ -411,12 +440,14 @@ Every cycle of every program the testbench also checks that the fetch window hol
 | `selftest.c` | `.data`/`.sdata` initial values, `.bss`/`.sbss` zeroed, `.rodata` through the ROM's AHB port, a constructor; recursion and stack frames; `+ - * / %` including negative operands, division by zero and `INT_MIN / -1`, MULH/MULHU/MULHSU, 64-bit arithmetic and shifts; `snprintf`, `sscanf`, `strtol`, string functions, `qsort`; `malloc`/`calloc`/`realloc`, heap exhaustion returning `NULL` below the stack; ECALL system calls and register preservation; CSRs; the runtime's limits (ECALL arguments outside ROM/RAM or too long, file descriptors other than the console, `sbrk` beyond the heap). 255 checks against values computed by the compiler or defined by the M extension, also run with HREADY waits |
 | `traps.c` | Exceptions handled by the program — illegal 32- and 16-bit instructions, EBREAK and C.EBREAK, misaligned LW/LH/LHU/SW/SH — with `mcause`, `mepc` and `mtval` checked, then the runtime's report of an unhandled one (LEDs `0x302`) |
 | `io.c` | Console input through `fgets`, `sscanf` and `getchar`; DMA copy from ROM with the done interrupt; a masked interrupt pending in `mip.MEIP` until `MIE` is set; a line received by the UART receive interrupt. The testbench types the input on `uart_rx` |
+| `vga.c` | VGA registers after reset, palette and SCROLL ranges, framebuffer stores of every size and accesses beyond its end, `vga_clear`/`vga_set_pixel`/`vga_fill_rect`/`vga_blit` checked pixel by pixel, characters against the font, a DMA copy from ROM into the framebuffer, the console (`printf` on the screen, wrap, hardware scrolling); 57 checks, also run with HREADY waits |
 
 ### Regenerating vectors and images
 
-From any directory (the scripts find the project they are in; `--root DIR` or `TIMUR_ROOT` selects another), or all four with `make regen`:
+From any directory (the scripts find the project they are in; `--root DIR` or `TIMUR_ROOT` selects another), or all five with `make regen`:
 
 ```bash
+python3 sw/gen_font.py                   # sw/runtime/vga_font.c from the glyph pictures in the script
 python3 sw/gen_soc_tests.py              # system tests, rom.* (default seed 20260926); --seed N for another random program
 python3 sw/gen_sw_tests.py               # C programs: builds sw/tests/*.c, runs the model, writes vectors/timur_sw_*
 python3 sw/gen_unit_vectors.py           # csr_file and trap_unit vectors
@@ -445,8 +476,12 @@ Pins (DE10-Lite golden top, 3.3-V LVTTL):
 | `leds[9:0]` | `LEDR[9:0]` |
 | `uart_tx` | `GPIO[0]` (PIN_V10), header pin 1 → adapter RX |
 | `uart_rx` | `GPIO[1]` (PIN_W10), header pin 2 ← adapter TX |
+| `vga_r[3:0]` | `VGA_R[3:0]` (PIN_AA1, V1, Y2, Y1) |
+| `vga_g[3:0]` | `VGA_G[3:0]` (PIN_W1, T2, R2, R1) |
+| `vga_b[3:0]` | `VGA_B[3:0]` (PIN_P1, T1, P4, N2) |
+| `vga_hs`, `vga_vs` | `VGA_HS` (PIN_N3), `VGA_VS` (PIN_N1) |
 
-Use a 3.3 V adapter only (never 5 V) and connect its ground to a GND pin of the GPIO header. Terminal settings: 115200 8N1, no flow control; the C runtime sends CR LF for every newline and accepts CR (Enter) as the end of a line.
+Use a 3.3 V adapter only (never 5 V) and connect its ground to a GND pin of the GPIO header. Terminal settings: 115200 8N1, no flow control; the C runtime sends CR LF for every newline and accepts CR (Enter) as the end of a line. Any monitor with a VGA input that accepts 640×480 at 60 Hz shows the VGA output; `apps/vga_demo.c` is a first test (`python3 sw/build.py --install apps/vga_demo.c`).
 
 The ROM contents come from `rom_lo.mif` and `rom_hi.mif` in the project root. Hardware bring-up order — for steps 1–3 copy the program's `_lo.mif` and `_hi.mif` over `rom_lo.mif` and `rom_hi.mif` (and its `_lo.hex`/`_hi.hex` over `rom_lo.hex`/`rom_hi.hex` for simulation), for steps 5 and 6 run `sw/build.py --install`, then recompile:
 
@@ -469,18 +504,36 @@ A new ROM image does not need a full compilation: after one full compilation in 
 
 | File | Role |
 | ---- | ---- |
-| `sw/runtime/include/timur.h` | The interface for programs: peripheral registers, CSR access macros, trap interface, system calls, raw UART driver (Doxygen comments) |
+| `sw/runtime/include/timur.h` | The interface for programs: peripheral registers, CSR access macros, trap interface, system calls, raw UART driver, VGA driver (Doxygen comments) |
 | `sw/runtime/include/timur_defs.h` | Memory map, register offsets and bits, CSR fields, trap causes, trap-frame layout: plain `#define`s shared by C and assembly |
-| `sw/runtime/include/timur_runtime.h` | Internal: one prototype for each newlib stub, the linker-script symbols |
+| `sw/runtime/include/timur_runtime.h` | Internal: one prototype for each newlib stub, the linker-script symbols, the console hook, the font table |
 | `sw/runtime/linker.ld` | Memory layout (below); `__stack_size` (default 8 KB) can be changed with `-Wl,--defsym=__stack_size=N` |
 | `sw/runtime/crt0.S` | Startup code and `_halt` |
 | `sw/runtime/trap_entry.S` | `trap_entry`: saves the caller-saved registers, calls `timur_trap`, MRET |
 | `sw/runtime/uart.c` | Raw, polled UART driver (`uart_putc`, `uart_getc`, `uart_puts`, `uart_puthex`) |
-| `sw/runtime/syscalls.c` | newlib system calls: the UART is `stdin`, `stdout` and `stderr`; heap for `malloc`; `_exit` |
+| `sw/runtime/syscalls.c` | newlib system calls: the UART is `stdin`, `stdout` and `stderr` (output also to the VGA console after `vga_console_init`); heap for `malloc`; `_exit` |
 | `sw/runtime/trap.c` | Trap dispatch: ECALL system calls, `irq_handler`, `exception_handler`, the report of unhandled traps |
+| `sw/runtime/vga.c` | VGA driver: `vga_clear`, `vga_set_pixel`, `vga_get_pixel`, `vga_fill_rect`, `vga_blit`, `vga_show_image` (full screen by DMA), `vga_set_palette`, `vga_wait_vblank`, `vga_draw_char`; the 40×30 console (`vga_console_init`, `vga_putc`, `vga_puts`, `vga_set_colours`, `vga_set_cursor`) |
+| `sw/runtime/vga_font.c` | The 8×8 console font, generated by `sw/gen_font.py` |
 | `sw/build.py` | Compile, link, check and convert a program |
 | `sw/bin2mem.py` | Binary-to-memory converter |
 | `sw/run_model.py` | Run a built program on the reference model; write a vector file to run it on the RTL |
+| `sw/img2vga.py` | Convert a PNG into a C header for the framebuffer: scaled (or `--keep-aspect`), reduced to 16 colours (median cut, or `--palette vga`) |
+
+**VGA.** The driver is linked only into programs that call it. After `vga_console_init(fg, bg)`, `printf` and `puts` write to the screen as well as the UART; the console scrolls with the SCROLL register instead of copying. A picture:
+
+```bash
+python3 sw/img2vga.py photo.png -o apps/photo.h      # 320x240, 16 colours; --size WxH, --keep-aspect, --palette vga
+```
+
+```c
+#include "photo.h"
+for (int i = 0; i < 16; i++)
+    vga_set_palette(i, photo_palette[i]);
+vga_show_image(photo_pixels);                        /* or vga_blit(x, y, w, h, pixels) for smaller ones */
+```
+
+A full-screen picture takes 38,400 of the ROM's 65,536 bytes.
 
 **Memory layout.** ROM (`0x0000_0000`, 64 KB): `.text` from address 0 (`_start` first), `.rodata`/`.srodata`, `.init_array`, then the load image of `.data`. RAM (`0x2000_0000`, 64 KB): `.data`/`.sdata` (copied at boot), `.sbss`/`.bss` (cleared at boot), the heap from `_end` up to `_heap_end`, and the stack (`__stack_size` bytes below `_stack_top` = `0x2001_0000`). `gp` points at the small data plus `0x800`. The script asserts that the image fits in the ROM and that `.data` and `.bss` leave room for the stack.
 
@@ -560,9 +613,10 @@ Phase 9  ✅  AHB fabric and system (arbiter, bus mux, decoder, bridge, DMA engi
 Phase 10 ✅  CSRs, traps, machine mode
 Phase 11 ✅  C extension (decompressor, split-bank ROM)
 Phase 12 ✅  C software layer (linker script, crt0, syscalls, trap handler, converter)
+Phase 13 🧪  VGA output (controller, framebuffer, driver, console, image converter)
 ```
 
-✅ = implemented, verified in simulation and on the DE10-Lite, timing closed in Quartus (see [Current Status](#current-status)).
+✅ = implemented, verified in simulation and on the DE10-Lite, timing closed in Quartus (see [Current Status](#current-status)). 🧪 = implemented and verified in simulation; Quartus compile and board test pending.
 
 ---
 
@@ -579,22 +633,24 @@ Timur-RV32IMC/
 │   ├── pipeline/     # if_id_reg, id_ex_reg, ex_mem_reg, mem_wb_reg, forwarding_unit,
 │   │                 # hazard_detection_unit, store_aligner, load_formatter
 │   ├── bus/          # cpu_ahb_master, ahb_arbiter, ahb_bus_mux, ahb_decoder, ahb_apb_bridge, dmac_ahb_master
-│   ├── periph/       # gpio_apb, uart_apb, dmac_apb_regs
+│   ├── periph/       # gpio_apb, uart_apb, dmac_apb_regs, vga
 │   ├── csr/          # csr_file, trap_unit
 │   └── top/          # Timur_RV32IMC (board wrapper), timur_soc
 ├── tb/               # <module>_tb.v, one per module; timur_sw_tb.v (C programs)
 ├── vectors/          # <module>_vectors.txt, program images, expected UART output (.out) and input (.in)
 ├── sw/
-│   ├── runtime/      # C runtime: linker.ld, crt0.S, trap_entry.S, uart.c, syscalls.c, trap.c
+│   ├── runtime/      # C runtime: linker.ld, crt0.S, trap_entry.S, uart.c, syscalls.c, trap.c, vga.c, vga_font.c
 │   │   └── include/  # timur.h (programs), timur_defs.h (C and assembly), timur_runtime.h
 │   ├── tests/        # C test programs
 │   ├── programs/     # directed and bring-up assembly test programs (.s)
 │   ├── timur_tools/  # Python package: assembler, reference model, builder, image files, ...
 │   ├── build.py, bin2mem.py, run_model.py, analyze.py   # build flow, converter, model runner, static analysis
-│   ├── gen_soc_tests.py, gen_sw_tests.py, gen_unit_vectors.py, gen_decompressor_vectors.py
+│   ├── gen_soc_tests.py, gen_sw_tests.py, gen_unit_vectors.py, gen_decompressor_vectors.py, gen_font.py
+│   ├── img2vga.py                                       # PNG -> C header for the VGA framebuffer
 │   ├── program_board.sh                                 # ROM image -> programming files -> board
 │   └── bringup/      # hardware bring-up programs (.hex and _lo/_hi banks)
 ├── tests/host/       # pytest tests of the Python tools and the golden files
+├── apps/             # your own programs: first.c, vga_demo.c
 ├── rom.hex           # default ROM image (final cross-phase program), 32-bit words
 ├── rom_lo.hex, rom_hi.hex, rom_lo.mif, rom_hi.mif      # the same image as the two ROM banks
 ├── ram.mif           # zero-filled RAM image (not used: the RAM has no initialisation file)

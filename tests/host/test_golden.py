@@ -15,6 +15,7 @@ from conftest import assert_matches_repository, needs_pinned_toolchain, run_scri
 # Every file these generators write; removed first so that an identical result
 # proves the file was really written again.
 ALWAYS_REWRITTEN = (
+    "sw/runtime/vga_font.c",
     "vectors/csr_file_vectors.txt",
     "vectors/trap_unit_vectors.txt",
     "vectors/timur_soc_vectors.txt",
@@ -59,6 +60,7 @@ def test_generators_reproduce_committed_files_with_toolchain(project: Path) -> N
         path.unlink()
 
     for script in (
+        "gen_font.py",
         "gen_unit_vectors.py",
         "gen_decompressor_vectors.py",
         "gen_soc_tests.py",
@@ -76,7 +78,7 @@ def test_generators_reproduce_committed_files_without_toolchain(project: Path) -
     for path in (project / "vectors").glob("timur_sw_*.out"):
         path.unlink()
 
-    for script in ("gen_unit_vectors.py", "gen_soc_tests.py", "gen_sw_tests.py"):
+    for script in ("gen_font.py", "gen_unit_vectors.py", "gen_soc_tests.py", "gen_sw_tests.py"):
         _run_ok(project, script, with_toolchain=False)
 
     assert_matches_repository(project)

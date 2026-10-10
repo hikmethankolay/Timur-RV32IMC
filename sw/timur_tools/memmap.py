@@ -12,17 +12,21 @@ ROM_BASE = 0x0000_0000
 ROM_SIZE = 0x1_0000  # 64 KB: code, constants, initial values of .data
 RAM_BASE = 0x2000_0000
 RAM_SIZE = 0x1_0000  # 64 KB: .data, .bss, heap, stack
+VGA_FB_BASE = 0x3000_0000
+VGA_FB_SIZE = 38_400  # 320 x 240 pixels of 4 bits; the rest of the 64 KB reads 0
 
 # ---- APB peripherals --------------------------------------------------------
 APB_BASE = 0x4000_0000
 UART_BASE = APB_BASE + 0x000
 GPIO_BASE = APB_BASE + 0x100
 DMAC_BASE = APB_BASE + 0x200
+VGA_BASE = APB_BASE + 0x300
 
 # register offsets from the peripheral's base
 UART_DATA, UART_STATUS, UART_CTRL = 0x00, 0x04, 0x08
 GPIO_OUT, GPIO_IN, GPIO_DIR = 0x00, 0x04, 0x08
 DMAC_SRC, DMAC_DST, DMAC_LEN, DMAC_CTRL, DMAC_STATUS = 0x00, 0x04, 0x08, 0x0C, 0x10
+VGA_CTRL, VGA_STATUS, VGA_SCROLL, VGA_FRAME, VGA_PALETTE = 0x00, 0x04, 0x08, 0x0C, 0x40
 
 UART_STATUS_TX_BUSY = 1 << 0
 UART_STATUS_RX_VALID = 1 << 1
@@ -33,6 +37,18 @@ DMAC_CTRL_START = 1 << 0
 DMAC_CTRL_IRQ = 1 << 1
 DMAC_STATUS_BUSY = 1 << 0
 DMAC_STATUS_DONE = 1 << 1
+VGA_CTRL_ENABLE = 1 << 0
+VGA_STATUS_VBLANK = 1 << 0
+
+VGA_WIDTH, VGA_HEIGHT = 320, 240  # framebuffer pixels; shown 2 x 2 at 640 x 480
+VGA_ROW_BYTES = VGA_WIDTH // 2  # two 4-bit pixels per byte, the left one in the low nibble
+VGA_COLOURS = 16
+VGA_COLOUR_MASK = 0xFFF  # palette entries: {R, G, B}, 4 bits each
+#: Palette after reset: the 16 standard VGA text-mode colours.
+VGA_PALETTE_RESET = (
+    0x000, 0x00A, 0x0A0, 0x0AA, 0xA00, 0xA0A, 0xA50, 0xAAA,
+    0x555, 0x55F, 0x5F5, 0x5FF, 0xF55, 0xF5F, 0xFF5, 0xFFF,
+)  # fmt: skip
 
 GPIO_WIDTH = 10  # LEDR[9:0] and SW[9:0] of the DE10-Lite
 GPIO_MASK = (1 << GPIO_WIDTH) - 1

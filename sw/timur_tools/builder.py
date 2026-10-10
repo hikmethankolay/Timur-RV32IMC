@@ -29,7 +29,15 @@ DEFAULT_OPT = "-O2"
 DEFAULT_STACK_SIZE = 8192  # sw/runtime/linker.ld: __stack_size
 
 #: Sources of the runtime in sw/runtime/, in link order (crt0.S first).
-RUNTIME_SOURCES = ("crt0.S", "trap_entry.S", "uart.c", "syscalls.c", "trap.c")
+RUNTIME_SOURCES = (
+    "crt0.S",
+    "trap_entry.S",
+    "uart.c",
+    "syscalls.c",
+    "trap.c",
+    "vga.c",
+    "vga_font.c",
+)
 LINKER_SCRIPT = "linker.ld"
 
 #: GNU C: the runtime uses inline assembly and statement expressions.

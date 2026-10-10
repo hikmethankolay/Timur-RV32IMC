@@ -1,18 +1,18 @@
 `timescale 1ns/1ps
 //
-// ahb_decoder_tb: exactly one HSEL per mapped region, none for unmapped
+// ahb_decoder_tb: exactly one HSEL per mapped region (ROM, RAM, VGA, APB), none for unmapped
 // addresses; HRDATA/HREADY multiplexed with the registered data-phase select,
 // which only moves when HREADY = 1; default slave answers unmapped transfers
 // (Phase 9).
-// Vector: HRESETn HADDR HRDATA_ROM HRDATA_RAM HRDATA_APB HREADYOUT_ROM/RAM/APB
+// Vector: HRESETn HADDR HRDATA_ROM/RAM/VGA/APB HREADYOUT_ROM/RAM/VGA/APB
 //         exp_HSEL exp_HRDATA exp_HREADY wait_type   (x = don't care)
 //
 module ahb_decoder_tb;
 
     reg         clk, rst_n;
-    reg  [31:0] HADDR, HRDATA_ROM, HRDATA_RAM, HRDATA_APB;
-    reg         HREADYOUT_ROM, HREADYOUT_RAM, HREADYOUT_APB;
-    wire        HSEL_ROM, HSEL_RAM, HSEL_APB;
+    reg  [31:0] HADDR, HRDATA_ROM, HRDATA_RAM, HRDATA_VGA, HRDATA_APB;
+    reg         HREADYOUT_ROM, HREADYOUT_RAM, HREADYOUT_VGA, HREADYOUT_APB;
+    wire        HSEL_ROM, HSEL_RAM, HSEL_VGA, HSEL_APB;
     wire [31:0] HRDATA;
     wire        HREADY;
 
@@ -22,12 +22,15 @@ module ahb_decoder_tb;
         .HADDR         (HADDR),
         .HSEL_ROM      (HSEL_ROM),
         .HSEL_RAM      (HSEL_RAM),
+        .HSEL_VGA      (HSEL_VGA),
         .HSEL_APB      (HSEL_APB),
         .HRDATA_ROM    (HRDATA_ROM),
         .HRDATA_RAM    (HRDATA_RAM),
+        .HRDATA_VGA    (HRDATA_VGA),
         .HRDATA_APB    (HRDATA_APB),
         .HREADYOUT_ROM (HREADYOUT_ROM),
         .HREADYOUT_RAM (HREADYOUT_RAM),
+        .HREADYOUT_VGA (HREADYOUT_VGA),
         .HREADYOUT_APB (HREADYOUT_APB),
         .HRDATA        (HRDATA),
         .HREADY        (HREADY)
@@ -51,7 +54,7 @@ module ahb_decoder_tb;
     integer         fd, n;
     integer         total, failed;
     reg [8*256-1:0] line;
-    reg [2:0]       e_hsel;
+    reg [3:0]       e_hsel;
     reg [31:0]      e_hrdata;
     reg             e_hready, wait_type;
 
@@ -65,8 +68,8 @@ module ahb_decoder_tb;
         clk = 1'b0;
         rst_n = 1'b1;
         HADDR = 32'b0;
-        {HRDATA_ROM, HRDATA_RAM, HRDATA_APB} = 96'b0;
-        {HREADYOUT_ROM, HREADYOUT_RAM, HREADYOUT_APB} = 3'b111;
+        {HRDATA_ROM, HRDATA_RAM, HRDATA_VGA, HRDATA_APB} = 128'b0;
+        {HREADYOUT_ROM, HREADYOUT_RAM, HREADYOUT_VGA, HREADYOUT_APB} = 4'b1111;
         total = 0;
         failed = 0;
         #1;
@@ -78,10 +81,10 @@ module ahb_decoder_tb;
             while (!$feof(fd)) begin
                 line = 0;
                 n = $fgets(line, fd);
-                if ($sscanf(line, "%b %h %h %h %h %b %b %b %b %h %b %b", rst_n, HADDR,
-                            HRDATA_ROM, HRDATA_RAM, HRDATA_APB,
-                            HREADYOUT_ROM, HREADYOUT_RAM, HREADYOUT_APB,
-                            e_hsel, e_hrdata, e_hready, wait_type) == 12) begin
+                if ($sscanf(line, "%b %h %h %h %h %h %b %b %b %b %b %h %b %b", rst_n, HADDR,
+                            HRDATA_ROM, HRDATA_RAM, HRDATA_VGA, HRDATA_APB,
+                            HREADYOUT_ROM, HREADYOUT_RAM, HREADYOUT_VGA, HREADYOUT_APB,
+                            e_hsel, e_hrdata, e_hready, wait_type) == 14) begin
                     if (wait_type == 1'b0)
                         #3;
                     else begin
@@ -89,15 +92,15 @@ module ahb_decoder_tb;
                         #1;
                     end
                     total = total + 1;
-                    if (!match({29'b0, HSEL_APB, HSEL_RAM, HSEL_ROM}, {29'b0, e_hsel}) ||
+                    if (!match({28'b0, HSEL_APB, HSEL_VGA, HSEL_RAM, HSEL_ROM}, {28'b0, e_hsel}) ||
                         !match(HRDATA, e_hrdata) || !match({31'b0, HREADY}, {31'b0, e_hready})) begin
                         failed = failed + 1;
-                        $display("FAIL rst_n=%b haddr=%h ready_out=%b%b%b | got hsel=%b%b%b hrdata=%h hready=%b | expected %b %h %b",
-                                 rst_n, HADDR, HREADYOUT_APB, HREADYOUT_RAM, HREADYOUT_ROM,
-                                 HSEL_APB, HSEL_RAM, HSEL_ROM, HRDATA, HREADY, e_hsel, e_hrdata, e_hready);
+                        $display("FAIL rst_n=%b haddr=%h ready_out=%b%b%b%b | got hsel=%b%b%b%b hrdata=%h hready=%b | expected %b %h %b",
+                                 rst_n, HADDR, HREADYOUT_APB, HREADYOUT_VGA, HREADYOUT_RAM, HREADYOUT_ROM,
+                                 HSEL_APB, HSEL_VGA, HSEL_RAM, HSEL_ROM, HRDATA, HREADY, e_hsel, e_hrdata, e_hready);
                     end else
-                        $display("PASS rst_n=%b haddr=%h wait=%b | hsel=%b%b%b hrdata=%h hready=%b",
-                                 rst_n, HADDR, wait_type, HSEL_APB, HSEL_RAM, HSEL_ROM, HRDATA, HREADY);
+                        $display("PASS rst_n=%b haddr=%h wait=%b | hsel=%b%b%b%b hrdata=%h hready=%b",
+                                 rst_n, HADDR, wait_type, HSEL_APB, HSEL_VGA, HSEL_RAM, HSEL_ROM, HRDATA, HREADY);
                 end
             end
             $fclose(fd);

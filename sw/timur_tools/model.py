@@ -14,7 +14,9 @@ value that would steer the program (a branch, an address, a CSR write) stops
 the model with TimingDependentError.
 
 Peripherals are modelled without delay: the UART sends a byte at once (it is
-never busy) and the DMAC copies a block at once. A program whose output
+never busy) and the DMAC copies a block at once. The VGA framebuffer is plain
+memory; the VGA STATUS and FRAME registers follow the beam, so loads of them
+read 0 and taint their destination. A program whose output
 depends on those delays prints something else on the RTL.
 
 With fake_time the counters count executed instructions instead and taint
@@ -83,6 +85,7 @@ DEFAULT_RUN_LIMIT = 200_000
 _REGION_SHIFT = 16
 _ROM_REGION = memmap.ROM_BASE >> _REGION_SHIFT
 _RAM_REGION = memmap.RAM_BASE >> _REGION_SHIFT
+_VGA_REGION = memmap.VGA_FB_BASE >> _REGION_SHIFT
 _APB_REGION = memmap.APB_BASE >> _REGION_SHIFT
 _WORD_INDEX_MASK = 0xFFFC  # word-aligned offset within a 64 KB memory
 
@@ -90,6 +93,7 @@ _WORD_INDEX_MASK = 0xFFFC  # word-aligned offset within a 64 KB memory
 _PAGE_UART = (memmap.UART_BASE - memmap.APB_BASE) >> 8
 _PAGE_GPIO = (memmap.GPIO_BASE - memmap.APB_BASE) >> 8
 _PAGE_DMAC = (memmap.DMAC_BASE - memmap.APB_BASE) >> 8
+_PAGE_VGA = (memmap.VGA_BASE - memmap.APB_BASE) >> 8
 _UART_DATA, _UART_STATUS, _UART_CTRL = (
     offset >> 2 for offset in (memmap.UART_DATA, memmap.UART_STATUS, memmap.UART_CTRL)
 )
@@ -106,6 +110,13 @@ _DMAC_SRC, _DMAC_DST, _DMAC_LEN, _DMAC_CTRL, _DMAC_STATUS = (
         memmap.DMAC_STATUS,
     )
 )
+
+_VGA_CTRL, _VGA_STATUS, _VGA_SCROLL, _VGA_FRAME = (
+    offset >> 2
+    for offset in (memmap.VGA_CTRL, memmap.VGA_STATUS, memmap.VGA_SCROLL, memmap.VGA_FRAME)
+)
+_VGA_PALETTE = memmap.VGA_PALETTE >> 2  # PADDR[6] = 1: entries 0..15 on PADDR[5:2]
+_VGA_TIMING = frozenset({memmap.VGA_BASE + memmap.VGA_STATUS, memmap.VGA_BASE + memmap.VGA_FRAME})
 
 _BYTE_ENABLE_WORD = 0b1111
 
@@ -260,6 +271,10 @@ class TimurModel:
         self.ram = bytearray(memmap.RAM_SIZE)
         self.ram_written: set[int] = set()  # word offsets written by the program
         self.ram_taint: set[int] = set()  # word offsets holding timing-dependent values
+        self.vram = bytearray(memmap.VGA_FB_SIZE)
+        self.vram_taint: set[int] = set()
+        self.vga_enable, self.vga_scroll = 1, 0
+        self.vga_palette = list(memmap.VGA_PALETTE_RESET)
         self.x = [0] * 32
         self.taint: set[int] = set()  # registers holding timing-dependent values
         self.pc = 0
@@ -340,6 +355,11 @@ class TimurModel:
         if region == _RAM_REGION:
             index = address & _WORD_INDEX_MASK
             return int.from_bytes(self.ram[index : index + 4], "little")
+        if region == _VGA_REGION:
+            index = address & _WORD_INDEX_MASK
+            if index >= memmap.VGA_FB_SIZE:
+                return 0
+            return int.from_bytes(self.vram[index : index + 4], "little")
         if region == _APB_REGION:
             return self._read_apb((address >> 8) & 0xFF, (address >> 2) & 0x3F)
         return 0  # default slave
@@ -368,6 +388,10 @@ class TimurModel:
                 _DMAC_CTRL: memmap.DMAC_CTRL_IRQ if dmac.irq_enable else 0,
                 _DMAC_STATUS: memmap.DMAC_STATUS_DONE if dmac.done else 0,
             }.get(reg, 0)
+        if page == _PAGE_VGA:  # STATUS and FRAME follow the beam: 0, tainted by the caller
+            if reg & 0x10:
+                return self.vga_palette[reg & 0xF]
+            return {_VGA_CTRL: self.vga_enable, _VGA_SCROLL: self.vga_scroll}.get(reg, 0)
         return 0
 
     def uart_deliver(self) -> None:
@@ -391,6 +415,24 @@ class TimurModel:
                 self.ram[index + lane] = (data >> (8 * lane)) & 0xFF
         self.ram_written.add(index)
 
+    def write_vram_word(self, address: int, data: int, byte_enable: int) -> None:
+        """Write the enabled byte lanes of a framebuffer word; beyond its end, nothing."""
+        index = address & _WORD_INDEX_MASK
+        if index >= memmap.VGA_FB_SIZE:
+            return
+        for lane in range(4):
+            if byte_enable >> lane & 1:
+                self.vram[index + lane] = (data >> (8 * lane)) & 0xFF
+
+    def taint_set(self, address: int) -> set[int] | None:
+        """The taint set of the memory holding address (RAM or framebuffer), if any."""
+        region = address >> _REGION_SHIFT
+        if region == _RAM_REGION:
+            return self.ram_taint
+        if region == _VGA_REGION:
+            return self.vram_taint
+        return None
+
     def store(self, address: int, funct3: int, value: int) -> None:
         """A store of the size in funct3; ROM and unmapped addresses ignore it."""
         size = funct3 & F3_SIZE_MASK
@@ -401,14 +443,17 @@ class TimurModel:
         else:
             data = value
         region = address >> _REGION_SHIFT
-        if region == _RAM_REGION:
+        if region in (_RAM_REGION, _VGA_REGION):
             if size == F3_BYTE:
                 byte_enable = 1 << (address & 3)
             elif size == F3_HALF:
                 byte_enable = 0b1100 if address & 2 else 0b0011
             else:
                 byte_enable = _BYTE_ENABLE_WORD
-            self.write_ram_word(address, data, byte_enable)
+            if region == _RAM_REGION:
+                self.write_ram_word(address, data, byte_enable)
+            else:
+                self.write_vram_word(address, data, byte_enable)
         elif region == _APB_REGION:
             # APB has no byte strobes: every store writes the whole register
             self._write_apb((address >> 8) & 0xFF, (address >> 2) & 0x3F, data)
@@ -436,15 +481,27 @@ class TimurModel:
                 dmac.irq_enable, dmac.done = (data >> 1) & 1, 0
                 if data & memmap.DMAC_CTRL_START:
                     self._dma_copy()
+        elif page == _PAGE_VGA:
+            if reg & 0x10:
+                self.vga_palette[reg & 0xF] = data & memmap.VGA_COLOUR_MASK
+            elif reg == _VGA_CTRL:
+                self.vga_enable = data & memmap.VGA_CTRL_ENABLE
+            elif reg == _VGA_SCROLL and data < memmap.VGA_HEIGHT:
+                self.vga_scroll = data
 
     def _dma_copy(self) -> None:
-        """The whole transfer at once (the SoC takes many cycles); only RAM is written."""
+        """The whole transfer at once (the SoC takes many cycles); RAM and the framebuffer
+        take the writes, other slaves ignore them."""
         dmac = self.dmac
         for index in range(dmac.length):
             dst = (dmac.dst + 4 * index) & MASK
-            if dst >> _REGION_SHIFT == _RAM_REGION:
+            region = dst >> _REGION_SHIFT
+            if region in (_RAM_REGION, _VGA_REGION):
                 word = self.read_word((dmac.src + 4 * index) & MASK)
-                self.write_ram_word(dst, word, _BYTE_ENABLE_WORD)
+                if region == _RAM_REGION:
+                    self.write_ram_word(dst, word, _BYTE_ENABLE_WORD)
+                else:
+                    self.write_vram_word(dst, word, _BYTE_ENABLE_WORD)
         dmac.done = 1
 
     def load(self, address: int, funct3: int) -> int:
@@ -523,21 +580,22 @@ class TimurModel:
                 self.trap(memmap.CAUSE_LOAD_MISALIGNED, address)
                 return False
             result = self.load(address, funct3)
+            taint_set = self.taint_set(address)
             result_taint = (
-                address >> _REGION_SHIFT == _RAM_REGION
-                and (address & _WORD_INDEX_MASK) in self.ram_taint
-            )
+                taint_set is not None and (address & _WORD_INDEX_MASK) in taint_set
+            ) or (address & ~3) in _VGA_TIMING
         elif opcode == OP_STORE:
             address = (a + imm_s(ins)) & MASK
             if _misaligned(funct3, address):
                 self.trap(memmap.CAUSE_STORE_MISALIGNED, address)
                 return False
             self.store(address, funct3, b)
-            if address >> _REGION_SHIFT == _RAM_REGION:
+            taint_set = self.taint_set(address)
+            if taint_set is not None:
                 if rs2 in self.taint:
-                    self.ram_taint.add(address & _WORD_INDEX_MASK)
+                    taint_set.add(address & _WORD_INDEX_MASK)
                 elif funct3 & F3_SIZE_MASK == F3_WORD:  # a whole clean word
-                    self.ram_taint.discard(address & _WORD_INDEX_MASK)
+                    taint_set.discard(address & _WORD_INDEX_MASK)
         elif opcode == OP_BRANCH:
             if _branch_taken(funct3, a, b):
                 next_pc = (pc + imm_b(ins)) & MASK

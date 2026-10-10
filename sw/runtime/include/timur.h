@@ -2,8 +2,8 @@
  * @file timur.h
  * @brief The C interface of the Timur RV32IMC SoC and its runtime.
  *
- * Peripheral registers, CSR access, the trap interface, system calls and the
- * raw UART driver. Programs include this header; sw/build.py puts its folder
+ * Peripheral registers, CSR access, the trap interface, system calls, the
+ * raw UART driver and the VGA driver. Programs include this header; sw/build.py puts its folder
  * on the include path. The numeric constants live in timur_defs.h, which the
  * assembly sources share.
  *
@@ -37,6 +37,15 @@
 #define DMAC_LEN    TIMUR_REG(TIMUR_DMAC_BASE + DMAC_LEN_OFFSET)
 #define DMAC_CTRL   TIMUR_REG(TIMUR_DMAC_BASE + DMAC_CTRL_OFFSET)
 #define DMAC_STATUS TIMUR_REG(TIMUR_DMAC_BASE + DMAC_STATUS_OFFSET)
+
+#define VGA_CTRL   TIMUR_REG(TIMUR_VGA_BASE + VGA_CTRL_OFFSET) /**< VGA_ENABLE */
+#define VGA_STATUS TIMUR_REG(TIMUR_VGA_BASE + VGA_STATUS_OFFSET) /**< VGA_VBLANK */
+#define VGA_SCROLL TIMUR_REG(TIMUR_VGA_BASE + VGA_SCROLL_OFFSET) /**< top row, 0-239 */
+#define VGA_FRAME  TIMUR_REG(TIMUR_VGA_BASE + VGA_FRAME_OFFSET) /**< frame counter */
+/** Palette entry i (0-15): 0xRGB, 4 bits per colour. */
+#define VGA_PALETTE(i) TIMUR_REG(TIMUR_VGA_BASE + VGA_PALETTE_OFFSET + 4u * (uint32_t)(i))
+/** The framebuffer, VGA_ROW_BYTES bytes per row (see timur_defs.h for the layout). */
+#define VGA_FRAMEBUFFER ((volatile uint8_t *)TIMUR_VGA_FB_BASE)
 
 /* ---- CSRs ---------------------------------------------------------------------------- */
 
@@ -145,6 +154,76 @@ int uart_getc(void);
 void uart_puts(const char *s);
 /** Send value as eight upper-case hex digits. */
 void uart_puthex(uint32_t value);
+
+/* ---- VGA ----------------------------------------------------------------------------------
+ * 320 x 240 pixels, 16 colours from a palette, shown at 640 x 480. Coordinates are
+ * screen coordinates: (0, 0) is the top-left pixel whatever the scroll position.
+ * Drawing outside the screen is clipped. The standard colours after reset: */
+enum vga_colour {
+    VGA_BLACK,
+    VGA_BLUE,
+    VGA_GREEN,
+    VGA_CYAN,
+    VGA_RED,
+    VGA_MAGENTA,
+    VGA_BROWN,
+    VGA_LIGHT_GREY,
+    VGA_DARK_GREY,
+    VGA_LIGHT_BLUE,
+    VGA_LIGHT_GREEN,
+    VGA_LIGHT_CYAN,
+    VGA_LIGHT_RED,
+    VGA_LIGHT_MAGENTA,
+    VGA_YELLOW,
+    VGA_WHITE
+};
+
+/** Fill the screen with one colour and scroll back to row 0. */
+void vga_clear(uint8_t colour);
+/** Set one pixel. */
+void vga_set_pixel(int x, int y, uint8_t colour);
+/** The colour of one pixel (0 outside the screen). */
+uint8_t vga_get_pixel(int x, int y);
+/** Fill a w x h rectangle whose top-left corner is (x, y). */
+void vga_fill_rect(int x, int y, int w, int h, uint8_t colour);
+/**
+ * @brief Draw a w x h image at (x, y).
+ * @param pixels 4-bit pixels, rows of (w + 1) / 2 bytes, the left pixel of each byte
+ *               in its low nibble (the layout sw/img2vga.py writes)
+ */
+void vga_blit(int x, int y, int w, int h, const uint8_t *pixels);
+/**
+ * @brief Copy a full-screen image into the framebuffer with the DMA controller.
+ *
+ * Faster than vga_blit for a whole screen; waits until the copy is done. Resets the
+ * scroll position. Uses the DMAC, which must be idle.
+ * @param image VGA_HEIGHT * VGA_ROW_BYTES bytes in ROM or RAM, word-aligned
+ */
+void vga_show_image(const void *image);
+/** Set palette entry index (0-15) to 0xRGB (4 bits per colour). */
+void vga_set_palette(int index, uint32_t rgb);
+/** Wait for the start of the next vertical blanking interval (about 60 per second). */
+void vga_wait_vblank(void);
+/** Draw character c (0x20-0x7E; others as a box) in an 8 x 8 cell at (x, y). */
+void vga_draw_char(int x, int y, char c, uint8_t fg, uint8_t bg);
+
+/* The VGA console: 40 x 30 characters of 8 x 8 pixels, scrolled by the hardware.
+ * After vga_console_init, everything written to stdout and stderr (printf, puts)
+ * appears on the screen as well as on the UART. */
+#define VGA_CONSOLE_COLUMNS (VGA_WIDTH / 8)
+#define VGA_CONSOLE_ROWS    (VGA_HEIGHT / 8)
+
+/** Clear the screen to bg, home the cursor and send console output to the screen too. */
+void vga_console_init(uint8_t fg, uint8_t bg);
+/** Write one character: '\n' new line, '\r' column 0, '\b' back one, '\t' to the next
+ *  multiple of 8 columns; the screen scrolls up at the bottom. */
+void vga_putc(char c);
+/** Write a NUL-terminated string with vga_putc. */
+void vga_puts(const char *s);
+/** Colours of the characters written from now on. */
+void vga_set_colours(uint8_t fg, uint8_t bg);
+/** Move the cursor to column, row (clipped to the console). */
+void vga_set_cursor(int column, int row);
 
 /* ---- End of a program ------------------------------------------------------------------
  * _exit(code) shows TIMUR_EXIT_LEDS | (code & TIMUR_EXIT_CODE_MASK) on the LEDs

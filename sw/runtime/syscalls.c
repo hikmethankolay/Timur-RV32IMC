@@ -3,7 +3,8 @@
  * @brief newlib system calls of the Timur runtime.
  *
  * The UART is the console: stdout and stderr write to it, stdin reads from
- * it (uart.c). Output turns '\n' into "\r\n" and input turns '\r' (what a
+ * it (uart.c). After vga_console_init, output goes to the VGA screen as well
+ * (timur_console_hook). Output turns '\n' into "\r\n" and input turns '\r' (what a
  * terminal sends for Enter) into '\n', so a terminal at 115200 8N1 needs no
  * settings. The console, file descriptors 0-2, is the only file: every other
  * descriptor fails with EBADF, and the console cannot be closed or seeked.
@@ -18,6 +19,8 @@
 #include <stdint.h>
 
 #include "timur_runtime.h"
+
+void (*timur_console_hook)(char c);
 
 /** True for stdin, stdout and stderr: the console. */
 static int is_console(int fd)
@@ -36,8 +39,11 @@ int _write(int fd, const char *buf, int len)
         errno = EINVAL;
         return -1;
     }
-    for (int i = 0; i < len; i++)
+    for (int i = 0; i < len; i++) {
         uart_putc(buf[i]);
+        if (timur_console_hook)
+            timur_console_hook(buf[i]);
+    }
     return len;
 }
 

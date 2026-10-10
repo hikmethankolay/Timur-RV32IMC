@@ -242,3 +242,96 @@ def test_decompressor_matches_the_toolchain_for_every_encoding() -> None:
     wrong = [c[0] for c in cases if decompress(int(c[0], 16)) != int(c[1], 16)]
     assert not wrong
     assert all((int(c[1], 16) == 0) == (c[2] == "1") for c in cases)
+
+
+def test_vga_framebuffer_is_byte_addressable_memory() -> None:
+    m = run(
+        """
+        lui   x29, 0x30000         # framebuffer base
+        lui   x1, 0x11223
+        addi  x1, x1, 0x344
+        sw    x1, 0(x29)
+        addi  x2, x0, 0xAB
+        sb    x2, 5(x29)
+        lui   x3, 0xC
+        addi  x3, x3, -0x111     # 0xBEEF
+        sh    x3, 6(x29)
+        lw    x4, 0(x29)
+        lw    x5, 4(x29)
+        lbu   x6, 6(x29)
+        lui   x7, 0x9              # 38400 = 0x9600: beyond the end, writes
+        addi  x7, x7, 0x600        # ignored and loads read 0
+        add   x7, x7, x29
+        sw    x1, 0(x7)
+        lw    x8, 0(x7)
+        """
+    )
+
+    assert (m.x[4], m.x[5], m.x[6], m.x[8]) == (0x11223344, 0xBEEFAB00, 0xEF, 0)
+    assert m.vram[:8] == bytes.fromhex("44332211 00ABEFBE")
+
+
+def test_vga_registers() -> None:
+    m = run(
+        """
+        addi  x29, x30, 0x300      # VGA registers
+        lw    x1, 0(x29)           # CTRL after reset: enabled
+        sw    x0, 0(x29)
+        lw    x2, 0(x29)
+        addi  x3, x0, 239
+        sw    x3, 8(x29)           # SCROLL
+        addi  x3, x0, 240          # out of range: ignored
+        sw    x3, 8(x29)
+        lw    x4, 8(x29)
+        lw    x5, 0x44(x29)        # PALETTE[1] after reset
+        addi  x6, x0, -1
+        sw    x6, 0x7C(x29)        # PALETTE[15]: 12 bits kept
+        lw    x7, 0x7C(x29)
+        lw    x8, 0x10(x29)        # unmapped
+        """
+    )
+
+    assert (m.x[1], m.x[2], m.x[4]) == (1, 0, 239)
+    assert (m.x[5], m.x[7], m.x[8]) == (memmap.VGA_PALETTE_RESET[1], 0xFFF, 0)
+
+
+def test_vga_status_and_frame_follow_the_beam() -> None:
+    m = run(
+        """
+        addi  x29, x30, 0x300
+        lw    x1, 4(x29)           # STATUS
+        lw    x2, 12(x29)          # FRAME
+        """
+    )
+    assert {1, 2} <= m.taint
+
+    with pytest.raises(TimingDependentError):
+        run(
+            """
+            addi  x29, x30, 0x300
+        wait:
+            lw    x1, 4(x29)
+            beq   x1, x0, wait
+            """
+        )
+
+
+def test_dma_copies_into_the_framebuffer() -> None:
+    m = run(
+        """
+        lui   x29, 0x30000
+        lui   x1, 0x5A5A5
+        addi  x1, x1, 0x123
+        sw    x1, 0(x31)
+        sw    x1, 4(x31)
+        sw    x31, 0x200(x30)      # DMAC SRC: RAM
+        sw    x29, 0x204(x30)      # DMAC DST: the framebuffer
+        addi  x2, x0, 2
+        sw    x2, 0x208(x30)       # LEN
+        addi  x2, x0, 1
+        sw    x2, 0x20C(x30)       # CTRL: start
+        lw    x3, 4(x29)
+        """
+    )
+
+    assert m.x[3] == 0x5A5A5123

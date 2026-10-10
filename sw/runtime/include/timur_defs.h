@@ -32,16 +32,20 @@
  *                are fetched through its fetch port; loads and the DMAC read it
  *                through its AHB port; writes are ignored.
  *   0x2000_0000  RAM, 64 KB, byte-addressable
- *   0x4000_0000  APB peripherals: UART +0x000, GPIO +0x100, DMAC +0x200
+ *   0x3000_0000  VGA framebuffer, 38,400 bytes, byte-addressable
+ *   0x4000_0000  APB peripherals: UART +0x000, GPIO +0x100, DMAC +0x200, VGA +0x300
  *   elsewhere    the default slave: loads read 0, stores are ignored            */
-#define TIMUR_ROM_BASE  TIMUR_U(0x00000000)
-#define TIMUR_ROM_SIZE  TIMUR_U(0x00010000)
-#define TIMUR_RAM_BASE  TIMUR_U(0x20000000)
-#define TIMUR_RAM_SIZE  TIMUR_U(0x00010000)
-#define TIMUR_APB_BASE  TIMUR_U(0x40000000)
-#define TIMUR_UART_BASE (TIMUR_APB_BASE + TIMUR_U(0x000))
-#define TIMUR_GPIO_BASE (TIMUR_APB_BASE + TIMUR_U(0x100))
-#define TIMUR_DMAC_BASE (TIMUR_APB_BASE + TIMUR_U(0x200))
+#define TIMUR_ROM_BASE    TIMUR_U(0x00000000)
+#define TIMUR_ROM_SIZE    TIMUR_U(0x00010000)
+#define TIMUR_RAM_BASE    TIMUR_U(0x20000000)
+#define TIMUR_RAM_SIZE    TIMUR_U(0x00010000)
+#define TIMUR_VGA_FB_BASE TIMUR_U(0x30000000)
+#define TIMUR_VGA_FB_SIZE TIMUR_U(38400)
+#define TIMUR_APB_BASE    TIMUR_U(0x40000000)
+#define TIMUR_UART_BASE   (TIMUR_APB_BASE + TIMUR_U(0x000))
+#define TIMUR_GPIO_BASE   (TIMUR_APB_BASE + TIMUR_U(0x100))
+#define TIMUR_DMAC_BASE   (TIMUR_APB_BASE + TIMUR_U(0x200))
+#define TIMUR_VGA_BASE    (TIMUR_APB_BASE + TIMUR_U(0x300))
 
 /** Clock frequency of the CPU and the peripherals, in Hz. */
 #define TIMUR_CLOCK_HZ 50000000
@@ -64,9 +68,9 @@
 #define GPIO_WIDTH      10
 #define GPIO_PIN_MASK   ((TIMUR_U(1) << GPIO_WIDTH) - TIMUR_U(1))
 
-/* ---- DMAC: copies 32-bit words from ROM or RAM to RAM ------------------------------ */
+/* ---- DMAC: copies 32-bit words from ROM or RAM to RAM or the VGA framebuffer ------- */
 #define DMAC_SRC_OFFSET    TIMUR_U(0x00) /**< word-aligned byte address, ROM or RAM */
-#define DMAC_DST_OFFSET    TIMUR_U(0x04) /**< word-aligned byte address in RAM      */
+#define DMAC_DST_OFFSET    TIMUR_U(0x04) /**< word-aligned, RAM or the framebuffer  */
 #define DMAC_LEN_OFFSET    TIMUR_U(0x08) /**< number of 32-bit words                */
 #define DMAC_CTRL_OFFSET   TIMUR_U(0x0C) /**< any write clears STATUS.DONE          */
 #define DMAC_STATUS_OFFSET TIMUR_U(0x10)
@@ -74,6 +78,22 @@
 #define DMAC_IRQ           (TIMUR_U(1) << 1) /**< CTRL: interrupt while DONE        */
 #define DMAC_BUSY          (TIMUR_U(1) << 0) /**< STATUS                            */
 #define DMAC_DONE          (TIMUR_U(1) << 1) /**< STATUS, sticky                    */
+
+/* ---- VGA: 640 x 480 at 60 Hz showing a 320 x 240 framebuffer of 4-bit pixels ------
+ * Each framebuffer pixel covers 2 x 2 screen pixels. Row y starts at byte
+ * VGA_ROW_BYTES * y; a byte holds two pixels, the left one in its low nibble.
+ * A pixel value selects one of the 16 palette entries, {R, G, B} with 4 bits each. */
+#define VGA_CTRL_OFFSET    TIMUR_U(0x00) /**< VGA_ENABLE                            */
+#define VGA_STATUS_OFFSET  TIMUR_U(0x04) /**< VGA_VBLANK, read only                 */
+#define VGA_SCROLL_OFFSET  TIMUR_U(0x08) /**< framebuffer row shown at the top, 0-239 */
+#define VGA_FRAME_OFFSET   TIMUR_U(0x0C) /**< frames started, read only             */
+#define VGA_PALETTE_OFFSET TIMUR_U(0x40) /**< 16 entries, one word each             */
+#define VGA_ENABLE         (TIMUR_U(1) << 0) /**< CTRL: picture on (resets on)      */
+#define VGA_VBLANK         (TIMUR_U(1) << 0) /**< STATUS: vertical blanking         */
+#define VGA_WIDTH          320
+#define VGA_HEIGHT         240
+#define VGA_ROW_BYTES      160
+#define VGA_COLOURS        16
 
 /* ---- CSR fields ----------------------------------------------------------------------- */
 #define MSTATUS_MIE  (TIMUR_U(1) << 3)

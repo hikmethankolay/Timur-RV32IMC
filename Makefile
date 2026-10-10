@@ -9,7 +9,7 @@
 #   make coverage   host tests with a coverage report
 #   make analyze    static analysis of the C runtime: gcc -fanalyzer, plus cppcheck
 #                   and clang-tidy when they are installed
-#   make regen      regenerate vectors/, rom*.hex/.mif and sw/bringup/
+#   make regen      regenerate the VGA font, vectors/, rom*.hex/.mif and sw/bringup/
 #   make sim        RTL regression with Icarus Verilog (./run_tests.sh)
 #   make all        check, analyze and sim
 #
@@ -23,7 +23,7 @@ PYTHON  := $(if $(BIN),$(BIN)python,python3)
 
 C_FORMATTED := $(wildcard sw/runtime/*.c sw/runtime/include/*.h)
 SHELL_FILES := run_tests.sh sw/program_board.sh
-GENERATORS  := gen_unit_vectors gen_decompressor_vectors gen_soc_tests gen_sw_tests
+GENERATORS  := gen_font gen_unit_vectors gen_decompressor_vectors gen_soc_tests gen_sw_tests
 
 .PHONY: all check lint format typecheck test coverage analyze regen sim venv venv-check
 

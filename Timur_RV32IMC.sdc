@@ -29,3 +29,9 @@ set_false_path -from [get_ports {rst_btn_n sw[*] uart_rx}]
 # Slow outputs
 #**************************************************************
 set_false_path -to [get_ports {leds[*] uart_tx}]
+
+#**************************************************************
+# VGA outputs: registered in the design, read by the monitor's
+# DAC/ADC at 25 MHz; no board timing to meet
+#**************************************************************
+set_false_path -to [get_ports {vga_r[*] vga_g[*] vga_b[*] vga_hs vga_vs}]

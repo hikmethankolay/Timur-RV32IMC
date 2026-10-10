@@ -56,10 +56,13 @@ PAIRS = {
     "TIMUR_ROM_SIZE": memmap.ROM_SIZE,
     "TIMUR_RAM_BASE": memmap.RAM_BASE,
     "TIMUR_RAM_SIZE": memmap.RAM_SIZE,
+    "TIMUR_VGA_FB_BASE": memmap.VGA_FB_BASE,
+    "TIMUR_VGA_FB_SIZE": memmap.VGA_FB_SIZE,
     "TIMUR_APB_BASE": memmap.APB_BASE,
     "TIMUR_UART_BASE": memmap.UART_BASE,
     "TIMUR_GPIO_BASE": memmap.GPIO_BASE,
     "TIMUR_DMAC_BASE": memmap.DMAC_BASE,
+    "TIMUR_VGA_BASE": memmap.VGA_BASE,
     "TIMUR_CLOCK_HZ": memmap.CLOCK_HZ,
     "UART_BAUD": memmap.UART_BAUD,
     "UART_DATA_OFFSET": memmap.UART_DATA,
@@ -83,6 +86,17 @@ PAIRS = {
     "DMAC_IRQ": memmap.DMAC_CTRL_IRQ,
     "DMAC_BUSY": memmap.DMAC_STATUS_BUSY,
     "DMAC_DONE": memmap.DMAC_STATUS_DONE,
+    "VGA_CTRL_OFFSET": memmap.VGA_CTRL,
+    "VGA_STATUS_OFFSET": memmap.VGA_STATUS,
+    "VGA_SCROLL_OFFSET": memmap.VGA_SCROLL,
+    "VGA_FRAME_OFFSET": memmap.VGA_FRAME,
+    "VGA_PALETTE_OFFSET": memmap.VGA_PALETTE,
+    "VGA_ENABLE": memmap.VGA_CTRL_ENABLE,
+    "VGA_VBLANK": memmap.VGA_STATUS_VBLANK,
+    "VGA_WIDTH": memmap.VGA_WIDTH,
+    "VGA_HEIGHT": memmap.VGA_HEIGHT,
+    "VGA_ROW_BYTES": memmap.VGA_ROW_BYTES,
+    "VGA_COLOURS": memmap.VGA_COLOURS,
     "MSTATUS_MIE": memmap.MSTATUS_MIE,
     "MSTATUS_MPIE": memmap.MSTATUS_MPIE,
     "MIE_MEIE": memmap.MIE_MEIE,
@@ -128,7 +142,11 @@ def test_trap_frame_offsets_are_consecutive_words() -> None:
 
 def test_rtl_address_decoder_and_uart_divider() -> None:
     decoder = (REPO / "rtl" / "bus" / "ahb_decoder.v").read_text()
-    for select, base in (("ROM", memmap.ROM_BASE), ("RAM", memmap.RAM_BASE)):
+    for select, base in (
+        ("ROM", memmap.ROM_BASE),
+        ("RAM", memmap.RAM_BASE),
+        ("VGA", memmap.VGA_FB_BASE),
+    ):
         assert "HSEL_%s = (HADDR[31:16] == 16'h%04X)" % (select, base >> 16) in decoder
     assert "HSEL_APB = (HADDR[31:16] == 16'h%04X)" % (memmap.APB_BASE >> 16) in decoder
 
@@ -136,6 +154,22 @@ def test_rtl_address_decoder_and_uart_divider() -> None:
     divider = int(re.search(r"parameter UART_DIVIDER = (\d+)", soc).group(1))  # type: ignore[union-attr]
     assert divider + 1 == memmap.UART_CYCLES_PER_BIT
     assert memmap.CLOCK_HZ // memmap.UART_BAUD == memmap.UART_CYCLES_PER_BIT
+
+    bridge = (REPO / "rtl" / "bus" / "ahb_apb_bridge.v").read_text()
+    for select, base in (
+        ("uart", memmap.UART_BASE),
+        ("gpio", memmap.GPIO_BASE),
+        ("dmac", memmap.DMAC_BASE),
+        ("vga", memmap.VGA_BASE),
+    ):
+        assert re.search(
+            r"sel_%s +=\s*\(PADDR\[15:8\] == 8'h%02X\)" % (select, (base >> 8) & 0xFF), bridge
+        )
+
+    vga = (REPO / "rtl" / "periph" / "vga.v").read_text()
+    assert "FB_WORDS = 14'd%d;" % (memmap.VGA_FB_SIZE // 4) in vga
+    for index, colour in enumerate(memmap.VGA_PALETTE_RESET):
+        assert re.search(r"palette\[%d\]\s*<= 12'h%03X;" % (index, colour), vga)
 
     tb = (REPO / "tb" / "timur_soc_tb.v").read_text()
     assert "gpio_in = 10'h%03X;" % memmap.TB_SWITCHES in tb

@@ -2,7 +2,7 @@
 //
 // ahb_apb_bridge_tb: IDLE -> SETUP -> ACCESS with one wait state, HREADYOUT
 // low in SETUP and in ACCESS until PREADY, back-to-back APB transfers,
-// PADDR[15:8] decode with no PSEL for unmapped pages, address phases taken
+// PADDR[15:8] decode (UART, GPIO, DMAC, VGA) with no PSEL for unmapped pages, address phases taken
 // only with HSEL, HTRANS[1] and HREADY (Phase 9).
 // The bus HREADY is HREADYOUT AND hready_other.
 // Vector: see vectors/ahb_apb_bridge_vectors.txt (x = don't care).
@@ -13,9 +13,10 @@ module ahb_apb_bridge_tb;
     reg         HSEL, HWRITE, hready_other;
     reg  [31:0] HADDR, HWDATA;
     reg  [1:0]  HTRANS;
-    reg         PREADY_UART, PREADY_GPIO, PREADY_DMAC;
+    reg         PREADY_UART, PREADY_GPIO, PREADY_DMAC, PREADY_VGA;
     wire [31:0] HRDATA, PADDR, PWDATA;
-    wire        HREADYOUT, HRESP, PWRITE, PENABLE, PSEL_UART, PSEL_GPIO, PSEL_DMAC;
+    wire        HREADYOUT, HRESP, PWRITE, PENABLE, PSEL_UART, PSEL_GPIO, PSEL_DMAC,
+                PSEL_VGA;
     wire        HREADY = HREADYOUT & hready_other;
 
     ahb_apb_bridge dut (
@@ -38,12 +39,15 @@ module ahb_apb_bridge_tb;
         .PSEL_UART   (PSEL_UART),
         .PSEL_GPIO   (PSEL_GPIO),
         .PSEL_DMAC   (PSEL_DMAC),
+        .PSEL_VGA    (PSEL_VGA),
         .PRDATA_UART (32'h0000AAAA),
         .PRDATA_GPIO (32'h0000BBBB),
         .PRDATA_DMAC (32'h0000CCCC),
+        .PRDATA_VGA  (32'h0000DDDD),
         .PREADY_UART (PREADY_UART),
         .PREADY_GPIO (PREADY_GPIO),
-        .PREADY_DMAC (PREADY_DMAC)
+        .PREADY_DMAC (PREADY_DMAC),
+        .PREADY_VGA  (PREADY_VGA)
     );
 
     always #5 clk = ~clk;
@@ -64,7 +68,8 @@ module ahb_apb_bridge_tb;
     integer         total, failed;
     reg [8*256-1:0] line;
     reg [31:0]      e_hrdata, e_paddr, e_pwdata;
-    reg             e_hreadyout, e_pwrite, e_penable, e_psel_uart, e_psel_gpio, e_psel_dmac;
+    reg             e_hreadyout, e_pwrite, e_penable, e_psel_uart, e_psel_gpio, e_psel_dmac,
+                e_psel_vga;
     reg             wait_type, ok;
 
     initial begin : watchdog
@@ -80,7 +85,7 @@ module ahb_apb_bridge_tb;
         hready_other = 1'b1;
         {HADDR, HWDATA} = 64'b0;
         HTRANS = 2'b00;
-        {PREADY_UART, PREADY_GPIO, PREADY_DMAC} = 3'b111;
+        {PREADY_UART, PREADY_GPIO, PREADY_DMAC, PREADY_VGA} = 4'b1111;
         total = 0;
         failed = 0;
         #1;
@@ -92,11 +97,11 @@ module ahb_apb_bridge_tb;
             while (!$feof(fd)) begin
                 line = 0;
                 n = $fgets(line, fd);
-                if ($sscanf(line, "%b %b %h %b %b %h %b %b %b %b %h %b %h %b %h %b %b %b %b %b",
+                if ($sscanf(line, "%b %b %h %b %b %h %b %b %b %b %b %h %b %h %b %h %b %b %b %b %b %b",
                             rst_n, HSEL, HADDR, HTRANS, HWRITE, HWDATA, hready_other,
-                            PREADY_UART, PREADY_GPIO, PREADY_DMAC,
+                            PREADY_UART, PREADY_GPIO, PREADY_DMAC, PREADY_VGA,
                             e_hrdata, e_hreadyout, e_paddr, e_pwrite, e_pwdata, e_penable,
-                            e_psel_uart, e_psel_gpio, e_psel_dmac, wait_type) == 20) begin
+                            e_psel_uart, e_psel_gpio, e_psel_dmac, e_psel_vga, wait_type) == 22) begin
                     if (wait_type == 1'b0)
                         #3;
                     else begin
@@ -108,19 +113,20 @@ module ahb_apb_bridge_tb;
                          match(PWDATA, e_pwdata) && match({31'b0, PENABLE}, {31'b0, e_penable}) &&
                          match({31'b0, PSEL_UART}, {31'b0, e_psel_uart}) &&
                          match({31'b0, PSEL_GPIO}, {31'b0, e_psel_gpio}) &&
-                         match({31'b0, PSEL_DMAC}, {31'b0, e_psel_dmac}) && (HRESP === 1'b0);
+                         match({31'b0, PSEL_DMAC}, {31'b0, e_psel_dmac}) &&
+                         match({31'b0, PSEL_VGA}, {31'b0, e_psel_vga}) && (HRESP === 1'b0);
                     total = total + 1;
                     if (!ok) begin
                         failed = failed + 1;
-                        $display("FAIL hsel=%b haddr=%h htrans=%b hwrite=%b | got hrdata=%h hreadyout=%b paddr=%h pwrite=%b pwdata=%h penable=%b psel=%b%b%b | expected %h %b %h %b %h %b %b%b%b",
+                        $display("FAIL hsel=%b haddr=%h htrans=%b hwrite=%b | got hrdata=%h hreadyout=%b paddr=%h pwrite=%b pwdata=%h penable=%b psel=%b%b%b%b | expected %h %b %h %b %h %b %b%b%b%b",
                                  HSEL, HADDR, HTRANS, HWRITE, HRDATA, HREADYOUT, PADDR, PWRITE, PWDATA,
-                                 PENABLE, PSEL_UART, PSEL_GPIO, PSEL_DMAC,
+                                 PENABLE, PSEL_UART, PSEL_GPIO, PSEL_DMAC, PSEL_VGA,
                                  e_hrdata, e_hreadyout, e_paddr, e_pwrite, e_pwdata, e_penable,
-                                 e_psel_uart, e_psel_gpio, e_psel_dmac);
+                                 e_psel_uart, e_psel_gpio, e_psel_dmac, e_psel_vga);
                     end else
-                        $display("PASS hsel=%b haddr=%h htrans=%b hwrite=%b wait=%b | hreadyout=%b penable=%b psel=%b%b%b",
+                        $display("PASS hsel=%b haddr=%h htrans=%b hwrite=%b wait=%b | hreadyout=%b penable=%b psel=%b%b%b%b",
                                  HSEL, HADDR, HTRANS, HWRITE, wait_type, HREADYOUT, PENABLE,
-                                 PSEL_UART, PSEL_GPIO, PSEL_DMAC);
+                                 PSEL_UART, PSEL_GPIO, PSEL_DMAC, PSEL_VGA);
                 end
             end
             $fclose(fd);

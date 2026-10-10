@@ -104,6 +104,12 @@ TESTS = (
          "16 bytes, 16 receive interrupts"),
         0x200, None, False,
     ),
+    SwTest(
+        "vga",
+        "VGA registers, framebuffer stores of every size, the drawing functions, characters "
+        "against the font, a DMA copy into the framebuffer, the console with wrap and scrolling",
+        b"", ("Hi\tVGA", "vga: all 57 checks passed"), 0x200, None, True,
+    ),
 )  # fmt: skip
 
 

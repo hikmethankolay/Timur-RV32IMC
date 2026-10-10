@@ -149,6 +149,36 @@ set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to uart_rx
 set_location_assignment PIN_V10 -to uart_tx
 set_location_assignment PIN_W10 -to uart_rx
 
+# VGA connector: 4-bit resistor DAC per colour, sync outputs (DE10-Lite manual)
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_r[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_r[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_r[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_r[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_g[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_g[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_g[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_g[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_b[0]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_b[1]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_b[2]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_b[3]
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_hs
+set_instance_assignment -name IO_STANDARD "3.3-V LVTTL" -to vga_vs
+set_location_assignment PIN_AA1 -to vga_r[0]
+set_location_assignment PIN_V1 -to vga_r[1]
+set_location_assignment PIN_Y2 -to vga_r[2]
+set_location_assignment PIN_Y1 -to vga_r[3]
+set_location_assignment PIN_W1 -to vga_g[0]
+set_location_assignment PIN_T2 -to vga_g[1]
+set_location_assignment PIN_R2 -to vga_g[2]
+set_location_assignment PIN_R1 -to vga_g[3]
+set_location_assignment PIN_P1 -to vga_b[0]
+set_location_assignment PIN_T1 -to vga_b[1]
+set_location_assignment PIN_P4 -to vga_b[2]
+set_location_assignment PIN_N2 -to vga_b[3]
+set_location_assignment PIN_N3 -to vga_hs
+set_location_assignment PIN_N1 -to vga_vs
+
 #============================================================
 # Source files (testbenches are simulated by run_tests.tcl only)
 #============================================================
@@ -192,6 +222,7 @@ set_global_assignment -name VERILOG_FILE rtl/bus/dmac_ahb_master.v
 set_global_assignment -name VERILOG_FILE rtl/periph/gpio_apb.v
 set_global_assignment -name VERILOG_FILE rtl/periph/uart_apb.v
 set_global_assignment -name VERILOG_FILE rtl/periph/dmac_apb_regs.v
+set_global_assignment -name VERILOG_FILE rtl/periph/vga.v
 set_global_assignment -name VERILOG_FILE rtl/top/timur_soc.v
 set_global_assignment -name VERILOG_FILE rtl/top/Timur_RV32IMC.v
 

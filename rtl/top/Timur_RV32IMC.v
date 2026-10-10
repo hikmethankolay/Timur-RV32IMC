@@ -8,7 +8,12 @@ module Timur_RV32IMC (
     input  [9:0] sw,          // SW[9:0]   -> GPIO_IN
     output [9:0] leds,        // LEDR[9:0] <- GPIO_OUT
     output       uart_tx,     // GPIO header -> 3.3 V USB-to-TTL adapter RX
-    input        uart_rx      // GPIO header <- 3.3 V USB-to-TTL adapter TX
+    input        uart_rx,     // GPIO header <- 3.3 V USB-to-TTL adapter TX
+    output [3:0] vga_r,       // VGA_R[3:0]
+    output [3:0] vga_g,       // VGA_G[3:0]
+    output [3:0] vga_b,       // VGA_B[3:0]
+    output       vga_hs,      // VGA_HS
+    output       vga_vs       // VGA_VS
 );
 
     wire clk_cpu;
@@ -36,7 +41,12 @@ module Timur_RV32IMC (
         .gpio_in  (sw),
         .gpio_out (leds),
         .uart_rx  (uart_rx),
-        .uart_tx  (uart_tx)
+        .uart_tx  (uart_tx),
+        .vga_r    (vga_r),
+        .vga_g    (vga_g),
+        .vga_b    (vga_b),
+        .vga_hs   (vga_hs),
+        .vga_vs   (vga_vs)
     );
 
 endmodule

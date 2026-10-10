@@ -6,9 +6,9 @@
 //   ACCESS : HREADYOUT = PREADY, PSEL = 1, PENABLE = 1, HRDATA = PRDATA.
 //            On PREADY: a new accepted address phase -> SETUP, else -> IDLE
 // An APB access therefore costs one wait state. APB decode on PADDR[15:8]:
-// 0x00 UART, 0x01 GPIO, 0x02 DMAC registers, anything else no PSEL
-// (PRDATA = 0, PREADY = 1). APB3 has no byte strobes: peripheral registers
-// are word-write only.
+// 0x00 UART, 0x01 GPIO, 0x02 DMAC registers, 0x03 VGA registers, anything
+// else no PSEL (PRDATA = 0, PREADY = 1). APB3 has no byte strobes: peripheral
+// registers are word-write only.
 module ahb_apb_bridge (
     input             HCLK,
     input             HRESETn,
@@ -33,12 +33,15 @@ module ahb_apb_bridge (
     output            PSEL_UART,
     output            PSEL_GPIO,
     output            PSEL_DMAC,
+    output            PSEL_VGA,
     input      [31:0] PRDATA_UART,
     input      [31:0] PRDATA_GPIO,
     input      [31:0] PRDATA_DMAC,
+    input      [31:0] PRDATA_VGA,
     input             PREADY_UART,
     input             PREADY_GPIO,
-    input             PREADY_DMAC
+    input             PREADY_DMAC,
+    input             PREADY_VGA
 );
 
     localparam [1:0] S_IDLE   = 2'd0,
@@ -52,15 +55,18 @@ module ahb_apb_bridge (
     wire sel_uart = (PADDR[15:8] == 8'h00);
     wire sel_gpio = (PADDR[15:8] == 8'h01);
     wire sel_dmac = (PADDR[15:8] == 8'h02);
+    wire sel_vga  = (PADDR[15:8] == 8'h03);
 
     wire [31:0] prdata = sel_uart ? PRDATA_UART :
                          sel_gpio ? PRDATA_GPIO :
                          sel_dmac ? PRDATA_DMAC :
+                         sel_vga  ? PRDATA_VGA  :
                                     32'h00000000;
 
     wire pready = sel_uart ? PREADY_UART :
                   sel_gpio ? PREADY_GPIO :
                   sel_dmac ? PREADY_DMAC :
+                  sel_vga  ? PREADY_VGA  :
                              1'b1;
 
     always @(posedge HCLK or negedge HRESETn) begin
@@ -100,6 +106,7 @@ module ahb_apb_bridge (
     assign PSEL_UART = apb_active && sel_uart;
     assign PSEL_GPIO = apb_active && sel_gpio;
     assign PSEL_DMAC = apb_active && sel_dmac;
+    assign PSEL_VGA  = apb_active && sel_vga;
     assign PENABLE   = (state == S_ACCESS);
     assign PWDATA    = HWDATA;
 

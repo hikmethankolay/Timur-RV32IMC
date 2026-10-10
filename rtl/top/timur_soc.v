@@ -7,14 +7,18 @@
 //   Fetch   : private port into the split-bank ROM (Harvard fetch, never
 //             waits); 16-bit instructions are expanded in IF (Phase 11)
 //   Data bus: AHB-Lite slaves behind a 2-master arbiter (CPU data port with
-//             priority, DMAC), AHB-to-APB bridge for UART, GPIO, DMAC registers
+//             priority, DMAC), AHB-to-APB bridge for UART, GPIO, DMAC and VGA
+//             registers
+//   Video   : VGA controller, 640x480 at 60 Hz from a 320x240 4-bit framebuffer
 //
 // Address map
 //   0x0000_0000 - 0x0000_FFFF  ROM (fetch port + AHB data port)
 //   0x2000_0000 - 0x2000_FFFF  RAM
+//   0x3000_0000 - 0x3000_95FF  VGA framebuffer (0x3000_9600 - 0x3000_FFFF read 0)
 //   0x4000_0000 - 0x4000_00FF  UART   (APB)
 //   0x4000_0100 - 0x4000_01FF  GPIO   (APB)
 //   0x4000_0200 - 0x4000_02FF  DMAC   (APB)
+//   0x4000_0300 - 0x4000_03FF  VGA    (APB)
 //   anything else              default slave: reads 0, writes ignored
 module timur_soc #(
     parameter UART_DIVIDER = 433   // f_clk / baud - 1: 115200 baud at 50 MHz
@@ -24,7 +28,12 @@ module timur_soc #(
     input  [9:0] gpio_in,    // SW[9:0]
     output [9:0] gpio_out,   // LEDR[9:0]
     input        uart_rx,
-    output       uart_tx
+    output       uart_tx,
+    output [3:0] vga_r,      // VGA connector
+    output [3:0] vga_g,
+    output [3:0] vga_b,
+    output       vga_hs,
+    output       vga_vs
 );
 
     // =====================================================================
@@ -943,12 +952,15 @@ module timur_soc #(
 
     wire        hsel_rom;
     wire        hsel_ram;
+    wire        hsel_vga;
     wire        hsel_apb;
     wire [31:0] hrdata_rom;
     wire [31:0] hrdata_ram;
+    wire [31:0] hrdata_vga;
     wire [31:0] hrdata_apb;
     wire        hreadyout_rom;
     wire        hreadyout_ram;
+    wire        hreadyout_vga;
     wire        hreadyout_apb;
 
     ahb_decoder u_decoder (
@@ -957,12 +969,15 @@ module timur_soc #(
         .HADDR         (haddr),
         .HSEL_ROM      (hsel_rom),
         .HSEL_RAM      (hsel_ram),
+        .HSEL_VGA      (hsel_vga),
         .HSEL_APB      (hsel_apb),
         .HRDATA_ROM    (hrdata_rom),
         .HRDATA_RAM    (hrdata_ram),
+        .HRDATA_VGA    (hrdata_vga),
         .HRDATA_APB    (hrdata_apb),
         .HREADYOUT_ROM (hreadyout_rom),
         .HREADYOUT_RAM (hreadyout_ram),
+        .HREADYOUT_VGA (hreadyout_vga),
         .HREADYOUT_APB (hreadyout_apb),
         .HRDATA        (hrdata),
         .HREADY        (hready)
@@ -1015,12 +1030,15 @@ module timur_soc #(
     wire        psel_uart;
     wire        psel_gpio;
     wire        psel_dmac;
+    wire        psel_vga;
     wire [31:0] prdata_uart;
     wire [31:0] prdata_gpio;
     wire [31:0] prdata_dmac;
+    wire [31:0] prdata_vga;
     wire        pready_uart;
     wire        pready_gpio;
     wire        pready_dmac;
+    wire        pready_vga;
 
     ahb_apb_bridge u_bridge (
         .HCLK        (clk),
@@ -1042,12 +1060,15 @@ module timur_soc #(
         .PSEL_UART   (psel_uart),
         .PSEL_GPIO   (psel_gpio),
         .PSEL_DMAC   (psel_dmac),
+        .PSEL_VGA    (psel_vga),
         .PRDATA_UART (prdata_uart),
         .PRDATA_GPIO (prdata_gpio),
         .PRDATA_DMAC (prdata_dmac),
+        .PRDATA_VGA  (prdata_vga),
         .PREADY_UART (pready_uart),
         .PREADY_GPIO (pready_gpio),
-        .PREADY_DMAC (pready_dmac)
+        .PREADY_DMAC (pready_dmac),
+        .PREADY_VGA  (pready_vga)
     );
 
     uart_apb #(.DIVIDER(UART_DIVIDER)) u_uart (
@@ -1099,6 +1120,37 @@ module timur_soc #(
         .dmac_busy  (dmac_busy),
         .dmac_done  (dmac_done),
         .irq        (dmac_irq)
+    );
+
+    // =====================================================================
+    // VGA: framebuffer on AHB, registers on APB
+    // =====================================================================
+    vga u_vga (
+        .HCLK      (clk),
+        .HRESETn   (rst_n),
+        .HSEL      (hsel_vga),
+        .HADDR     (haddr),
+        .HTRANS    (htrans),
+        .HWRITE    (hwrite),
+        .HSIZE     (hsize),
+        .HWDATA    (hwdata),
+        .HREADY    (hready),
+        .HRDATA    (hrdata_vga),
+        .HREADYOUT (hreadyout_vga),
+        .HRESP     (),
+        .PSEL      (psel_vga),
+        .PENABLE   (penable),
+        .PWRITE    (pwrite),
+        .PADDR     (paddr),
+        .PWDATA    (pwdata),
+        .PRDATA    (prdata_vga),
+        .PREADY    (pready_vga),
+        .PSLVERR   (),
+        .vga_r     (vga_r),
+        .vga_g     (vga_g),
+        .vga_b     (vga_b),
+        .vga_hs    (vga_hs),
+        .vga_vs    (vga_vs)
     );
 
 endmodule
