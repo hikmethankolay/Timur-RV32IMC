@@ -1,0 +1,34 @@
+# How Timur is checked: from one module to the whole system, and in CI.
+# Drawn from: run_tests.sh, tb/*, sw/gen_*.py, sw/timur_tools/model.py,
+# tests/host/*, Makefile, .github/workflows/ci.yml
+...@_style
+direction: right
+
+gens: "generators (Python)\ngen_unit_vectors, gen_soc_tests,\ngen_sw_tests, gen_font, ..." {class: tool}
+model: "reference model\ninstruction-level, model.py" {class: key}
+
+rtl: "RTL testbenches (Icarus, make sim)" {
+  class: frame
+  direction: down
+  unit: "unit testbenches\none per module, vectors/*.txt" {class: block}
+  soc: "timur_soc_tb\nassembly programs, every cycle checked,\nregisters and RAM against the model" {class: block}
+  swtb: "timur_sw_tb\nC programs, UART output compared\nbyte for byte with the model" {class: block}
+}
+
+host: "host checks (make check, analyze)" {
+  class: frame
+  direction: down
+  py: "pytest: tools, model,\nimage files, memory map" {class: block}
+  gold: "golden files: every generated\nfile reproduced byte for byte" {class: block}
+  lint: "ruff, mypy, clang-format,\ncppcheck, clang-tidy, -fanalyzer" {class: block}
+}
+
+ci: "GitHub Actions\nmake lint, typecheck, coverage,\nanalyze, sim" {class: control}
+
+gens -> rtl.unit: "vectors" {class: wire}
+gens -> model: {class: wire}
+model -> rtl.soc: "expected state" {class: bus}
+model -> rtl.swtb: "expected output" {class: bus}
+gens -> host.gold: {class: wire}
+rtl -> ci: {class: wire}
+host -> ci: {class: wire}

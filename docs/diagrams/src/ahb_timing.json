@@ -1,0 +1,65 @@
+{
+ "signal": [
+  {
+   "name": "HCLK",
+   "wave": "p...."
+  },
+  {
+   "name": "HADDR",
+   "wave": "34.x.",
+   "data": [
+    "A",
+    "B"
+   ]
+  },
+  {
+   "name": "HTRANS",
+   "wave": "=..=.",
+   "data": [
+    "NONSEQ",
+    "IDLE"
+   ]
+  },
+  {
+   "name": "HWRITE",
+   "wave": "01.x."
+  },
+  {
+   "name": "HREADY",
+   "wave": "101.."
+  },
+  {
+   "name": "HRDATA",
+   "wave": "x.3x.",
+   "data": [
+    "data A"
+   ]
+  },
+  {
+   "name": "HWDATA",
+   "wave": "x..4x",
+   "data": [
+    "data B"
+   ]
+  },
+  {},
+  {
+   "name": "phase",
+   "wave": "=====",
+   "data": [
+    "A addr",
+    "A wait",
+    "A data",
+    "B data",
+    "idle"
+   ]
+  }
+ ],
+ "head": {
+  "text": "AHB-Lite: read A with one wait state, then write B",
+  "tick": 0
+ },
+ "config": {
+  "hscale": 3
+ }
+}

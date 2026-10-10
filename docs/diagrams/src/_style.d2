@@ -1,0 +1,41 @@
+# Shared look of the Timur diagrams, imported by every diagram with
+# ...@_style (make diagrams does not render files whose name starts with _).
+#
+# One neutral scale (zinc) and one accent (cobalt #1d4ed8). The accent marks
+# the data path and whatever a diagram is about; everything else is grey.
+# Category comes from shape (cylinder = memory, page = file) and line style
+# (solid = data, dashed = control and interrupts), not from colour.
+# One corner radius (6) everywhere; monospace for addresses and signal names.
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+    pad: 32
+  }
+}
+style.fill: "#fafafa"
+
+classes: {
+  # nodes
+  block: {style: {fill: "#ffffff"; stroke: "#a1a1aa"; stroke-width: 1; border-radius: 6; font-color: "#18181b"; font-size: 14}}
+  key: {style: {fill: "#eef2fd"; stroke: "#1d4ed8"; stroke-width: 2; border-radius: 6; font-color: "#18181b"; font-size: 14}}
+  memory: {shape: cylinder; style: {fill: "#f4f4f5"; stroke: "#a1a1aa"; stroke-width: 1; font-color: "#18181b"; font-size: 14}}
+  periph: {style: {fill: "#f4f4f5"; stroke: "#a1a1aa"; stroke-width: 1; border-radius: 6; font-color: "#18181b"; font-size: 14}}
+  control: {style: {fill: "#ffffff"; stroke: "#3f3f46"; stroke-width: 2; border-radius: 6; font-color: "#18181b"; font-size: 14}}
+  pipereg: {style: {fill: "#e4e4e7"; stroke: "#52525b"; stroke-width: 1; border-radius: 6; font-color: "#18181b"; font-size: 13; bold: true}}
+  file: {shape: page; style: {fill: "#ffffff"; stroke: "#a1a1aa"; stroke-width: 1; font-color: "#18181b"; font-size: 13}}
+  tool: {style: {fill: "#f4f4f5"; stroke: "#52525b"; stroke-width: 1; border-radius: 6; font-color: "#18181b"; font-size: 14}}
+  step: {style: {fill: "#ffffff"; stroke: "#a1a1aa"; stroke-width: 1; border-radius: 6; font-color: "#18181b"; font-size: 14}}
+  external: {style: {fill: "#ffffff"; stroke: "#a1a1aa"; stroke-width: 1; stroke-dash: 4; border-radius: 6; font-color: "#3f3f46"; font-size: 13}}
+  unmapped: {style: {fill: "#f4f4f5"; fill-pattern: lines; stroke: "#d4d4d8"; stroke-width: 1; border-radius: 6; font-color: "#71717a"; font-size: 13}}
+  note: {style: {fill: transparent; stroke: transparent; font-color: "#52525b"; font-size: 13; bold: false; italic: true}}
+  mono: {style: {font: mono; font-size: 13; bold: false; fill: "#ffffff"; stroke: "#a1a1aa"; stroke-width: 1; border-radius: 6; font-color: "#18181b"}}
+  # containers
+  frame: {label.near: top-left; style: {fill: "#ffffff"; stroke: "#d4d4d8"; stroke-width: 1; border-radius: 6; font-color: "#18181b"; font-size: 15; bold: true}}
+  stage: {label.near: top-left; style: {fill: "#fafafa"; stroke: "#d4d4d8"; stroke-width: 1; border-radius: 6; font-color: "#18181b"; font-size: 15; bold: true}}
+  # edges
+  wire: {style: {stroke: "#71717a"; stroke-width: 2; font-color: "#52525b"; font-size: 12}}
+  bus: {style: {stroke: "#1d4ed8"; stroke-width: 3; font-color: "#1d4ed8"; font-size: 12}}
+  ctl: {style: {stroke: "#71717a"; stroke-width: 2; stroke-dash: 4; font-color: "#52525b"; font-size: 12}}
+  irq: {style: {stroke: "#3f3f46"; stroke-width: 2; stroke-dash: 2; font-color: "#3f3f46"; font-size: 12}}
+}

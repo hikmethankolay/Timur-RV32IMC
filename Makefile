@@ -11,6 +11,8 @@
 #                   and clang-tidy when they are installed
 #   make regen      regenerate the VGA font, vectors/, rom*.hex/.mif and sw/bringup/
 #   make sim        RTL regression with Icarus Verilog (./run_tests.sh)
+#   make diagrams   render docs/diagrams/src (D2, WaveDrom) to docs/diagrams/*.svg
+#   make diagram-tools  install the pinned d2 and wavedrom-cli into .tools/
 #   make all        check, analyze and sim
 #
 # The tools come from .venv when it exists, otherwise from PATH. The RISC-V
@@ -25,7 +27,8 @@ C_FORMATTED := $(wildcard sw/runtime/*.c sw/runtime/include/*.h)
 SHELL_FILES := run_tests.sh sw/program_board.sh
 GENERATORS  := gen_font gen_unit_vectors gen_decompressor_vectors gen_soc_tests gen_sw_tests
 
-.PHONY: all check lint format typecheck test coverage analyze regen sim venv venv-check
+.PHONY: all check lint format typecheck test coverage analyze regen sim venv venv-check \
+        diagrams diagram-tools
 
 all: check analyze sim
 
@@ -84,3 +87,40 @@ regen:
 
 sim:
 	./run_tests.sh
+
+# ---- diagrams ----------------------------------------------------------------
+# Sources in docs/diagrams/src: *.d2 (block and flow diagrams; _style.d2 holds
+# the shared layout engine, theme and classes) and *.json (WaveDrom timing
+# diagrams). The SVGs are committed; whiten.py gives each a white background
+# for GitHub's dark theme. The tools come from .tools/ (make diagram-tools,
+# Linux x86-64) or PATH; the pinned versions keep re-renders identical.
+D2_VERSION       := v0.9.0
+D2_SHA256        := 5669ddc46b99e942cc96078f4a4e36d5e62103348f4c05179ede27802fdd87a9
+WAVEDROM_VERSION := 3.2.0
+D2       ?= $(firstword $(wildcard .tools/bin/d2) d2)
+WAVEDROM ?= $(firstword $(wildcard .tools/wavedrom/node_modules/.bin/wavedrom-cli) wavedrom-cli)
+
+DIAGRAM_SRC := docs/diagrams/src
+D2_SOURCES  := $(filter-out $(DIAGRAM_SRC)/_%,$(wildcard $(DIAGRAM_SRC)/*.d2))
+DIAGRAMS    := $(patsubst $(DIAGRAM_SRC)/%.d2,docs/diagrams/%.svg,$(D2_SOURCES)) \
+               $(patsubst $(DIAGRAM_SRC)/%.json,docs/diagrams/%.svg,$(wildcard $(DIAGRAM_SRC)/*.json))
+
+diagrams: $(DIAGRAMS)
+
+docs/diagrams/%.svg: $(DIAGRAM_SRC)/%.d2 $(DIAGRAM_SRC)/_style.d2 $(DIAGRAM_SRC)/whiten.py
+	$(D2) $< $@
+	$(PYTHON) $(DIAGRAM_SRC)/whiten.py $@
+
+docs/diagrams/%.svg: $(DIAGRAM_SRC)/%.json $(DIAGRAM_SRC)/whiten.py
+	$(WAVEDROM) -i $< -s $@
+	$(PYTHON) $(DIAGRAM_SRC)/whiten.py $@
+
+diagram-tools:
+	mkdir -p .tools/bin
+	curl -sSL -o .tools/d2.tar.gz \
+	    https://github.com/d2lang/d2/releases/download/$(D2_VERSION)/d2-$(D2_VERSION)-linux-amd64.tar.gz
+	echo "$(D2_SHA256)  .tools/d2.tar.gz" | sha256sum -c -
+	tar -xzf .tools/d2.tar.gz -C .tools d2-$(D2_VERSION)/bin/d2
+	mv .tools/d2-$(D2_VERSION)/bin/d2 .tools/bin/d2
+	rm -rf .tools/d2.tar.gz .tools/d2-$(D2_VERSION)
+	npm install --prefix .tools/wavedrom --no-audit --no-fund wavedrom-cli@$(WAVEDROM_VERSION)

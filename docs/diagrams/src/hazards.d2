@@ -1,0 +1,31 @@
+# Forwarding and hazards: where a result comes from, and what each hazard costs.
+# Drawn from: rtl/pipeline/forwarding_unit.v, rtl/pipeline/hazard_detection_unit.v,
+# the EX section of rtl/top/timur_soc.v
+...@_style
+direction: right
+
+fwd: "Forwarding into EX" {
+  class: frame
+  direction: right
+  exmem: "EX/MEM result\n(the instruction one ahead)" {class: block}
+  wbv: "WB write-back value\n(two ahead, loads included)" {class: block}
+  idex: "ID/EX register value" {class: block}
+  mux: "forward mux, per operand\n10 EX/MEM, 01 WB, 00 ID/EX\nEX/MEM wins, never x0" {class: key}
+  alu: "ALU, branch compare,\nstore data" {class: block}
+  exmem -> mux: "10" {class: bus}
+  wbv -> mux: "01" {class: bus}
+  idex -> mux: "00" {class: wire}
+  mux -> alu: {class: bus}
+}
+
+costs: "What the hazard unit does" {
+  class: frame
+  grid-columns: 1
+  grid-gap: 0
+  wait: "bus wait: every stage holds" {class: mono}
+  trap: "trap: PC = mtvec, bubbles into IF/ID, ID/EX, EX/MEM (3 killed)" {class: mono}
+  redir: "taken branch, JAL, JALR, MRET: PC = target, bubbles into IF/ID, ID/EX (2 killed)" {class: mono}
+  muldiv: "MUL or DIV in EX: PC, IF/ID, ID/EX hold, bubble into EX/MEM" {class: mono}
+  lu: "load-use: PC, IF/ID hold, one bubble into ID/EX" {class: mono}
+  prio: "highest priority first" {class: note}
+}

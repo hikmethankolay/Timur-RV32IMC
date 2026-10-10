@@ -1,0 +1,70 @@
+{
+ "signal": [
+  {
+   "name": "HCLK",
+   "wave": "p..."
+  },
+  [
+   "AHB side",
+   {
+    "name": "HTRANS",
+    "wave": "==..",
+    "data": [
+     "NONSEQ",
+     "IDLE"
+    ]
+   },
+   {
+    "name": "HREADYOUT",
+    "wave": "101."
+   },
+   {
+    "name": "HRDATA",
+    "wave": "x.3x",
+    "data": [
+     "PRDATA"
+    ]
+   }
+  ],
+  [
+   "APB side",
+   {
+    "name": "PADDR",
+    "wave": "x3.x",
+    "data": [
+     "A"
+    ]
+   },
+   {
+    "name": "PSEL",
+    "wave": "01.0"
+   },
+   {
+    "name": "PENABLE",
+    "wave": "0.10"
+   },
+   {
+    "name": "PREADY",
+    "wave": "1..."
+   }
+  ],
+  {},
+  {
+   "name": "bridge",
+   "wave": "====",
+   "data": [
+    "IDLE",
+    "SETUP",
+    "ACCESS",
+    "IDLE"
+   ]
+  }
+ ],
+ "head": {
+  "text": "APB read through ahb_apb_bridge",
+  "tick": 0
+ },
+ "config": {
+  "hscale": 3
+ }
+}

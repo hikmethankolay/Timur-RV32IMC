@@ -66,44 +66,13 @@
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph SOC["timur_soc"]
-        CORE["5-stage pipeline<br/>IF (+ decompressor) ID EX MEM WB<br/>CSRs and traps in EX"]
-        CPUM["cpu_ahb_master<br/>(master 0, priority)"]
-        DMAM["dmac_ahb_master<br/>(master 1)"]
-        ARB["ahb_arbiter<br/>HMASTER / HMASTER_DATA<br/>parks on the CPU"]
-        MUX["ahb_bus_mux<br/>HWDATA follows the data phase"]
-        DEC["ahb_decoder<br/>registered data-phase select"]
-        ROM["rom_ahb<br/>LO / HI banks<br/>fetch port + AHB port"]
-        RAM["ram_ahb"]
-        BR["ahb_apb_bridge"]
-        UART["uart_apb"]
-        GPIO["gpio_apb"]
-        DREG["dmac_apb_regs"]
-        VGA["vga<br/>framebuffer (AHB) + registers (APB)<br/>640x480 video"]
-    end
-    CORE -->|"fetch (direct)"| ROM
-    CORE --> CPUM
-    CPUM --> ARB
-    DMAM --> ARB
-    ARB --> MUX
-    CPUM --> MUX
-    DMAM --> MUX
-    MUX --> DEC
-    DEC --> ROM
-    DEC --> RAM
-    DEC --> BR
-    DEC --> VGA
-    BR --> UART
-    BR --> GPIO
-    BR --> DREG
-    BR --> VGA
-    DREG -->|"src / dst / len / start"| DMAM
-    UART -.->|"irq"| CORE
-    DREG -.->|"irq"| CORE
-    VGA -->|"RGB 4:4:4, HS, VS"| MON["VGA connector"]
-```
+<p align="center"><img src="docs/diagrams/soc.svg" width="620" alt="The Timur SoC: CPU core, AHB-Lite fabric with two masters, ROM, RAM, VGA, APB bridge and peripherals, with the DE10-Lite pins"></p>
+
+<p align="center"><img src="docs/diagrams/ahb_fabric.svg" width="720" alt="The AHB-Lite fabric: arbiter, bus mux, decoder and slaves"></p>
+
+![AHB-Lite read with one wait state followed by a write](docs/diagrams/ahb_timing.svg)
+
+![An APB read through the AHB-to-APB bridge](docs/diagrams/apb_timing.svg)
 
 The board wrapper `Timur_RV32IMC` contains only `cpu_pll`, the reset gating (button AND PLL locked), `reset_sync` and `timur_soc`. Testbenches instantiate `timur_soc` and drive its clock and reset directly.
 
@@ -120,6 +89,8 @@ The board wrapper `Timur_RV32IMC` contains only `cpu_pll`, the reset gating (but
 | **RV32C** | Every RV32C instruction (no F/D forms), expanded in IF; 32-bit instructions on any halfword boundary | ✅ Phase 11 |
 
 Traps are taken in EX: the older instructions complete, the trapping one and the two younger ones are cancelled, and fetch continues at `mtvec`.
+
+<p align="center"><img src="docs/diagrams/traps.svg" width="620" alt="The trap path from EX to trap_entry.S, timur_trap and back with MRET"></p>
 
 | `mcause` | Cause | `mtval` |
 | -------- | ----- | ------- |
@@ -264,6 +235,8 @@ The datapath lives in **`timur_soc`**:
 
 ## Address Map
 
+![Memory map: ROM, RAM, VGA framebuffer and the APB pages](docs/diagrams/memory_map.svg)
+
 | Range | Slave | Size | Notes |
 | ----- | ----- | ---- | ----- |
 | `0x0000_0000 – 0x0000_FFFF` | ROM | 64 KB | Fetch port (IF) + AHB data port (loads, DMAC reads) |
@@ -280,6 +253,10 @@ APB3 has no byte strobes: peripheral registers are word-write only (a byte or ha
 ---
 
 ## Pipeline Design
+
+![The five pipeline stages and their registers](docs/diagrams/pipeline.svg)
+
+![Split-bank ROM fetch: a 32-bit instruction straddling two words read in one cycle](docs/diagrams/rom_fetch.svg)
 
 | Stage | Work | Memory / bus |
 | ----- | ---- | ------------ |
@@ -300,6 +277,8 @@ Taken branches, JAL, JALR and MRET redirect from EX and kill exactly the two you
 ---
 
 ## Hazard Handling
+
+<p align="center"><img src="docs/diagrams/hazards.svg" width="760" alt="Forwarding into EX and what the hazard unit does"></p>
 
 | Condition (highest first) | PC | IF/ID | ID/EX | EX/MEM | MEM/WB |
 | ------------------------- | -- | ----- | ----- | ------ | ------ |
@@ -337,6 +316,8 @@ Taken branches, JAL, JALR and MRET redirect from EX and kill exactly the two you
 | `0x04` | UART_STATUS | R | bit 0 `tx_busy`, bit 1 `rx_valid`, bit 2 `rx_overrun` |
 | `0x08` | UART_CTRL | R/W | bit 0 `rx_enable`, bit 1 `rx_irq_enable` |
 
+![UART 8N1 frame](docs/diagrams/uart_frame.svg)
+
 All UART registers reset to 0, so the receiver starts disabled; software sets `rx_enable` before the first read. With `rx_irq_enable` set, the UART requests the machine external interrupt while `rx_valid` is 1; reading UART_DATA clears it. The DE10-Lite has no USB-UART bridge: connect a **3.3 V** USB-to-TTL adapter (FT232R, CP2102 or CH340) to the GPIO header — see [Building & Programming](#building--programming).
 
 ### DMAC
@@ -361,6 +342,10 @@ With `irq_enable` set, the DMAC requests the machine external interrupt while do
 | `0x0C` | VGA_FRAME | R | Frames started, counted at the start of each vertical blanking interval |
 | `0x40`–`0x7C` | VGA_PALETTE[0..15] | R/W | 12-bit colour `0xRGB` of pixel value 0–15; resets to the 16 standard VGA text-mode colours (0 black, 1 blue, … 15 white) |
 
+<p align="center"><img src="docs/diagrams/vga.svg" width="600" alt="The VGA controller: beam counters, the shared read port, the pixel pipeline and the registers"></p>
+
+![640 x 480 sync timing](docs/diagrams/vga_timing.svg)
+
 The framebuffer at `0x3000_0000` holds row *y* at byte 160·*y*; each byte holds two pixels, the left one in its low nibble, so a 32-bit word is eight pixels with the leftmost in bits 3:0. The picture is 640×480 at 60 Hz (25 MHz pixel rate, 25.175 MHz nominal), each framebuffer pixel shown as 2×2 screen pixels, on the DE10-Lite's 4-bit resistor DACs. Draw while `vblank` is 1 (or after FRAME changes) to avoid tearing. A framebuffer read that coincides with the video fetch takes one extra cycle; writes never wait.
 
 ---
@@ -375,6 +360,7 @@ The framebuffer at `0x3000_0000` holds row *y* at byte 160·*y*; each byte holds
 | PLL | ALTPLL via the IP Catalog (`cpu_pll.v` + `cpu_pll.qip`) |
 | Memory initialisation | `rom_lo.mif` / `rom_hi.mif` (synthesis), `rom_lo.hex` / `rom_hi.hex` (simulation) and `rom.hex` (32-bit words, testbenches), all from the same program |
 | Test programs | Python 3.10+, standard library only: `sw/gen_soc_tests.py` (system tests), `sw/gen_sw_tests.py` (C programs), `sw/gen_unit_vectors.py` (CSR file, trap unit), `sw/gen_decompressor_vectors.py` (decompressor), `sw/gen_font.py` (VGA console font), on the package `sw/timur_tools/` (assembler, RV32IMC reference model, vector writer, PNG reader) |
+| Diagrams | [D2](https://d2lang.com) v0.9.0 (block and flow diagrams) and [WaveDrom](https://wavedrom.com) `wavedrom-cli` 3.2.0 (timing): sources in `docs/diagrams/src/`, SVGs in `docs/diagrams/`, `make diagrams` (`make diagram-tools` installs both into `.tools/`) |
 | Checks | ruff, mypy, pytest, clang-format, clang-tidy, cppcheck, shellcheck (`requirements-dev.txt`), GCC `-fanalyzer`; see [Development and Checks](#development-and-checks) |
 | Software | xPack `riscv-none-elf-gcc` 14.2.0-3 (GCC 14.2, newlib-nano) |
 | On-chip debug | Signal Tap Logic Analyzer |
@@ -382,6 +368,8 @@ The framebuffer at `0x3000_0000` holds row *y* at byte 160·*y*; each byte holds
 ---
 
 ## Simulation
+
+![How the design is checked: unit testbenches, system testbenches against the reference model, host checks and CI](docs/diagrams/verification.svg)
 
 ### Running all tests
 
@@ -502,6 +490,8 @@ A new ROM image does not need a full compilation: after one full compilation in 
 
 ## C Software Layer
 
+<p align="center"><img src="docs/diagrams/build_flow.svg" width="460" alt="From a C file to the board: GCC, layout checks, ROM images, Quartus, programming"></p>
+
 | File | Role |
 | ---- | ---- |
 | `sw/runtime/include/timur.h` | The interface for programs: peripheral registers, CSR access macros, trap interface, system calls, raw UART driver, VGA driver (Doxygen comments) |
@@ -534,6 +524,8 @@ vga_show_image(photo_pixels);                        /* or vga_blit(x, y, w, h, 
 ```
 
 A full-screen picture takes 38,400 of the ROM's 65,536 bytes.
+
+<p align="center"><img src="docs/diagrams/runtime_layout.svg" width="620" alt="Run-time memory layout: ROM and RAM sections"></p>
 
 **Memory layout.** ROM (`0x0000_0000`, 64 KB): `.text` from address 0 (`_start` first), `.rodata`/`.srodata`, `.init_array`, then the load image of `.data`. RAM (`0x2000_0000`, 64 KB): `.data`/`.sdata` (copied at boot), `.sbss`/`.bss` (cleared at boot), the heap from `_end` up to `_heap_end`, and the stack (`__stack_size` bytes below `_stack_top` = `0x2001_0000`). `gp` points at the small data plus `0x800`. The script asserts that the image fits in the ROM and that `.data` and `.bss` leave room for the stack.
 
@@ -582,9 +574,10 @@ make venv            # .venv with ruff, mypy, pytest, clang-format, clang-tidy, 
 | `make test` | `pytest tests/host`: unit tests of the assembler, the RVC expansion, the model, the image files, the builder and the CLIs, the cross-language constant check, and the golden-file test that regenerates every vector file and image and compares it byte for byte |
 | `make coverage` | The same with a coverage report; fails below 90 % (currently 98 %) |
 | `make analyze` | `sw/analyze.py`: GCC `-fanalyzer` with the strict warnings on the runtime and the test programs, the assembler with `--fatal-warnings`, `clang-tidy` (`.clang-tidy`) and `cppcheck` on the runtime |
-| `make regen` | Run the four generators |
+| `make regen` | Run the five generators (font, unit vectors, decompressor, system tests, C programs) |
 | `make sim` | `./run_tests.sh`: the RTL regression with Icarus Verilog |
 | `make all` | `check`, `analyze` and `sim` |
+| `make diagrams` | Render the changed D2 and WaveDrom sources in `docs/diagrams/src/` to SVG (`make diagram-tools` installs the pinned d2 and wavedrom-cli) |
 
 `.github/workflows/ci.yml` runs the same targets with the pinned xPack GCC release. After changing code, keep the generated files in the same commit as the change that alters them.
 
@@ -656,6 +649,7 @@ Timur-RV32IMC/
 ├── ram.mif           # zero-filled RAM image (not used: the RAM has no initialisation file)
 ├── run_tests.tcl, run_tests.bat   # ModelSim regression; run_tests.sh: the same with Icarus
 ├── Makefile, pyproject.toml, requirements-dev.txt, .clang-format, .clang-tidy   # checks
+├── docs/diagrams/     # README diagrams: SVGs; src/ holds the D2 and WaveDrom sources (make diagrams)
 ├── .github/workflows/ci.yml
 ├── Timur_RV32IMC.qpf, Timur_RV32IMC.qsf, Timur_RV32IMC.sdc
 └── README.md
