@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<!-- Source of docs/diagrams/pipeline.svg: make diagrams cuts the svg element out of this file.
+     Style: diagram-design skill, profile `timur` (see .diagram-design). System fonts only, so the
+     exported SVG looks the same as an <img> on GitHub. When editing: draw connectors before nodes,
+     keep geometry on the 4px grid, and keep every label 6px or more off its line. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The five-stage pipeline</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #fafafa;
+      --color-ink:    #18181b;
+      --color-muted:  #52525b;
+      --color-accent: #1d4ed8;
+      --font-sans:    'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --font-serif:   'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif;
+      --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+    }
+    .lede { color: var(--color-muted); font-size: 0.9rem; margin-bottom: 1.5rem; max-width: 64ch; }
+    svg { width: 100%; min-width: 864px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Process · rtl/top/timur_soc.v</p>
+    <h1>The five-stage pipeline</h1>
+    <p class="lede">What each stage does, the registers between them, and the paths that run backwards.</p>
+    <div class="diagram-container">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 864 428" width="864" height="428" role="img" aria-labelledby="pipeline-title pipeline-desc" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="pipeline-title">The five-stage pipeline</title>
+<desc id="pipeline-desc">Five-stage pipeline: IF, ID, EX, MEM and WB with the pipeline registers between them, plus the back paths: EX redirects IF, EX/MEM and WB results are forwarded into EX, and WB writes the register file in ID.</desc>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f4f5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d4d4d8" stroke-width="1.2"/></pattern>
+<marker id="m-ink" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#18181b"/></marker>
+<marker id="m-ink-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#18181b"/></marker>
+<marker id="m-soft" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#71717a"/></marker>
+<marker id="m-soft-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#71717a"/></marker>
+<marker id="m-ink2" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-ink2-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-accent" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#1d4ed8"/></marker>
+<marker id="m-accent-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#1d4ed8"/></marker>
+</defs>
+<rect width="864" height="428" fill="#fafafa"/>
+<!-- zones -->
+<!-- connectors (drawn before nodes) -->
+<path d="M440,96 L440,76 Q440,68 432,68 L128,68 Q120,68 120,76 L120,96" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<path d="M600,208 L600,224 Q600,232 592,232 L468,232 Q460,232 460,224 L460,208" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M740,208 L740,248 Q740,256 732,256 L428,256 Q420,256 420,248 L420,208" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M780,208 L780,272 Q780,280 772,280 L288,280 Q280,280 280,272 L280,208" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<!-- connector labels -->
+<rect x="256" y="48" width="48" height="12" rx="2" fill="#fafafa"/>
+<text x="280" y="57" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REDIRECT</text>
+<rect x="508" y="212" width="44" height="12" rx="2" fill="#fafafa"/>
+<text x="530" y="221" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FORWARD</text>
+<rect x="646" y="236" width="44" height="12" rx="2" fill="#fafafa"/>
+<text x="668" y="245" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FORWARD</text>
+<rect x="320" y="260" width="60" height="12" rx="2" fill="#fafafa"/>
+<text x="350" y="269" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WRITE-BACK</text>
+<!-- nodes -->
+<!-- if -->
+<rect x="56" y="96" width="128" height="112" rx="6" fill="#fafafa"/>
+<rect x="56" y="96" width="128" height="112" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="68" y="117.5" fill="#18181b" font-size="14" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">IF</text>
+<text x="68" y="133.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">pc</text>
+<text x="68" y="146.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">PC + 2, PC + 4</text>
+<text x="68" y="159.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">split-bank ROM fetch</text>
+<text x="68" y="172.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">(32-bit window)</text>
+<text x="68" y="185.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">decompressor</text>
+<!-- id -->
+<rect x="216" y="96" width="128" height="112" rx="6" fill="#fafafa"/>
+<rect x="216" y="96" width="128" height="112" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="228" y="117.5" fill="#18181b" font-size="14" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">ID</text>
+<text x="228" y="133.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">instr_parser,</text>
+<text x="228" y="146.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">imm_gen</text>
+<text x="228" y="159.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">main_control_unit</text>
+<text x="228" y="172.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">alu_decoder</text>
+<text x="228" y="185.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">registers (32 x 32)</text>
+<!-- ex -->
+<rect x="376" y="96" width="128" height="112" rx="6" fill="#fafafa"/>
+<rect x="376" y="96" width="128" height="112" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="388" y="117.5" fill="#18181b" font-size="14" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">EX</text>
+<text x="388" y="133.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">forwarding muxes</text>
+<text x="388" y="146.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">ALU, MUL, DIV</text>
+<text x="388" y="159.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">branch compare,</text>
+<text x="388" y="172.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">redirect</text>
+<text x="388" y="185.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">CSRs, trap decision</text>
+<!-- mem -->
+<rect x="536" y="96" width="128" height="112" rx="6" fill="#fafafa"/>
+<rect x="536" y="96" width="128" height="112" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="548" y="117.5" fill="#18181b" font-size="14" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">MEM</text>
+<text x="548" y="133.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">store_aligner</text>
+<text x="548" y="146.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">cpu_ahb_master:</text>
+<text x="548" y="159.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">AHB address phase</text>
+<!-- wb -->
+<rect x="696" y="96" width="128" height="112" rx="6" fill="#fafafa"/>
+<rect x="696" y="96" width="128" height="112" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="708" y="117.5" fill="#18181b" font-size="14" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">WB</text>
+<text x="708" y="133.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">AHB data phase</text>
+<text x="708" y="146.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">load_formatter</text>
+<text x="708" y="159.5" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">register write</text>
+<!-- annotations and legend -->
+<text x="172" y="116" fill="#52525b" font-size="8" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end" letter-spacing="0.12em">FETCH</text>
+<text x="332" y="116" fill="#52525b" font-size="8" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end" letter-spacing="0.12em">DECODE</text>
+<text x="492" y="116" fill="#52525b" font-size="8" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end" letter-spacing="0.12em">EXECUTE</text>
+<text x="652" y="116" fill="#52525b" font-size="8" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end" letter-spacing="0.12em">MEMORY</text>
+<text x="812" y="116" fill="#52525b" font-size="8" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end" letter-spacing="0.12em">WRITE-BACK</text>
+<rect x="196" y="96" width="8" height="112" rx="2" fill="#e4e4e7" stroke="#3f3f46" stroke-width="1"/>
+<text x="200" y="88" fill="#3f3f46" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.04em">IF/ID</text>
+<rect x="356" y="96" width="8" height="112" rx="2" fill="#e4e4e7" stroke="#3f3f46" stroke-width="1"/>
+<text x="360" y="88" fill="#3f3f46" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.04em">ID/EX</text>
+<rect x="516" y="96" width="8" height="112" rx="2" fill="#e4e4e7" stroke="#3f3f46" stroke-width="1"/>
+<text x="520" y="88" fill="#3f3f46" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.04em">EX/MEM</text>
+<rect x="676" y="96" width="8" height="112" rx="2" fill="#e4e4e7" stroke="#3f3f46" stroke-width="1"/>
+<text x="680" y="88" fill="#3f3f46" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.04em">MEM/WB</text>
+<text x="56" y="320" fill="#52525b" font-size="14" font-weight="400" font-family="'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif" text-anchor="start" font-style="italic">hazard_detection_unit holds or flushes every pipeline register:</text>
+<text x="56" y="338" fill="#52525b" font-size="14" font-weight="400" font-family="'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif" text-anchor="start" font-style="italic">see the hazards diagram.</text>
+<line x1="40" y1="376" x2="824" y2="376" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="40" y="399" fill="#71717a" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">LEGEND</text>
+<line x1="112" y1="396" x2="132" y2="396" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<text x="140" y="399" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">RESULT PATHS</text>
+<line x1="228" y1="396" x2="248" y2="396" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<text x="256" y="399" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">REDIRECT</text>
+<rect x="324" y="390" width="20" height="12" rx="3" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="352" y="399" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">EX DECIDES</text>
+</svg>
+    </div>
+  </div>
+</body>
+</html>

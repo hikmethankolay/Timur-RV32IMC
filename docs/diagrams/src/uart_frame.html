@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<!-- Source of docs/diagrams/uart_frame.svg: make diagrams cuts the svg element out of this file.
+     Style: diagram-design skill, profile `timur` (see .diagram-design). System fonts only, so the
+     exported SVG looks the same as an <img> on GitHub. When editing: draw connectors before nodes,
+     keep geometry on the 4px grid, and keep every label 6px or more off its line. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UART 8N1 frame</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #fafafa;
+      --color-ink:    #18181b;
+      --color-muted:  #52525b;
+      --color-accent: #1d4ed8;
+      --font-sans:    'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --font-serif:   'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif;
+      --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+    }
+    .lede { color: var(--color-muted); font-size: 0.9rem; margin-bottom: 1.5rem; max-width: 64ch; }
+    svg { width: 100%; min-width: 816px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Timing · rtl/periph/uart_apb.v</p>
+    <h1>UART 8N1 frame</h1>
+    <p class="lede">One character on uart_tx: 0x55, LSB first.</p>
+    <div class="diagram-container">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 816 192" width="816" height="192" role="img" aria-labelledby="uart_frame-title uart_frame-desc" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="uart_frame-title">UART 8N1 frame</title>
+<desc id="uart_frame-desc">UART 8N1 frame for 0x55: a low start bit, eight data bits sent least significant first, and a high stop bit, each 434 clocks long.</desc>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f4f5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d4d4d8" stroke-width="1.2"/></pattern>
+<marker id="m-ink" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#18181b"/></marker>
+<marker id="m-ink-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#18181b"/></marker>
+<marker id="m-soft" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#71717a"/></marker>
+<marker id="m-soft-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#71717a"/></marker>
+<marker id="m-ink2" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-ink2-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-accent" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#1d4ed8"/></marker>
+<marker id="m-accent-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#1d4ed8"/></marker>
+</defs>
+<rect width="816" height="192" fill="#fafafa"/>
+<!-- zones -->
+<rect x="256" y="64" width="416" height="96" fill="#1d4ed8" fill-opacity="0.06"/>
+<line x1="256" y1="64" x2="672" y2="64" stroke="#1d4ed8" stroke-width="1.6"/>
+<text x="464" y="58" fill="#1d4ed8" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.12em">0X55, LSB FIRST</text>
+<line x1="152" y1="68" x2="152" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="204" y1="68" x2="204" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="256" y1="68" x2="256" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="308" y1="68" x2="308" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="360" y1="68" x2="360" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="412" y1="68" x2="412" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="464" y1="68" x2="464" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="516" y1="68" x2="516" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="568" y1="68" x2="568" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="620" y1="68" x2="620" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="672" y1="68" x2="672" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="724" y1="68" x2="724" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="776" y1="68" x2="776" y2="156" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<!-- connectors (drawn before nodes) -->
+<!-- connector labels -->
+<!-- nodes -->
+<!-- annotations and legend -->
+<text x="40" y="44" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start" letter-spacing="0.14em">UART 8N1: 0X55, LSB FIRST, 434 CLOCKS PER BIT</text>
+<text x="136" y="93.5" fill="#18181b" font-size="10" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end">uart_tx</text>
+<line x1="152" y1="82.0" x2="204" y2="82.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="204" y1="82.0" x2="204" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="204" y1="98.0" x2="256" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="256" y1="82.0" x2="256" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="256" y1="82.0" x2="308" y2="82.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="308" y1="82.0" x2="308" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="308" y1="98.0" x2="360" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="360" y1="82.0" x2="360" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="360" y1="82.0" x2="412" y2="82.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="412" y1="82.0" x2="412" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="412" y1="98.0" x2="464" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="464" y1="82.0" x2="464" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="464" y1="82.0" x2="516" y2="82.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="516" y1="82.0" x2="516" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="516" y1="98.0" x2="568" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="568" y1="82.0" x2="568" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="568" y1="82.0" x2="620" y2="82.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="620" y1="82.0" x2="620" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="620" y1="98.0" x2="672" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="672" y1="82.0" x2="672" y2="98.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="672" y1="82.0" x2="776" y2="82.0" stroke="#18181b" stroke-width="1.4"/>
+<text x="136" y="145.5" fill="#18181b" font-size="10" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end">bit</text>
+<line x1="152" y1="128" x2="776" y2="128" stroke="#3f3f46" stroke-width="1"/>
+<line x1="152" y1="124" x2="152" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="178" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">idle</text>
+<line x1="204" y1="124" x2="204" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="230" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">start</text>
+<line x1="256" y1="124" x2="256" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="282" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">D0</text>
+<line x1="308" y1="124" x2="308" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="334" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">D1</text>
+<line x1="360" y1="124" x2="360" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="386" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">D2</text>
+<line x1="412" y1="124" x2="412" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="438" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">D3</text>
+<line x1="464" y1="124" x2="464" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="490" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">D4</text>
+<line x1="516" y1="124" x2="516" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="542" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">D5</text>
+<line x1="568" y1="124" x2="568" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="594" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">D6</text>
+<line x1="620" y1="124" x2="620" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="646" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">D7</text>
+<line x1="672" y1="124" x2="672" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="698" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">stop</text>
+<line x1="724" y1="124" x2="724" y2="134" stroke="#3f3f46" stroke-width="1"/>
+<text x="750" y="145" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">idle</text>
+<line x1="776" y1="124" x2="776" y2="134" stroke="#3f3f46" stroke-width="1"/>
+</svg>
+    </div>
+  </div>
+</body>
+</html>

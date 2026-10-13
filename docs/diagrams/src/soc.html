@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<!-- Source of docs/diagrams/soc.svg: make diagrams cuts the svg element out of this file.
+     Style: diagram-design skill, profile `timur` (see .diagram-design). System fonts only, so the
+     exported SVG looks the same as an <img> on GitHub. When editing: draw connectors before nodes,
+     keep geometry on the 4px grid, and keep every label 6px or more off its line. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Timur SoC on the DE10-Lite</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #fafafa;
+      --color-ink:    #18181b;
+      --color-muted:  #52525b;
+      --color-accent: #1d4ed8;
+      --font-sans:    'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --font-serif:   'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif;
+      --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+    }
+    .lede { color: var(--color-muted); font-size: 0.9rem; margin-bottom: 1.5rem; max-width: 64ch; }
+    svg { width: 100%; min-width: 856px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · rtl/top/timur_soc.v</p>
+    <h1>The Timur SoC on the DE10-Lite</h1>
+    <p class="lede">Every module of the SoC and the board pins it drives. Thick lines carry AHB data; the CPU core and the fabric are the two blocks everything else hangs off.</p>
+    <div class="diagram-container">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 688" width="856" height="688" role="img" aria-labelledby="soc-title soc-desc" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="soc-title">The Timur SoC on the DE10-Lite</title>
+<desc id="soc-desc">Architecture of the Timur SoC: the CPU core and DMA master share an AHB-Lite fabric to ROM, RAM, VGA and an APB bridge to UART, GPIO and DMA registers, with clock, reset and interrupt paths.</desc>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f4f5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d4d4d8" stroke-width="1.2"/></pattern>
+<marker id="m-ink" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#18181b"/></marker>
+<marker id="m-ink-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#18181b"/></marker>
+<marker id="m-soft" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#71717a"/></marker>
+<marker id="m-soft-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#71717a"/></marker>
+<marker id="m-ink2" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-ink2-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-accent" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#1d4ed8"/></marker>
+<marker id="m-accent-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#1d4ed8"/></marker>
+</defs>
+<rect width="856" height="688" fill="#fafafa"/>
+<!-- zones -->
+<rect x="40" y="40" width="776" height="580" rx="8" fill="#fafafa" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="52" y="58" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">TIMUR_RV32IMC · BOARD WRAPPER</text>
+<rect x="56" y="160" width="744" height="444" rx="8" fill="#f4f4f5" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="68" y="178" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">TIMUR_SOC</text>
+<!-- connectors (drawn before nodes) -->
+<path d="M224,100 L304,100" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M154,128 L154,160" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M374,128 L374,160" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M224,224 L304,224" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M154,256 L154,296" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M374,256 L374,296" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M702,256 L702,296" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M304,324 L224,324" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M374,352 L374,392" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M538,352 L538,392" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M702,352 L702,392" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M632,424 L608,424" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M667,456 L667,460 Q667,468 659,468 L382,468 Q374,468 374,476 L374,496" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M702,456 L702,472 Q702,480 694,480 L546,480 Q538,480 538,488 L538,496" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M737,456 L737,496" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M772,528 L780,528 Q788,528 788,520 L788,232 Q788,224 780,224 L772,224" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<path d="M304,528 L224,528" fill="none" stroke="#3f3f46" stroke-width="1.4" stroke-dasharray="1.5,3" marker-end="url(#m-ink2)"/>
+<path d="M702,568 L702,580 Q702,588 694,588 L162,588 Q154,588 154,580 L154,568" fill="none" stroke="#3f3f46" stroke-width="1.4" stroke-dasharray="1.5,3" marker-end="url(#m-ink2)"/>
+<path d="M84,528 L76,528 Q68,528 68,520 L68,248 Q68,240 76,240 L84,240" fill="none" stroke="#3f3f46" stroke-width="1.4" stroke-dasharray="1.5,3" marker-end="url(#m-ink2)"/>
+<!-- connector labels -->
+<rect x="244" y="80" width="40" height="12" rx="2" fill="#fafafa"/>
+<text x="264" y="89" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LOCKED</text>
+<rect x="162" y="138" width="24" height="12" rx="2" fill="#fafafa"/>
+<text x="174" y="147" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CLK</text>
+<rect x="382" y="138" width="36" height="12" rx="2" fill="#fafafa"/>
+<text x="400" y="147" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RST_N</text>
+<rect x="234" y="204" width="60" height="12" rx="2" fill="#fafafa"/>
+<text x="264" y="213" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LOAD/STORE</text>
+<rect x="162" y="270" width="60" height="12" rx="2" fill="#fafafa"/>
+<text x="192" y="279" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FETCH PORT</text>
+<rect x="236" y="304" width="56" height="12" rx="2" fill="#fafafa"/>
+<text x="264" y="313" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">DATA PORT</text>
+<rect x="546" y="366" width="64" height="12" rx="2" fill="#fafafa"/>
+<text x="578" y="375" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FRAMEBUFFER</text>
+<!-- nodes -->
+<!-- pll -->
+<rect x="84" y="72" width="140" height="56" rx="6" fill="#fafafa"/>
+<rect x="84" y="72" width="140" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="154" y="89.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">cpu_pll</text>
+<text x="154" y="105.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">MAX10_CLK1_50 in</text>
+<text x="154" y="118.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">50 MHz out</text>
+<!-- rst -->
+<rect x="304" y="72" width="140" height="56" rx="6" fill="#fafafa"/>
+<rect x="304" y="72" width="140" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="374" y="95.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">reset_sync</text>
+<text x="374" y="111.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">KEY[0], PLL locked</text>
+<!-- cpu -->
+<rect x="84" y="192" width="140" height="64" rx="6" fill="#fafafa"/>
+<rect x="84" y="192" width="140" height="64" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="154" y="206.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">CPU core</text>
+<text x="154" y="222.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">5-stage RV32IMC</text>
+<text x="154" y="235.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">CSRs and traps</text>
+<text x="154" y="248.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">RVC decompressor</text>
+<!-- cpum -->
+<rect x="304" y="192" width="140" height="64" rx="6" fill="#fafafa"/>
+<rect x="304" y="192" width="140" height="64" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="374" y="219.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">cpu_ahb_master</text>
+<text x="374" y="235.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">master 0, priority</text>
+<!-- dma -->
+<rect x="632" y="192" width="140" height="64" rx="6" fill="#fafafa"/>
+<rect x="632" y="192" width="140" height="64" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="702" y="219.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">dmac_ahb_master</text>
+<text x="702" y="235.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">master 1</text>
+<!-- rom -->
+<rect x="84" y="296" width="140" height="56" rx="6" fill="#fafafa"/>
+<rect x="84" y="296" width="140" height="56" rx="6" fill="#f1f1f2" stroke="#71717a" stroke-width="1.0"/>
+<rect x="92" y="304" width="24" height="12" rx="2" fill="none" stroke="#52525b" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="104" y="313" fill="#52525b" font-size="7.5" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MEM</text>
+<text x="154" y="329.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">rom_ahb</text>
+<text x="154" y="345.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">64 KB, two ports</text>
+<!-- fabric -->
+<rect x="304" y="296" width="468" height="56" rx="6" fill="#fafafa"/>
+<rect x="304" y="296" width="468" height="56" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="538" y="319.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">AHB-Lite fabric</text>
+<text x="538" y="335.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">arbiter, bus mux, decoder</text>
+<!-- ram -->
+<rect x="304" y="392" width="140" height="64" rx="6" fill="#fafafa"/>
+<rect x="304" y="392" width="140" height="64" rx="6" fill="#f1f1f2" stroke="#71717a" stroke-width="1.0"/>
+<rect x="312" y="400" width="24" height="12" rx="2" fill="none" stroke="#52525b" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="324" y="409" fill="#52525b" font-size="7.5" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MEM</text>
+<text x="374" y="429.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">ram_ahb</text>
+<text x="374" y="445.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">64 KB</text>
+<!-- vga -->
+<rect x="468" y="392" width="140" height="64" rx="6" fill="#fafafa"/>
+<rect x="468" y="392" width="140" height="64" rx="6" fill="#f4f4f5" stroke="#a1a1aa" stroke-width="1.0"/>
+<text x="538" y="406.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">vga</text>
+<text x="538" y="422.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">framebuffer on AHB</text>
+<text x="538" y="435.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">registers on APB</text>
+<text x="538" y="448.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">RGB 4:4:4, HS, VS</text>
+<!-- bridge -->
+<rect x="632" y="392" width="140" height="64" rx="6" fill="#fafafa"/>
+<rect x="632" y="392" width="140" height="64" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="702" y="419.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">ahb_apb_bridge</text>
+<text x="702" y="435.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">AHB-Lite to APB3</text>
+<!-- irqs -->
+<rect x="84" y="496" width="140" height="72" rx="6" fill="#fafafa"/>
+<rect x="84" y="496" width="140" height="72" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0" stroke-dasharray="4,3"/>
+<text x="154" y="521.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">ext. interrupt</text>
+<text x="154" y="537.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">UART rx or DMA done</text>
+<text x="154" y="550.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">sets mip.MEIP</text>
+<!-- uart -->
+<rect x="304" y="496" width="140" height="72" rx="6" fill="#fafafa"/>
+<rect x="304" y="496" width="140" height="72" rx="6" fill="#f4f4f5" stroke="#a1a1aa" stroke-width="1.0"/>
+<rect x="312" y="504" width="24" height="12" rx="2" fill="none" stroke="#52525b" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="324" y="513" fill="#52525b" font-size="7.5" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APB</text>
+<text x="374" y="531.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">uart_apb</text>
+<text x="374" y="547.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">115200 8N1</text>
+<text x="374" y="560.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">GPIO[0] tx, [1] rx</text>
+<!-- gpio -->
+<rect x="468" y="496" width="140" height="72" rx="6" fill="#fafafa"/>
+<rect x="468" y="496" width="140" height="72" rx="6" fill="#f4f4f5" stroke="#a1a1aa" stroke-width="1.0"/>
+<rect x="476" y="504" width="24" height="12" rx="2" fill="none" stroke="#52525b" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="488" y="513" fill="#52525b" font-size="7.5" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APB</text>
+<text x="538" y="531.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">gpio_apb</text>
+<text x="538" y="547.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">SW[9:0] in</text>
+<text x="538" y="560.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">LEDR[9:0] out</text>
+<!-- dregs -->
+<rect x="632" y="496" width="140" height="72" rx="6" fill="#fafafa"/>
+<rect x="632" y="496" width="140" height="72" rx="6" fill="#f4f4f5" stroke="#a1a1aa" stroke-width="1.0"/>
+<rect x="640" y="504" width="24" height="12" rx="2" fill="none" stroke="#52525b" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="652" y="513" fill="#52525b" font-size="7.5" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APB</text>
+<text x="702" y="537.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">dmac_apb_regs</text>
+<text x="702" y="553.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">start: master 1</text>
+<!-- annotations and legend -->
+<text x="480" y="96" fill="#52525b" font-size="14" font-weight="400" font-family="'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif" text-anchor="start" font-style="italic">The board wrapper adds clock and reset;</text>
+<text x="480" y="114" fill="#52525b" font-size="14" font-weight="400" font-family="'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif" text-anchor="start" font-style="italic">board pins are named inside each block.</text>
+<line x1="40" y1="636" x2="816" y2="636" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="40" y="659" fill="#71717a" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">LEGEND</text>
+<line x1="112" y1="656" x2="132" y2="656" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<text x="140" y="659" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">AHB DATA</text>
+<line x1="208" y1="656" x2="228" y2="656" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<text x="236" y="659" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">SIGNAL</text>
+<line x1="292" y1="656" x2="312" y2="656" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<text x="320" y="659" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">CONTROL</text>
+<line x1="384" y1="656" x2="404" y2="656" stroke="#3f3f46" stroke-width="1.4" stroke-dasharray="1.5,3" marker-end="url(#m-ink2)"/>
+<text x="412" y="659" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">INTERRUPT</text>
+<rect x="484" y="650" width="20" height="12" rx="3" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="512" y="659" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">CORE BLOCKS</text>
+</svg>
+    </div>
+  </div>
+</body>
+</html>

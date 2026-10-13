@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<!-- Source of docs/diagrams/vga_timing.svg: make diagrams cuts the svg element out of this file.
+     Style: diagram-design skill, profile `timur` (see .diagram-design). System fonts only, so the
+     exported SVG looks the same as an <img> on GitHub. When editing: draw connectors before nodes,
+     keep geometry on the 4px grid, and keep every label 6px or more off its line. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>640 x 480 sync timing</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #fafafa;
+      --color-ink:    #18181b;
+      --color-muted:  #52525b;
+      --color-accent: #1d4ed8;
+      --font-sans:    'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --font-serif:   'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif;
+      --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+    }
+    .lede { color: var(--color-muted); font-size: 0.9rem; margin-bottom: 1.5rem; max-width: 64ch; }
+    svg { width: 100%; min-width: 808px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Timing · rtl/periph/vga.v</p>
+    <h1>640 x 480 sync timing</h1>
+    <p class="lede">Horizontal timing in pixels, vertical in lines.</p>
+    <div class="diagram-container">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 808 384" width="808" height="384" role="img" aria-labelledby="vga_timing-title vga_timing-desc" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="vga_timing-title">640 x 480 sync timing</title>
+<desc id="vga_timing-desc">VGA 640 x 480 at 60 Hz: each line is 640 active pixels, 16 front porch, 96 sync and 48 back porch, and each frame is 480 active lines, 10 front porch, 2 sync and 33 back porch, with sync active low.</desc>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f4f5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d4d4d8" stroke-width="1.2"/></pattern>
+<marker id="m-ink" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#18181b"/></marker>
+<marker id="m-ink-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#18181b"/></marker>
+<marker id="m-soft" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#71717a"/></marker>
+<marker id="m-soft-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#71717a"/></marker>
+<marker id="m-ink2" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-ink2-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-accent" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#1d4ed8"/></marker>
+<marker id="m-accent-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#1d4ed8"/></marker>
+</defs>
+<rect width="808" height="384" fill="#fafafa"/>
+<!-- zones -->
+<rect x="488" y="64" width="168" height="288" fill="#1d4ed8" fill-opacity="0.06"/>
+<line x1="488" y1="64" x2="656" y2="64" stroke="#1d4ed8" stroke-width="1.6"/>
+<text x="572" y="58" fill="#1d4ed8" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.12em">SYNC, ACTIVE LOW</text>
+<line x1="152" y1="68" x2="152" y2="348" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="376" y1="68" x2="376" y2="348" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="488" y1="68" x2="488" y2="348" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="656" y1="68" x2="656" y2="348" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<line x1="768" y1="68" x2="768" y2="348" stroke="#d4d4d8" stroke-width="1" stroke-dasharray="2,3"/>
+<!-- connectors (drawn before nodes) -->
+<!-- connector labels -->
+<!-- nodes -->
+<!-- annotations and legend -->
+<text x="40" y="44" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start" letter-spacing="0.14em">VGA 640 X 480 AT 60 HZ (NOT TO SCALE)</text>
+<text x="40" y="88" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start" letter-spacing="0.14em">LINE, IN PIXELS</text>
+<line x1="40" y1="93" x2="768" y2="93" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="136" y="117.5" fill="#18181b" font-size="10" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end">h</text>
+<polygon points="152,114.0 152,106.0 372,106.0 376,114.0 372,122.0 152,122.0" fill="#ffffff" stroke="#18181b" stroke-width="1.2"/>
+<text x="264" y="117.5" fill="#18181b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">active 640</text>
+<polygon points="376,114.0 380,106.0 484,106.0 488,114.0 484,122.0 380,122.0" fill="#ffffff" stroke="#18181b" stroke-width="1.2"/>
+<text x="432" y="117.5" fill="#18181b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">FP 16</text>
+<polygon points="488,114.0 492,106.0 652,106.0 656,114.0 652,122.0 492,122.0" fill="#ffffff" stroke="#18181b" stroke-width="1.2"/>
+<text x="572" y="117.5" fill="#18181b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">sync 96</text>
+<polygon points="656,114.0 660,106.0 768,106.0 768,114.0 768,122.0 660,122.0" fill="#ffffff" stroke="#18181b" stroke-width="1.2"/>
+<text x="712" y="117.5" fill="#18181b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">BP 48</text>
+<text x="136" y="153.5" fill="#18181b" font-size="10" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end">vga_hs</text>
+<line x1="152" y1="142.0" x2="488" y2="142.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="488" y1="142.0" x2="488" y2="158.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="488" y1="158.0" x2="656" y2="158.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="656" y1="142.0" x2="656" y2="158.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="656" y1="142.0" x2="768" y2="142.0" stroke="#18181b" stroke-width="1.4"/>
+<text x="136" y="189.5" fill="#18181b" font-size="10" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end">RGB</text>
+<polygon points="152,186.0 152,178.0 372,178.0 376,186.0 372,194.0 152,194.0" fill="#ffffff" stroke="#18181b" stroke-width="1.2"/>
+<text x="264" y="189.5" fill="#18181b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">pixels</text>
+<line x1="376" y1="194.0" x2="768" y2="194.0" stroke="#18181b" stroke-width="1.4"/>
+<text x="40" y="236" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start" letter-spacing="0.14em">FRAME, IN LINES</text>
+<line x1="40" y1="241" x2="768" y2="241" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="136" y="265.5" fill="#18181b" font-size="10" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end">v</text>
+<polygon points="152,262.0 152,254.0 372,254.0 376,262.0 372,270.0 152,270.0" fill="#ffffff" stroke="#18181b" stroke-width="1.2"/>
+<text x="264" y="265.5" fill="#18181b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">active 480</text>
+<polygon points="376,262.0 380,254.0 484,254.0 488,262.0 484,270.0 380,270.0" fill="#ffffff" stroke="#18181b" stroke-width="1.2"/>
+<text x="432" y="265.5" fill="#18181b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">FP 10</text>
+<polygon points="488,262.0 492,254.0 652,254.0 656,262.0 652,270.0 492,270.0" fill="#ffffff" stroke="#18181b" stroke-width="1.2"/>
+<text x="572" y="265.5" fill="#18181b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">sync 2</text>
+<polygon points="656,262.0 660,254.0 768,254.0 768,262.0 768,270.0 660,270.0" fill="#ffffff" stroke="#18181b" stroke-width="1.2"/>
+<text x="712" y="265.5" fill="#18181b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">BP 33</text>
+<text x="136" y="301.5" fill="#18181b" font-size="10" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end">vga_vs</text>
+<line x1="152" y1="290.0" x2="488" y2="290.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="488" y1="290.0" x2="488" y2="306.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="488" y1="306.0" x2="656" y2="306.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="656" y1="290.0" x2="656" y2="306.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="656" y1="290.0" x2="768" y2="290.0" stroke="#18181b" stroke-width="1.4"/>
+<text x="136" y="337.5" fill="#18181b" font-size="10" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="end">VBLANK</text>
+<line x1="152" y1="342.0" x2="376" y2="342.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="376" y1="326.0" x2="376" y2="342.0" stroke="#18181b" stroke-width="1.4"/>
+<line x1="376" y1="326.0" x2="768" y2="326.0" stroke="#18181b" stroke-width="1.4"/>
+</svg>
+    </div>
+  </div>
+</body>
+</html>

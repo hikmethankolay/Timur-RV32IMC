@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<!-- Source of docs/diagrams/runtime_layout.svg: make diagrams cuts the svg element out of this file.
+     Style: diagram-design skill, profile `timur` (see .diagram-design). System fonts only, so the
+     exported SVG looks the same as an <img> on GitHub. When editing: draw connectors before nodes,
+     keep geometry on the 4px grid, and keep every label 6px or more off its line. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Run-time memory layout</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #fafafa;
+      --color-ink:    #18181b;
+      --color-muted:  #52525b;
+      --color-accent: #1d4ed8;
+      --font-sans:    'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --font-serif:   'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif;
+      --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+    }
+    .lede { color: var(--color-muted); font-size: 0.9rem; margin-bottom: 1.5rem; max-width: 64ch; }
+    svg { width: 100%; min-width: 856px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Layer stack · sw/runtime/linker.ld, crt0.S</p>
+    <h1>Run-time memory layout</h1>
+    <p class="lede">Sections of a C program in ROM and RAM; higher addresses at the top.</p>
+    <div class="diagram-container">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 404" width="856" height="404" role="img" aria-labelledby="runtime_layout-title runtime_layout-desc" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="runtime_layout-title">Run-time memory layout</title>
+<desc id="runtime_layout-desc">Run-time memory layout of a C program: ROM holds .text, .rodata, .init_array and the .data load image; RAM holds .data, .bss, the heap growing up and the stack growing down, and crt0 copies the .data image from ROM to RAM at boot.</desc>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f4f5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d4d4d8" stroke-width="1.2"/></pattern>
+<marker id="m-ink" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#18181b"/></marker>
+<marker id="m-ink-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#18181b"/></marker>
+<marker id="m-soft" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#71717a"/></marker>
+<marker id="m-soft-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#71717a"/></marker>
+<marker id="m-ink2" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-ink2-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-accent" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#1d4ed8"/></marker>
+<marker id="m-accent-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#1d4ed8"/></marker>
+</defs>
+<rect width="856" height="404" fill="#fafafa"/>
+<!-- zones -->
+<rect x="40" y="40" width="320" height="296" rx="8" fill="#f4f4f5" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="52" y="58" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">ROM · 0X0000_0000 UP</text>
+<rect x="496" y="40" width="320" height="296" rx="8" fill="#f4f4f5" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="508" y="58" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">RAM · 0X2000_0000 UP</text>
+<!-- connectors (drawn before nodes) -->
+<path d="M344,160 L412,160 Q420,160 420,168 L420,280 Q420,288 428,288 L512,288" fill="none" stroke="#1d4ed8" stroke-width="1.6" marker-end="url(#m-accent)"/>
+<!-- connector labels -->
+<rect x="428" y="218" width="64" height="12" rx="2" fill="#fafafa"/>
+<text x="460" y="227" fill="#1d4ed8" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CRT0 COPIES</text>
+<!-- nodes -->
+<!-- free -->
+<rect x="56" y="72" width="288" height="64" rx="6" fill="#fafafa"/>
+<rect x="56" y="72" width="288" height="64" rx="6" fill="url(#hatch)" stroke="#d4d4d8" stroke-width="1.0"/>
+<text x="68" y="107.8" fill="#71717a" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">unused</text>
+<!-- dataimg -->
+<rect x="56" y="140" width="288" height="40" rx="6" fill="#fafafa"/>
+<rect x="56" y="140" width="288" height="40" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="68" y="155.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">.data load image</text>
+<text x="68" y="171.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">_data_load</text>
+<!-- init -->
+<rect x="56" y="184" width="288" height="40" rx="6" fill="#fafafa"/>
+<rect x="56" y="184" width="288" height="40" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="68" y="207.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">.init_array</text>
+<!-- rodata -->
+<rect x="56" y="228" width="288" height="40" rx="6" fill="#fafafa"/>
+<rect x="56" y="228" width="288" height="40" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="68" y="251.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">.rodata, .srodata</text>
+<!-- text -->
+<rect x="56" y="272" width="288" height="48" rx="6" fill="#fafafa"/>
+<rect x="56" y="272" width="288" height="48" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="68" y="291.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">.text</text>
+<text x="68" y="307.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">_start at 0x0000_0000</text>
+<!-- stack -->
+<rect x="512" y="72" width="288" height="56" rx="6" fill="#fafafa"/>
+<rect x="512" y="72" width="288" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="524" y="95.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">stack, 8 KB by default</text>
+<text x="524" y="111.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">grows down from 0x2001_0000</text>
+<!-- heap -->
+<rect x="512" y="132" width="288" height="76" rx="6" fill="#fafafa"/>
+<rect x="512" y="132" width="288" height="76" rx="6" fill="url(#hatch)" stroke="#d4d4d8" stroke-width="1.0"/>
+<text x="524" y="165.8" fill="#71717a" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">heap</text>
+<text x="524" y="181.8" fill="#71717a" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">_end up to _heap_end, grows up</text>
+<!-- bss -->
+<rect x="512" y="212" width="288" height="48" rx="6" fill="#fafafa"/>
+<rect x="512" y="212" width="288" height="48" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="524" y="231.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">.sbss, .bss</text>
+<text x="524" y="247.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">cleared by crt0</text>
+<!-- data -->
+<rect x="512" y="264" width="288" height="56" rx="6" fill="#fafafa"/>
+<rect x="512" y="264" width="288" height="56" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="524" y="287.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="start">.data, .sdata</text>
+<text x="524" y="303.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">gp points 0x800 past .sdata</text>
+<!-- annotations and legend -->
+<line x1="40" y1="352" x2="816" y2="352" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="40" y="375" fill="#71717a" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">LEGEND</text>
+<line x1="112" y1="372" x2="132" y2="372" stroke="#1d4ed8" stroke-width="1.6" marker-end="url(#m-accent)"/>
+<text x="140" y="375" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">COPIED AT BOOT</text>
+<rect x="240" y="366" width="20" height="12" rx="3" fill="url(#hatch)" stroke="#d4d4d8" stroke-width="1.0"/>
+<text x="268" y="375" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">FREE SPACE</text>
+<rect x="348" y="366" width="20" height="12" rx="3" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="376" y="375" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">.DATA IMAGE AND COPY</text>
+</svg>
+    </div>
+  </div>
+</body>
+</html>

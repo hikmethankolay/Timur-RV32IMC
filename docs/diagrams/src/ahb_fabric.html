@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<!-- Source of docs/diagrams/ahb_fabric.svg: make diagrams cuts the svg element out of this file.
+     Style: diagram-design skill, profile `timur` (see .diagram-design). System fonts only, so the
+     exported SVG looks the same as an <img> on GitHub. When editing: draw connectors before nodes,
+     keep geometry on the 4px grid, and keep every label 6px or more off its line. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The AHB-Lite fabric</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #fafafa;
+      --color-ink:    #18181b;
+      --color-muted:  #52525b;
+      --color-accent: #1d4ed8;
+      --font-sans:    'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --font-serif:   'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif;
+      --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+    }
+    .lede { color: var(--color-muted); font-size: 0.9rem; margin-bottom: 1.5rem; max-width: 64ch; }
+    svg { width: 100%; min-width: 856px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · rtl/bus/</p>
+    <h1>The AHB-Lite fabric</h1>
+    <p class="lede">Two masters, one arbiter, a bus mux and a decoder in front of five slaves. Ownership changes only on HREADY = 1, and the slave select is registered for the data phase.</p>
+    <div class="diagram-container">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 664" width="856" height="664" role="img" aria-labelledby="ahb_fabric-title ahb_fabric-desc" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="ahb_fabric-title">The AHB-Lite fabric</title>
+<desc id="ahb_fabric-desc">AHB-Lite fabric: two masters request the bus from the arbiter, the bus mux forwards the owner&#x27;s address and write data, the decoder selects one of five slaves, and the return path sends the selected slave&#x27;s read data and ready back to the masters.</desc>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f4f5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d4d4d8" stroke-width="1.2"/></pattern>
+<marker id="m-ink" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#18181b"/></marker>
+<marker id="m-ink-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#18181b"/></marker>
+<marker id="m-soft" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#71717a"/></marker>
+<marker id="m-soft-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#71717a"/></marker>
+<marker id="m-ink2" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-ink2-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-accent" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#1d4ed8"/></marker>
+<marker id="m-accent-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#1d4ed8"/></marker>
+</defs>
+<rect width="856" height="664" fill="#fafafa"/>
+<!-- zones -->
+<rect x="40" y="56" width="216" height="192" rx="8" fill="#f4f4f5" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="52" y="74" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">MASTERS</text>
+<rect x="616" y="56" width="200" height="408" rx="8" fill="#f4f4f5" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="628" y="74" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">SLAVES</text>
+<!-- connectors (drawn before nodes) -->
+<path d="M232,124 L312,124" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)" marker-start="url(#m-soft-s)"/>
+<path d="M232,204 L312,204" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)" marker-start="url(#m-soft-s)"/>
+<path d="M424,232 L424,288" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<path d="M160,248 L160,316 Q160,324 168,324 L312,324" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M536,324 L616,324" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M424,360 L424,408" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M536,444 L616,444" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M424,480 L424,528" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<path d="M716,464 L716,548 Q716,556 708,556 L536,556" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M312,556 L104,556 Q96,556 96,548 L96,248" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<!-- connector labels -->
+<rect x="432" y="254" width="80" height="12" rx="2" fill="#fafafa"/>
+<text x="472" y="263" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HMASTER(_DATA)</text>
+<rect x="202" y="304" width="68" height="12" rx="2" fill="#fafafa"/>
+<text x="236" y="313" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ADDR, HWDATA</text>
+<rect x="432" y="378" width="36" height="12" rx="2" fill="#fafafa"/>
+<text x="450" y="387" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HADDR</text>
+<rect x="556" y="424" width="40" height="12" rx="2" fill="#fafafa"/>
+<text x="576" y="433" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HSEL_*</text>
+<rect x="432" y="498" width="44" height="12" rx="2" fill="#fafafa"/>
+<text x="454" y="507" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SEL_*_D</text>
+<rect x="164" y="536" width="80" height="12" rx="2" fill="#fafafa"/>
+<text x="204" y="545" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HRDATA, HREADY</text>
+<!-- nodes -->
+<!-- cpum -->
+<rect x="56" y="96" width="176" height="56" rx="6" fill="#fafafa"/>
+<rect x="56" y="96" width="176" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="144" y="119.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">cpu_ahb_master</text>
+<text x="144" y="135.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">master 0: loads, stores</text>
+<!-- dmam -->
+<rect x="56" y="176" width="176" height="56" rx="6" fill="#fafafa"/>
+<rect x="56" y="176" width="176" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="144" y="199.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">dmac_ahb_master</text>
+<text x="144" y="215.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">master 1: word copies</text>
+<!-- arb -->
+<rect x="312" y="96" width="224" height="136" rx="6" fill="#fafafa"/>
+<rect x="312" y="96" width="224" height="136" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0" stroke-dasharray="4,3"/>
+<text x="424" y="127.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">ahb_arbiter</text>
+<text x="424" y="143.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">HBUSREQ[1:0] in</text>
+<text x="424" y="156.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">HGRANT[1:0] out</text>
+<text x="424" y="169.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle"></text>
+<text x="424" y="182.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">CPU first, then DMAC,</text>
+<text x="424" y="195.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">else park on the CPU;</text>
+<text x="424" y="208.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">moves only when HREADY = 1</text>
+<!-- mux -->
+<rect x="312" y="288" width="224" height="72" rx="6" fill="#fafafa"/>
+<rect x="312" y="288" width="224" height="72" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="424" y="313.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">ahb_bus_mux</text>
+<text x="424" y="329.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">address, control: HMASTER</text>
+<text x="424" y="342.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">HWDATA: HMASTER_DATA</text>
+<!-- dec -->
+<rect x="312" y="408" width="224" height="72" rx="6" fill="#fafafa"/>
+<rect x="312" y="408" width="224" height="72" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="424" y="433.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">ahb_decoder</text>
+<text x="424" y="449.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">HSEL from HADDR[31:16],</text>
+<text x="424" y="462.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">registered for the data phase</text>
+<!-- ret -->
+<rect x="312" y="528" width="224" height="56" rx="6" fill="#fafafa"/>
+<rect x="312" y="528" width="224" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="424" y="545.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">return path</text>
+<text x="424" y="561.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">HRDATA_*, HREADYOUT_*</text>
+<text x="424" y="574.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">of the selected slave</text>
+<!-- rom -->
+<rect x="632" y="120" width="168" height="60" rx="6" fill="#fafafa"/>
+<rect x="632" y="120" width="168" height="60" rx="6" fill="#f1f1f2" stroke="#71717a" stroke-width="1.0"/>
+<text x="716" y="145.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">rom_ahb</text>
+<text x="716" y="161.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">never waits</text>
+<!-- ram -->
+<rect x="632" y="188" width="168" height="60" rx="6" fill="#fafafa"/>
+<rect x="632" y="188" width="168" height="60" rx="6" fill="#f1f1f2" stroke="#71717a" stroke-width="1.0"/>
+<text x="716" y="213.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">ram_ahb</text>
+<text x="716" y="229.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">never waits</text>
+<!-- vga -->
+<rect x="632" y="256" width="168" height="60" rx="6" fill="#fafafa"/>
+<rect x="632" y="256" width="168" height="60" rx="6" fill="#f4f4f5" stroke="#a1a1aa" stroke-width="1.0"/>
+<text x="716" y="275.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">vga</text>
+<text x="716" y="291.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">1 wait if a read meets</text>
+<text x="716" y="304.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">the video fetch</text>
+<!-- apb -->
+<rect x="632" y="324" width="168" height="60" rx="6" fill="#fafafa"/>
+<rect x="632" y="324" width="168" height="60" rx="6" fill="#f4f4f5" stroke="#a1a1aa" stroke-width="1.0"/>
+<text x="716" y="343.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">ahb_apb_bridge</text>
+<text x="716" y="359.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">waits in SETUP and</text>
+<text x="716" y="372.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">until PREADY</text>
+<!-- def -->
+<rect x="632" y="392" width="168" height="60" rx="6" fill="#fafafa"/>
+<rect x="632" y="392" width="168" height="60" rx="6" fill="url(#hatch)" stroke="#d4d4d8" stroke-width="1.0"/>
+<text x="716" y="417.8" fill="#71717a" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">no HSEL</text>
+<text x="716" y="433.8" fill="#71717a" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">reads 0, never waits</text>
+<!-- annotations and legend -->
+<text x="628" y="90" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">accept on HSEL, HTRANS[1]</text>
+<text x="628" y="103" fill="#52525b" font-size="9" font-weight="400" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="start">and HREADY</text>
+<line x1="40" y1="612" x2="816" y2="612" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="40" y="635" fill="#71717a" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">LEGEND</text>
+<line x1="112" y1="632" x2="132" y2="632" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<text x="140" y="635" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">ADDRESS / DATA</text>
+<line x1="240" y1="632" x2="260" y2="632" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<text x="268" y="635" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">SELECT</text>
+<line x1="324" y1="632" x2="344" y2="632" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<text x="352" y="635" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">CONTROL</text>
+<rect x="416" y="626" width="20" height="12" rx="3" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="444" y="635" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">ROUTING LOGIC</text>
+</svg>
+    </div>
+  </div>
+</body>
+</html>

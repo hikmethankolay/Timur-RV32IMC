@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<!-- Source of docs/diagrams/vga.svg: make diagrams cuts the svg element out of this file.
+     Style: diagram-design skill, profile `timur` (see .diagram-design). System fonts only, so the
+     exported SVG looks the same as an <img> on GitHub. When editing: draw connectors before nodes,
+     keep geometry on the 4px grid, and keep every label 6px or more off its line. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The VGA controller</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #fafafa;
+      --color-ink:    #18181b;
+      --color-muted:  #52525b;
+      --color-accent: #1d4ed8;
+      --font-sans:    'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --font-serif:   'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif;
+      --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+    }
+    .lede { color: var(--color-muted); font-size: 0.9rem; margin-bottom: 1.5rem; max-width: 64ch; }
+    svg { width: 100%; min-width: 856px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture · rtl/periph/vga.v</p>
+    <h1>The VGA controller</h1>
+    <p class="lede">Beam counters, the shared framebuffer read port, the pixel pipeline and the registers.</p>
+    <div class="diagram-container">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 568" width="856" height="568" role="img" aria-labelledby="vga-title vga-desc" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="vga-title">The VGA controller</title>
+<desc id="vga-desc">VGA controller: AHB writes and reads share the framebuffer with a video fetch slot driven by the beam counters; each fetched word feeds the pixel pipeline through a 16-entry palette to the VGA pins, and APB registers set the palette and scroll.</desc>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f4f5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d4d4d8" stroke-width="1.2"/></pattern>
+<marker id="m-ink" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#18181b"/></marker>
+<marker id="m-ink-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#18181b"/></marker>
+<marker id="m-soft" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#71717a"/></marker>
+<marker id="m-soft-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#71717a"/></marker>
+<marker id="m-ink2" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-ink2-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-accent" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#1d4ed8"/></marker>
+<marker id="m-accent-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#1d4ed8"/></marker>
+</defs>
+<rect width="856" height="568" fill="#fafafa"/>
+<!-- zones -->
+<rect x="40" y="40" width="216" height="192" rx="8" fill="#f4f4f5" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="52" y="58" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">AHB SLAVE · FRAMEBUFFER</text>
+<rect x="40" y="272" width="776" height="120" rx="8" fill="#f4f4f5" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="52" y="290" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">PIXEL PIPELINE</text>
+<!-- connectors (drawn before nodes) -->
+<path d="M240,104 L336,104" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M336,176 L240,176" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M672,128 L672,160" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<path d="M600,176 L520,176" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<path d="M380,192 L380,240 Q380,248 372,248 L176,248 Q168,248 168,256 L168,312" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M776,128 L776,312" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<path d="M200,340 L248,340" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M392,340 L440,340" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M584,340 L648,340" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M512,424 L512,368" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<!-- connector labels -->
+<rect x="260" y="156" width="56" height="12" rx="2" fill="#fafafa"/>
+<text x="288" y="165" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">READ DATA</text>
+<rect x="520" y="156" width="80" height="12" rx="2" fill="#fafafa"/>
+<text x="560" y="165" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ROW+SCROLL,COL</text>
+<rect x="388" y="214" width="56" height="12" rx="2" fill="#fafafa"/>
+<text x="416" y="223" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NEXT_WORD</text>
+<rect x="692" y="242" width="76" height="12" rx="2" fill="#fafafa"/>
+<text x="730" y="251" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HS, VS, BLANK</text>
+<!-- nodes -->
+<!-- wr -->
+<rect x="56" y="80" width="184" height="48" rx="6" fill="#fafafa"/>
+<rect x="56" y="80" width="184" height="48" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="148" y="99.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">write port</text>
+<text x="148" y="115.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">data phase, byte lanes</text>
+<!-- rd -->
+<rect x="56" y="144" width="184" height="72" rx="6" fill="#fafafa"/>
+<rect x="56" y="144" width="184" height="72" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="148" y="169.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">AHB reads</text>
+<text x="148" y="185.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">1 wait state if they</text>
+<text x="148" y="198.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">meet the fetch slot</text>
+<!-- fb -->
+<rect x="336" y="88" width="184" height="104" rx="6" fill="#fafafa"/>
+<rect x="336" y="88" width="184" height="104" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<rect x="344" y="96" width="24" height="12" rx="2" fill="none" stroke="#1d4ed8" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="356" y="105" fill="#1d4ed8" font-size="7.5" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MEM</text>
+<text x="428" y="139.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">framebuffer</text>
+<text x="428" y="155.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">4 lanes of 9600 x 8</text>
+<text x="428" y="168.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">320 x 240 x 4 bit</text>
+<!-- beam -->
+<rect x="600" y="72" width="200" height="56" rx="6" fill="#fafafa"/>
+<rect x="600" y="72" width="200" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="700" y="89.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">beam counters</text>
+<text x="700" y="105.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">h 0-799, v 0-524</text>
+<text x="700" y="118.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">1 pixel every 2 clocks</text>
+<!-- slot -->
+<rect x="600" y="160" width="144" height="72" rx="6" fill="#fafafa"/>
+<rect x="600" y="160" width="144" height="72" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0" stroke-dasharray="4,3"/>
+<text x="672" y="178.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">video fetch slot</text>
+<text x="672" y="194.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">1 word (8 px) per</text>
+<text x="672" y="207.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">32 clocks, a word</text>
+<text x="672" y="220.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">ahead</text>
+<!-- word -->
+<rect x="56" y="312" width="144" height="56" rx="6" fill="#fafafa"/>
+<rect x="56" y="312" width="144" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="128" y="335.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">cur_word</text>
+<text x="128" y="351.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">8 pixels</text>
+<!-- nib -->
+<rect x="248" y="312" width="144" height="56" rx="6" fill="#fafafa"/>
+<rect x="248" y="312" width="144" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="320" y="335.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">nibble h[3:1]</text>
+<text x="320" y="351.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">4-bit index</text>
+<!-- pal -->
+<rect x="440" y="312" width="144" height="56" rx="6" fill="#fafafa"/>
+<rect x="440" y="312" width="144" height="56" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="512" y="335.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">palette</text>
+<text x="512" y="351.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">16 x 12-bit</text>
+<!-- out -->
+<rect x="648" y="312" width="152" height="56" rx="6" fill="#fafafa"/>
+<rect x="648" y="312" width="152" height="56" rx="6" fill="#f4f4f5" stroke="#a1a1aa" stroke-width="1.0"/>
+<text x="724" y="329.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">VGA pins</text>
+<text x="724" y="345.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">vga_r, vga_g, vga_b</text>
+<text x="724" y="358.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">vga_hs, vga_vs</text>
+<!-- regs -->
+<rect x="440" y="424" width="144" height="72" rx="6" fill="#fafafa"/>
+<rect x="440" y="424" width="144" height="72" rx="6" fill="#f4f4f5" stroke="#a1a1aa" stroke-width="1.0"/>
+<rect x="448" y="432" width="24" height="12" rx="2" fill="none" stroke="#52525b" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="460" y="441" fill="#52525b" font-size="7.5" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.08em">APB</text>
+<text x="512" y="459.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">APB registers</text>
+<text x="512" y="475.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">CTRL, STATUS, SCROLL,</text>
+<text x="512" y="488.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">FRAME, PALETTE</text>
+<!-- annotations and legend -->
+<line x1="40" y1="516" x2="816" y2="516" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="40" y="539" fill="#71717a" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">LEGEND</text>
+<line x1="112" y1="536" x2="132" y2="536" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<text x="140" y="539" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">PIXEL DATA</text>
+<line x1="220" y1="536" x2="240" y2="536" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<text x="248" y="539" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">READ DATA</text>
+<line x1="320" y1="536" x2="340" y2="536" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<text x="348" y="539" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">TIMING / CONTROL</text>
+<rect x="460" y="530" width="20" height="12" rx="3" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="488" y="539" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">STORAGE AND COLOUR</text>
+</svg>
+    </div>
+  </div>
+</body>
+</html>

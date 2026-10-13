@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<!-- Source of docs/diagrams/traps.svg: make diagrams cuts the svg element out of this file.
+     Style: diagram-design skill, profile `timur` (see .diagram-design). System fonts only, so the
+     exported SVG looks the same as an <img> on GitHub. When editing: draw connectors before nodes,
+     keep geometry on the 4px grid, and keep every label 6px or more off its line. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The trap path</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:  #fafafa;
+      --color-ink:    #18181b;
+      --color-muted:  #52525b;
+      --color-accent: #1d4ed8;
+      --font-sans:    'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --font-serif:   'Instrument Serif', 'Noto Serif', Georgia, 'Times New Roman', serif;
+      --font-mono:    'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.5rem;
+    }
+    .lede { color: var(--color-muted); font-size: 0.9rem; margin-bottom: 1.5rem; max-width: 64ch; }
+    svg { width: 100%; min-width: 856px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Process · rtl/csr/, sw/runtime/</p>
+    <h1>The trap path</h1>
+    <p class="lede">From the instruction in EX to the C handler and back with MRET.</p>
+    <div class="diagram-container">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 752" width="856" height="752" role="img" aria-labelledby="traps-title traps-desc" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="traps-title">The trap path</title>
+<desc id="traps-desc">Trap flow: the trap_unit in EX picks one cause, csr_file saves mepc and mcause, the pipeline flushes, software at mtvec saves registers and timur_trap dispatches on mcause to a system call, interrupt or exception handler, and MRET resumes the interrupted program.</desc>
+<defs>
+<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f4f4f5"/><line x1="0" y1="0" x2="0" y2="6" stroke="#d4d4d8" stroke-width="1.2"/></pattern>
+<marker id="m-ink" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#18181b"/></marker>
+<marker id="m-ink-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#18181b"/></marker>
+<marker id="m-soft" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#71717a"/></marker>
+<marker id="m-soft-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#71717a"/></marker>
+<marker id="m-ink2" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-ink2-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#3f3f46"/></marker>
+<marker id="m-accent" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,3.5 L0,7 Z" fill="#1d4ed8"/></marker>
+<marker id="m-accent-s" markerWidth="9" markerHeight="7" refX="0.5" refY="3.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M9,0 L0,3.5 L9,7 Z" fill="#1d4ed8"/></marker>
+</defs>
+<rect width="856" height="752" fill="#fafafa"/>
+<!-- zones -->
+<rect x="40" y="40" width="736" height="224" rx="8" fill="#f4f4f5" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="52" y="58" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">HARDWARE, IN EX</text>
+<rect x="40" y="328" width="736" height="264" rx="8" fill="#f4f4f5" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="52" y="346" fill="#52525b" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">SOFTWARE</text>
+<!-- connectors (drawn before nodes) -->
+<path d="M240,112 L296,112" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M488,112 L560,112" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M392,152 L392,192" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<path d="M660,152 L660,288 Q660,296 652,296 L156,296 Q148,296 148,304 L148,424" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M240,464 L296,464" fill="none" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<path d="M488,448 L516,448 Q524,448 524,440 L524,392 Q524,384 532,384 L560,384" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M488,464 L560,464" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M488,480 L516,480 Q524,480 524,488 L524,536 Q524,544 532,544 L560,544" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M660,592 L660,616" fill="none" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<path d="M760,644 L808,644 Q816,644 816,636 L816,120 Q816,112 808,112 L776,112" fill="none" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<!-- connector labels -->
+<rect x="496" y="92" width="56" height="12" rx="2" fill="#fafafa"/>
+<text x="524" y="101" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">TAKE_TRAP</text>
+<rect x="366" y="276" width="76" height="12" rx="2" fill="#fafafa"/>
+<text x="404" y="285" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FETCH @ MTVEC</text>
+<rect x="766" y="624" width="40" height="12" rx="2" fill="#fafafa"/>
+<text x="786" y="633" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RESUME</text>
+<!-- nodes -->
+<!-- src -->
+<rect x="56" y="72" width="184" height="80" rx="6" fill="#fafafa"/>
+<rect x="56" y="72" width="184" height="80" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="148" y="88.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">trap causes</text>
+<text x="148" y="104.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">external interrupt:</text>
+<text x="148" y="117.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">UART rx or DMA done</text>
+<text x="148" y="130.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">illegal instr., EBREAK,</text>
+<text x="148" y="143.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">ECALL, misaligned ld/st</text>
+<!-- tu -->
+<rect x="296" y="72" width="192" height="80" rx="6" fill="#fafafa"/>
+<rect x="296" y="72" width="192" height="80" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="392" y="94.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">trap_unit</text>
+<text x="392" y="110.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">picks one cause by priority;</text>
+<text x="392" y="123.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">an interrupt waits while</text>
+<text x="392" y="136.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">MUL or DIV is in EX</text>
+<!-- csr -->
+<rect x="560" y="72" width="200" height="80" rx="6" fill="#fafafa"/>
+<rect x="560" y="72" width="200" height="80" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="660" y="94.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">csr_file</text>
+<text x="660" y="110.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">mepc = PC in EX</text>
+<text x="660" y="123.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">mcause, mtval</text>
+<text x="660" y="136.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">MPIE = MIE, MIE = 0</text>
+<!-- kill -->
+<rect x="296" y="192" width="192" height="56" rx="6" fill="#fafafa"/>
+<rect x="296" y="192" width="192" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0" stroke-dasharray="4,3"/>
+<text x="392" y="209.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">flush</text>
+<text x="392" y="225.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">trap + 2 younger cancelled;</text>
+<text x="392" y="238.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">older ones complete</text>
+<!-- entry -->
+<rect x="56" y="424" width="184" height="80" rx="6" fill="#fafafa"/>
+<rect x="56" y="424" width="184" height="80" rx="6" fill="#ffffff" stroke="#a1a1aa" stroke-width="1.0"/>
+<rect x="64" y="432" width="24" height="12" rx="2" fill="none" stroke="#52525b" stroke-opacity="0.5" stroke-width="0.8"/>
+<text x="76" y="441" fill="#52525b" font-size="7.5" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ASM</text>
+<text x="148" y="463.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">trap_entry.S</text>
+<text x="148" y="479.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">at mtvec: save caller-</text>
+<text x="148" y="492.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">saved regs on the stack</text>
+<!-- disp -->
+<rect x="296" y="432" width="192" height="64" rx="6" fill="#fafafa"/>
+<rect x="296" y="432" width="192" height="64" rx="6" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="392" y="453.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">timur_trap</text>
+<text x="392" y="469.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">trap.c</text>
+<text x="392" y="482.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">dispatch on mcause</text>
+<!-- sys -->
+<rect x="560" y="352" width="200" height="64" rx="6" fill="#fafafa"/>
+<rect x="560" y="352" width="200" height="64" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="660" y="373.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">ECALL: system call</text>
+<text x="660" y="389.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">read, write, exit</text>
+<text x="660" y="402.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">mepc += 4</text>
+<!-- irq -->
+<rect x="560" y="432" width="200" height="64" rx="6" fill="#fafafa"/>
+<rect x="560" y="432" width="200" height="64" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="660" y="453.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">irq_handler</text>
+<text x="660" y="469.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">interrupt; must clear</text>
+<text x="660" y="482.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">its source</text>
+<!-- exc -->
+<rect x="560" y="512" width="200" height="64" rx="6" fill="#fafafa"/>
+<rect x="560" y="512" width="200" height="64" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0"/>
+<text x="660" y="533.3" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">exception_handler</text>
+<text x="660" y="549.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">or timur_fatal:</text>
+<text x="660" y="562.3" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">report and stop</text>
+<!-- mret -->
+<rect x="560" y="616" width="200" height="56" rx="6" fill="#fafafa"/>
+<rect x="560" y="616" width="200" height="56" rx="6" fill="#ffffff" stroke="#3f3f46" stroke-width="1.0" stroke-dasharray="4,3"/>
+<text x="660" y="639.8" fill="#18181b" font-size="12" font-weight="600" font-family="'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">restore, then MRET</text>
+<text x="660" y="655.8" fill="#52525b" font-size="9" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" text-anchor="middle">PC = mepc, MIE = MPIE</text>
+<!-- annotations and legend -->
+<line x1="40" y1="700" x2="816" y2="700" stroke="rgba(24,24,27,0.12)" stroke-width="1"/>
+<text x="40" y="723" fill="#71717a" font-size="8" font-weight="500" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.14em" text-anchor="start">LEGEND</text>
+<line x1="112" y1="720" x2="132" y2="720" stroke="#18181b" stroke-width="1.6" marker-end="url(#m-ink)"/>
+<text x="140" y="723" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">CONTROL TRANSFER</text>
+<line x1="252" y1="720" x2="272" y2="720" stroke="#71717a" stroke-width="1.2" marker-end="url(#m-soft)"/>
+<text x="280" y="723" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">DISPATCH</text>
+<line x1="348" y1="720" x2="368" y2="720" stroke="#71717a" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#m-soft)"/>
+<text x="376" y="723" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">FLUSH / RESUME</text>
+<rect x="476" y="714" width="20" height="12" rx="3" fill="#eef2fd" stroke="#1d4ed8" stroke-width="1.4"/>
+<text x="504" y="723" fill="#52525b" font-size="8" font-family="'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" letter-spacing="0.06em">DECISION POINTS</text>
+</svg>
+    </div>
+  </div>
+</body>
+</html>
