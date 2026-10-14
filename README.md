@@ -10,7 +10,7 @@ Timur is a complete small computer: a five-stage pipelined CPU for the 32-bit RI
 **Highlights**
 
 - **Runs real C.** GCC and newlib-nano: `printf`, `malloc`, `fgets` and `sscanf`, interrupts and traps all work on the board.
-- **Draws on a monitor.** 640×480 VGA from a 320×240, 16-colour framebuffer, with a text console that `printf` can write to and a PNG-to-C converter for pictures (verified in simulation; the board test is still to come).
+- **Draws on a monitor.** 640×480 VGA from a 320×240, 16-colour framebuffer, with a text console that `printf` can write to and a PNG-to-C converter for pictures (verified in simulation and on the DE10-Lite with an external VGA monitor).
 - **A real bus system.** AHB-Lite with two masters (the CPU and a DMA engine) and APB peripherals, the bus standards used in commercial microcontrollers.
 - **Checked against a reference model.** 41 testbenches; C programs must print, byte for byte, what an instruction-level Python model of the CPU prints. CI runs everything on every push.
 - **Timing closed at 50 MHz** on the MAX 10 (before the VGA was added), with 16-bit compressed instructions fetched in a single cycle.
@@ -218,7 +218,7 @@ A trap saves the PC in `mepc` and `MIE` in `MPIE`, and clears `MIE`; MRET return
 
 ## Current Status
 
-**Phases 1–12 implemented, verified in simulation and running on the DE10-Lite; timing closed at 50 MHz. Phase 13 (VGA output) is implemented and verified in simulation; its Quartus compile and board test are still to be done.**
+**Phases 1–13 implemented, verified in simulation and running on the DE10-Lite; timing closed at 50 MHz. Phase 13 (VGA output) compiles in Quartus and drives an external VGA monitor on the board; its resource and timing numbers are still to be re-measured.**
 
 | Phase | Description | Status |
 | ----- | ----------- | ------ |
@@ -234,7 +234,7 @@ A trap saves the PC in `mepc` and `MIE` in `MPIE`, and clears `MIE`; MRET return
 | 10 | CSRs, traps, machine mode | ✅ Simulation |
 | 11 | C extension | ✅ Simulation |
 | 12 | C software layer | ✅ Simulation (C programs run on the SoC in `timur_sw_tb`) |
-| 13 | VGA output | ✅ Simulation (`vga_tb`, `sw/tests/vga.c`); Quartus and board pending |
+| 13 | VGA output | ✅ Simulation (`vga_tb`, `sw/tests/vga.c`) and board (external VGA monitor) |
 
 Full compile of the RV32IMC design with Quartus Prime 25.1std (Standard Edition; the Lite Edition supports the same device), `OPTIMIZATION_MODE "HIGH PERFORMANCE EFFORT"` and physical synthesis (combinational, register duplication, retiming), three fitter seeds:
 
@@ -248,10 +248,12 @@ Resources: 5,848 logic elements (12 %), 128 of 182 M9K blocks (1,048,576 bits: t
 
 On the board (DE10-Lite, 30 September 2026): the shipped program (LEDs 42), bring-up 1–4 (LEDs and switches, UART transmit, DMA checksum), and the C programs `hello`, `selftest` (all 255 checks, built with and without the C extension), `traps` and `io` (console input and interrupts), with the UART connected to the PC through an ESP32-S3 used as a USB-to-serial bridge.
 
+VGA on the board (DE10-Lite, 14 October 2026): the design with the framebuffer compiles in Quartus, and `apps/vga_demo.c` and `apps/showcase.c` run with an external monitor on the VGA connector at 640×480, 60 Hz; the picture is correct.
+
 Still open:
 
 - riscv-arch-test RV32IMC and Zicsr suites (RISCOF flow).
-- VGA (Phase 13) in Quartus and on the board: the framebuffer adds 40 M9K blocks (about 168 of 182 expected) and one input to the AHB read-data mux; the resource and timing numbers above predate it and must be re-measured.
+- Resource and timing numbers with VGA (Phase 13): the framebuffer adds 40 M9K blocks (about 168 of 182 expected) and one input to the AHB read-data mux; the design works on the board, but the numbers above predate it and must be re-measured.
 
 ### Not supported
 
@@ -791,10 +793,10 @@ Phase 9  ✅  AHB fabric and system (arbiter, bus mux, decoder, bridge, DMA engi
 Phase 10 ✅  CSRs, traps, machine mode
 Phase 11 ✅  C extension (decompressor, split-bank ROM)
 Phase 12 ✅  C software layer (linker script, crt0, syscalls, trap handler, converter)
-Phase 13 🧪  VGA output (controller, framebuffer, driver, console, image converter)
+Phase 13 ✅  VGA output (controller, framebuffer, driver, console, image converter)
 ```
 
-✅ = implemented, verified in simulation and on the DE10-Lite, timing closed in Quartus (see [Current Status](#current-status)). 🧪 = implemented and verified in simulation; Quartus compile and board test pending.
+✅ = implemented, verified in simulation and on the DE10-Lite, timing closed in Quartus (see [Current Status](#current-status); the resource and timing figures there predate Phase 13 and are to be re-measured).
 
 ---
 
