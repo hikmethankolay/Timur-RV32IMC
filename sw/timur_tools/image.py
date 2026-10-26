@@ -117,6 +117,8 @@ def read_png(data: bytes) -> Image:
     chunks = _chunks(data)
     if not chunks or chunks[0][0] != b"IHDR":
         raise ImageError("PNG file without an IHDR chunk")
+    if len(chunks[0][1]) != 13:
+        raise ImageError("PNG IHDR chunk has the wrong length")
     width, height, depth, colour, _, _, interlace = struct.unpack(">IIBBBBB", chunks[0][1])
     if colour not in _CHANNELS or depth not in _DEPTHS[colour]:
         raise ImageError("unsupported PNG format: colour type %d, %d bits" % (colour, depth))

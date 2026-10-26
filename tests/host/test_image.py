@@ -13,15 +13,15 @@ import img2vga
 from timur_tools import image, memmap
 
 
+def chunk(kind: bytes, body: bytes) -> bytes:
+    crc = zlib.crc32(kind + body)
+    return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", crc)
+
+
 def png(
     width: int, height: int, colour: int, depth: int, rows: list[bytes], **extra: bytes
 ) -> bytes:
     """A PNG file; each row already starts with its filter byte."""
-
-    def chunk(kind: bytes, body: bytes) -> bytes:
-        crc = zlib.crc32(kind + body)
-        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", crc)
-
     header = struct.pack(
         ">IIBBBBB", width, height, depth, colour, 0, 0, extra.pop("interlace", b"\0")[0]
     )
@@ -76,6 +76,7 @@ def test_palette_png_at_4_bits_and_grey_alpha_and_16_bit() -> None:
         (png(1, 1, 2, 8, [b"\7" + bytes(3)]), "filter type 7"),
         (png(1, 2, 2, 8, [b"\0" + bytes(3)]), "cut short"),
         (png(1, 1, 3, 8, [b"\0" + bytes([5])], PLTE=bytes(3)), "palette index 5"),
+        (image.PNG_SIGNATURE + chunk(b"IHDR", bytes(5)), "IHDR chunk has the wrong length"),
     ],
 )
 def test_bad_png_files_are_reported(data: bytes, message: str) -> None:
