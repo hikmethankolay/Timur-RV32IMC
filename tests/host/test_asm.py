@@ -61,6 +61,7 @@ def test_labels_expressions_org_and_word() -> None:
     ("line", "word"),
     [
         ("sub x4, x1, x2", 0x40208233),
+        ("addi\tx1, x0, 1", 0x00100093),  # a tab after the mnemonic
         ("mulhsu x5, x6, x7", 0x027322B3),
         ("remu x5, x6, x7", 0x027372B3),
         ("srai x5, x6, 31", 0x41F35293),
@@ -99,6 +100,11 @@ def test_single_instruction_encodings(line: str, word: int) -> None:
         ("lw x1, 4[x2]", "bad memory operand"),
         ("addi x1, x0, nowhere", "bad value"),
         ("csrrwi x1, mscratch, 32", "out of range"),
+        ("csrrw x1, 0x1000, x2", "CSR number"),  # formerly encoded as CSR 0x000
+        ("add x1, x2, x²", "bad register"),  # formerly a ValueError
+        ("a: a: nop", "duplicate label"),
+        (".org 2", "word-aligned"),
+        (".orgx 8", "unknown mnemonic"),  # formerly taken for .org
     ],
 )
 def test_errors_are_asm_errors_with_the_source_line(line: str, message: str) -> None:

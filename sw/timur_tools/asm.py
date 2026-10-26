@@ -55,6 +55,7 @@ JUMP_MIN, JUMP_MAX = -(1 << 20), (1 << 20) - 2
 UPPER_MAX = 0xFFFFF
 SHAMT_MAX = 31
 UIMM5_MAX = 31
+CSR_MAX = 0xFFF
 
 Labels = Mapping[str, int]
 
@@ -74,7 +75,12 @@ class Assembly(NamedTuple):
 def _reg(token: str) -> int:
     token = token.strip()
     number = token[1:]
-    if not (token.startswith("x") and number.isdigit() and int(number) < REGISTER_COUNT):
+    if not (
+        token.startswith("x")
+        and number.isascii()  # isdigit() alone accepts digits int() rejects, like '²'
+        and number.isdigit()
+        and int(number) < REGISTER_COUNT
+    ):
         raise AsmError("bad register %r" % token)
     return int(number)
 
@@ -122,7 +128,7 @@ def _operands(mnemonic: str, operands: list[str], count: int) -> list[str]:
 
 def encode(text: str, pc: int, labels: Labels) -> int:
     """The 32-bit word for one source statement at address pc."""
-    mnemonic, _, rest = text.partition(" ")
+    mnemonic, _, rest = " ".join(text.split()).partition(" ")  # any whitespace, as assemble
     mnemonic = mnemonic.lower()
     ops = [operand.strip() for operand in rest.split(",")] if rest.strip() else []
     if mnemonic == ".word":
@@ -172,7 +178,9 @@ def encode(text: str, pc: int, labels: Labels) -> int:
         return isa.enc_u(value, _reg(rd), UPPER[mnemonic])
     if mnemonic in CSR_OPS:
         rd, csr_name, source = _operands(mnemonic, ops, 3)
-        csr = memmap.CSRS[csr_name] if csr_name in memmap.CSRS else _value(csr_name, labels)
+        csr = memmap.CSRS.get(csr_name)
+        if csr is None:
+            csr = _check(_value(csr_name, labels), 0, CSR_MAX, "CSR number")
         funct3 = CSR_OPS[mnemonic]
         if funct3 & isa.F3_CSR_IMMEDIATE:
             src = _check(_value(source, labels), 0, UIMM5_MAX, "uimm")
@@ -191,15 +199,21 @@ def assemble(source: str) -> Assembly:
         text = raw.split("#", 1)[0].strip()
         while ":" in text:
             label, text = text.split(":", 1)
-            labels[label.strip()] = address
+            label = label.strip()
+            if label in labels:
+                raise AsmError("0x%04X: duplicate label %r" % (address, label))
+            labels[label] = address
             text = text.strip()
         if not text:
             continue
-        if text.startswith(".org"):
-            fields = text.split()
+        fields = text.split()
+        if fields[0].lower() == ".org":
             if len(fields) != 2:
                 raise AsmError("0x%04X %s: .org takes one address" % (address, text))
-            address = _value(fields[1], labels)
+            origin = _value(fields[1], labels)
+            if origin < 0 or origin % INSTRUCTION_BYTES:
+                raise AsmError("0x%04X %s: .org needs a word-aligned address" % (address, text))
+            address = origin
             continue
         statements.append((address, text))
         address += INSTRUCTION_BYTES
