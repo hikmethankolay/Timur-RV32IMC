@@ -112,9 +112,7 @@ class CsrModel:
             MINSTRETH: self.minstret >> 32,
             INSTRETH: self.minstret >> 32,
         }
-        for addr_id in IDS:
-            values[addr_id] = 0
-        return values.get(addr, 0)
+        return values.get(addr, 0)  # mvendorid & co. (IDS) read 0, like unimplemented CSRs
 
     def outputs(self, inputs: CsrInputs) -> tuple[int, int, int, int, int]:
         """Combinational outputs: rdata, illegal, mtvec, mepc, irq_pending."""

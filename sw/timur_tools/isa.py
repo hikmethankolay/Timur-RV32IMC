@@ -27,8 +27,6 @@ F7_BASE = 0x00
 F7_MULDIV = 0x01  # the M extension
 F7_ALT = 0x20  # SUB, SRA, SRAI
 
-# ---- funct3 of OP_REG / OP_IMM -------------------------------------------------
-F3_ADD_SUB, F3_SLL, F3_SLT, F3_SLTU, F3_XOR, F3_SRL_SRA, F3_OR, F3_AND = range(8)
 # ---- funct3 with F7_MULDIV -----------------------------------------------------
 F3_MUL, F3_MULH, F3_MULHSU, F3_MULHU, F3_DIV, F3_DIVU, F3_REM, F3_REMU = range(8)
 # ---- funct3 of loads and stores: bits [1:0] are the size, bit 2 means unsigned -

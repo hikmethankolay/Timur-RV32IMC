@@ -14,12 +14,9 @@ from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
+from timur_tools.toolchain import PINNED_GCC_VERSION, UNPACKED_GLOB, Toolchain, _release_key
 
-#: The compiler release the committed ROM images in vectors/ were built with.
-#: Another release may generate different code, so byte-for-byte comparisons of
-#: compiled images are only meaningful with this one.
-PINNED_GCC_VERSION = "14.2.0"
+REPO = Path(__file__).resolve().parents[2]
 
 ROOT_IMAGES = ("rom.hex", "rom_lo.hex", "rom_hi.hex", "rom_lo.mif", "rom_hi.mif")
 ROOT_CONFIG = (".clang-tidy", ".clang-format")
@@ -31,23 +28,15 @@ def _toolchain_bin() -> Path | None:
     on_path = shutil.which("riscv-none-elf-gcc")
     if on_path:
         return Path(on_path).parent
-    candidates = sorted((REPO / ".tools").glob("xpack-riscv-none-elf-gcc-*/bin"))
-    return candidates[-1] if candidates else None
-
-
-def _gcc_version(bin_dir: Path) -> str:
-    out = subprocess.run(
-        [str(bin_dir / "riscv-none-elf-gcc"), "-dumpversion"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return out.stdout.strip()
+    # the order of find_toolchain, which this mirrors as a directory for PATH (environment())
+    unpacked = sorted((REPO / ".tools").glob(UNPACKED_GLOB), key=_release_key, reverse=True)
+    return next((d for d in unpacked if (d / "riscv-none-elf-gcc").exists()), None)
 
 
 TOOLCHAIN_BIN = _toolchain_bin()
 HAVE_PINNED_TOOLCHAIN = (
-    TOOLCHAIN_BIN is not None and _gcc_version(TOOLCHAIN_BIN) == PINNED_GCC_VERSION
+    TOOLCHAIN_BIN is not None
+    and Toolchain(str(TOOLCHAIN_BIN / "riscv-none-elf-")).gcc_version() == PINNED_GCC_VERSION
 )
 
 needs_toolchain = pytest.mark.skipif(
