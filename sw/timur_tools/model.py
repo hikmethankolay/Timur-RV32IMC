@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import cache, lru_cache
 
 from . import memmap
 from .errors import TimurError
@@ -79,6 +80,8 @@ from .isa import (
 )
 from .rvc import decompress, is_compressed
 
+_expand = cache(decompress)  # pure, at most 2**16 halfwords: each is expanded once
+
 DEFAULT_RUN_LIMIT = 200_000
 
 # The address decoder looks at the upper 16 address bits; each memory is 64 KB.
@@ -111,10 +114,7 @@ _DMAC_SRC, _DMAC_DST, _DMAC_LEN, _DMAC_CTRL, _DMAC_STATUS = (
     )
 )
 
-_VGA_CTRL, _VGA_STATUS, _VGA_SCROLL, _VGA_FRAME = (
-    offset >> 2
-    for offset in (memmap.VGA_CTRL, memmap.VGA_STATUS, memmap.VGA_SCROLL, memmap.VGA_FRAME)
-)
+_VGA_CTRL, _VGA_SCROLL = memmap.VGA_CTRL >> 2, memmap.VGA_SCROLL >> 2
 _VGA_PALETTE = memmap.VGA_PALETTE >> 2  # PADDR[6] = 1: entries 0..15 on PADDR[5:2]
 _VGA_TIMING = frozenset({memmap.VGA_BASE + memmap.VGA_STATUS, memmap.VGA_BASE + memmap.VGA_FRAME})
 
@@ -150,6 +150,7 @@ class DmacState:
     done: int = 0
 
 
+@lru_cache(maxsize=1 << 16)  # pure, and asked again for every instruction executed
 def is_legal(ins: int) -> bool:
     """Mirror of main_control_unit's illegal-instruction rules."""
     opcode, funct3, funct7, rs2 = ins & 0x7F, (ins >> 12) & 7, ins >> 25, (ins >> 20) & 31
@@ -389,7 +390,7 @@ class TimurModel:
                 _DMAC_STATUS: memmap.DMAC_STATUS_DONE if dmac.done else 0,
             }.get(reg, 0)
         if page == _PAGE_VGA:  # STATUS and FRAME follow the beam: 0, tainted by the caller
-            if reg & 0x10:
+            if reg & _VGA_PALETTE:
                 return self.vga_palette[reg & 0xF]
             return {_VGA_CTRL: self.vga_enable, _VGA_SCROLL: self.vga_scroll}.get(reg, 0)
         return 0
@@ -433,8 +434,29 @@ class TimurModel:
             return self.vram_taint
         return None
 
-    def store(self, address: int, funct3: int, value: int) -> None:
-        """A store of the size in funct3; ROM and unmapped addresses ignore it."""
+    def word_tainted(self, address: int) -> bool:
+        """True if the RAM or framebuffer word holding address is timing-dependent."""
+        taint_set = self.taint_set(address)
+        return taint_set is not None and (address & _WORD_INDEX_MASK) in taint_set
+
+    def _write_memory(self, address: int, data: int, byte_enable: int, tainted: bool) -> None:
+        """Write RAM or the framebuffer; a tainted write taints the word, a whole clean
+        word cleans it."""
+        index = address & _WORD_INDEX_MASK
+        if address >> _REGION_SHIFT == _RAM_REGION:
+            self.write_ram_word(address, data, byte_enable)
+            taint_set = self.ram_taint
+        else:
+            self.write_vram_word(address, data, byte_enable)
+            taint_set = self.vram_taint
+        if tainted:
+            taint_set.add(index)
+        elif byte_enable == _BYTE_ENABLE_WORD:
+            taint_set.discard(index)
+
+    def store(self, address: int, funct3: int, value: int, tainted: bool = False) -> None:
+        """A store of the size in funct3; ROM and unmapped addresses ignore it. A tainted
+        value may go to memory, not to a peripheral (TimingDependentError)."""
         size = funct3 & F3_SIZE_MASK
         if size == F3_BYTE:  # the store aligner replicates the byte or halfword
             data = (value & 0xFF) * 0x01010101
@@ -450,11 +472,12 @@ class TimurModel:
                 byte_enable = 0b1100 if address & 2 else 0b0011
             else:
                 byte_enable = _BYTE_ENABLE_WORD
-            if region == _RAM_REGION:
-                self.write_ram_word(address, data, byte_enable)
-            else:
-                self.write_vram_word(address, data, byte_enable)
+            self._write_memory(address, data, byte_enable, tainted)
         elif region == _APB_REGION:
+            if tainted:
+                raise TimingDependentError(
+                    "0x%04X: a timing-dependent value is written to a peripheral" % self.pc
+                )
             # APB has no byte strobes: every store writes the whole register
             self._write_apb((address >> 8) & 0xFF, (address >> 2) & 0x3F, data)
 
@@ -482,7 +505,7 @@ class TimurModel:
                 if data & memmap.DMAC_CTRL_START:
                     self._dma_copy()
         elif page == _PAGE_VGA:
-            if reg & 0x10:
+            if reg & _VGA_PALETTE:
                 self.vga_palette[reg & 0xF] = data & memmap.VGA_COLOUR_MASK
             elif reg == _VGA_CTRL:
                 self.vga_enable = data & memmap.VGA_CTRL_ENABLE
@@ -496,12 +519,11 @@ class TimurModel:
         for index in range(dmac.length):
             dst = (dmac.dst + 4 * index) & MASK
             region = dst >> _REGION_SHIFT
-            if region in (_RAM_REGION, _VGA_REGION):
-                word = self.read_word((dmac.src + 4 * index) & MASK)
-                if region == _RAM_REGION:
-                    self.write_ram_word(dst, word, _BYTE_ENABLE_WORD)
-                else:
-                    self.write_vram_word(dst, word, _BYTE_ENABLE_WORD)
+            if region in (_RAM_REGION, _VGA_REGION):  # the copy carries its source's taint
+                src = (dmac.src + 4 * index) & MASK
+                self._write_memory(
+                    dst, self.read_word(src), _BYTE_ENABLE_WORD, self.word_tainted(src)
+                )
         dmac.done = 1
 
     def load(self, address: int, funct3: int) -> int:
@@ -533,7 +555,7 @@ class TimurModel:
             return False
         low = self.fetch_half(pc)
         if is_compressed(low):  # execute the expansion
-            ins, length = decompress(low), 2
+            ins, length = _expand(low), 2
         else:
             ins, length = low | self.fetch_half(pc + 2) << 16, 4
         if not is_legal(ins):
@@ -547,7 +569,7 @@ class TimurModel:
         next_pc = (pc + length) & MASK
         result: int | None = None
         result_taint = False
-        tainted = bool(source_registers(ins) & self.taint)
+        tainted = bool(self.taint and source_registers(ins) & self.taint)
         if (
             tainted
             and opcode in (OP_LOAD, OP_STORE, OP_BRANCH, OP_JALR)
@@ -580,22 +602,13 @@ class TimurModel:
                 self.trap(memmap.CAUSE_LOAD_MISALIGNED, address)
                 return False
             result = self.load(address, funct3)
-            taint_set = self.taint_set(address)
-            result_taint = (
-                taint_set is not None and (address & _WORD_INDEX_MASK) in taint_set
-            ) or (address & ~3) in _VGA_TIMING
+            result_taint = self.word_tainted(address) or (address & ~3) in _VGA_TIMING
         elif opcode == OP_STORE:
             address = (a + imm_s(ins)) & MASK
             if _misaligned(funct3, address):
                 self.trap(memmap.CAUSE_STORE_MISALIGNED, address)
                 return False
-            self.store(address, funct3, b)
-            taint_set = self.taint_set(address)
-            if taint_set is not None:
-                if rs2 in self.taint:
-                    taint_set.add(address & _WORD_INDEX_MASK)
-                elif funct3 & F3_SIZE_MASK == F3_WORD:  # a whole clean word
-                    taint_set.discard(address & _WORD_INDEX_MASK)
+            self.store(address, funct3, b, rs2 in self.taint)
         elif opcode == OP_BRANCH:
             if _branch_taken(funct3, a, b):
                 next_pc = (pc + imm_b(ins)) & MASK

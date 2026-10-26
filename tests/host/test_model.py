@@ -221,6 +221,29 @@ def test_counter_values_taint_and_cannot_steer_the_program() -> None:
     with pytest.raises(TimingDependentError):
         run("csrrs x5, cycle, x0\nskip: beq x5, x0, skip\n")
 
+    with pytest.raises(TimingDependentError, match="peripheral"):  # formerly sent to the UART
+        run("csrrs x5, cycle, x0\nsw x5, 0(x30)\n")
+
+
+def test_dma_copies_carry_the_taint_of_their_source() -> None:
+    m = run(
+        """
+        csrrs x5, cycle, x0
+        sw    x5, 0(x31)           # RAM word 0: tainted
+        sw    x0, 4(x31)           # RAM word 1: clean
+        sw    x5, 20(x31)          # RAM word 5: tainted
+        sw    x31, 0x200(x30)      # DMAC SRC: words 0-1
+        addi  x2, x31, 16
+        sw    x2, 0x204(x30)       # DMAC DST: words 4-5
+        addi  x2, x0, 2
+        sw    x2, 0x208(x30)
+        addi  x2, x0, 1
+        sw    x2, 0x20C(x30)
+        """
+    )
+
+    assert m.ram_taint == {0, 16}, "word 4 takes word 0's taint; the clean copy cleans word 5"
+
 
 def test_fake_time_is_a_property_of_one_model_not_of_the_module() -> None:
     """--fake-time used to clear a module-level set, changing every later model."""
